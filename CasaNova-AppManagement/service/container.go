@@ -336,7 +336,12 @@ func getContainerStats(ctx context.Context) {
 		coldStart = false
 
 		i++
-		time.Sleep(time.Second * 1)
+		// 3s, matched to the UI's own polling cadence. At 1s this loop held
+		// dockerd at ~27 ContainerStatsOneShot calls per second (one per
+		// running container) to feed a dashboard that reads the result every
+		// ~3s — two thirds of the samples were computed and thrown away. The
+		// CPU% pairing just works over the wider window.
+		time.Sleep(3 * time.Second)
 	}
 }
 

@@ -119,6 +119,16 @@ type dockerStatsJSON struct {
 // GetAllContainers discovers every Docker container on the host and groups
 // them by compose project. Containers not part of a compose project are
 // returned under "standalone".
+
+var (
+	allContainersMu         sync.Mutex
+	allContainersCache      *AllContainersResponse
+	allContainersCachedAt   time.Time
+	allContainersRefreshing bool
+)
+
+const allContainersTTL = 3 * time.Second
+
 func GetAllContainers(ctx echo.Context) error {
 	// RBAC: this read was ungated while the mutations below were not, so a
 	// tokenless caller (every LAN request arrives via the gateway over
@@ -139,6 +149,29 @@ func GetAllContainers(ctx echo.Context) error {
 		return err
 	}
 
+	// The dashboard polls this from every open tab, and each uncached pass
+	// forks the docker CLI twice (ps + a full inspect of ~30 containers).
+	// Three seconds of staleness is invisible next to the poll interval;
+	// thirty forks a minute per viewer is not. One goroutine refreshes,
+	// concurrent polls get the previous answer (same shape as the
+	// remote-hosts cache, for the same reason).
+	allContainersMu.Lock()
+	fresh := allContainersCache != nil && time.Since(allContainersCachedAt) < allContainersTTL
+	cached := allContainersCache
+	busy := allContainersRefreshing
+	if !fresh && !busy {
+		allContainersRefreshing = true
+	}
+	allContainersMu.Unlock()
+	if fresh || (busy && cached != nil) {
+		return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: *cached})
+	}
+	defer func() {
+		allContainersMu.Lock()
+		allContainersRefreshing = false
+		allContainersMu.Unlock()
+	}()
+
 	timeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -154,14 +187,14 @@ func GetAllContainers(ctx echo.Context) error {
 
 	ids := strings.Fields(strings.TrimSpace(string(out)))
 	if len(ids) == 0 {
+		empty := AllContainersResponse{Stacks: []ComposeStack{}, Standalone: []ExternalContainer{}, Total: 0}
+		allContainersMu.Lock()
+		allContainersCache, allContainersCachedAt = &empty, time.Now()
+		allContainersMu.Unlock()
 		return ctx.JSON(http.StatusOK, model.Result{
 			Success: common_err.SUCCESS,
 			Message: common_err.GetMsg(common_err.SUCCESS),
-			Data: AllContainersResponse{
-				Stacks:     []ComposeStack{},
-				Standalone: []ExternalContainer{},
-				Total:      0,
-			},
+			Data:    empty,
 		})
 	}
 
@@ -268,14 +301,18 @@ func GetAllContainers(ctx echo.Context) error {
 	sort.Slice(stacks, func(i, j int) bool { return stacks[i].Name < stacks[j].Name })
 	sort.Slice(standalone, func(i, j int) bool { return standalone[i].Name < standalone[j].Name })
 
+	resp := AllContainersResponse{
+		Stacks:     stacks,
+		Standalone: standalone,
+		Total:      len(containers),
+	}
+	allContainersMu.Lock()
+	allContainersCache, allContainersCachedAt = &resp, time.Now()
+	allContainersMu.Unlock()
 	return ctx.JSON(http.StatusOK, model.Result{
 		Success: common_err.SUCCESS,
 		Message: common_err.GetMsg(common_err.SUCCESS),
-		Data: AllContainersResponse{
-			Stacks:     stacks,
-			Standalone: standalone,
-			Total:      len(containers),
-		},
+		Data:    resp,
 	})
 }
 

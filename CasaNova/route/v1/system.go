@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
@@ -404,9 +405,13 @@ func GetSystemUtilization(ctx echo.Context) error {
 	data["net"] = buildNetInfo(liveNetInfoSources())
 
 	// Uptime (seconds since boot) — the Server card renders "Tiempo activo".
-	// Was absent from this payload, so the UI showed "—" despite the data
-	// being trivially available from the host info.
-	data["uptime"] = service.MyService.System().GetSysInfo().Uptime
+	//
+	// Computed from a boot-time reference captured once, because the obvious
+	// call — GetSysInfo().Uptime — runs gopsutil's full host.Info(): a /proc
+	// sweep plus distro re-detection, every 3 s, on the most-polled endpoint
+	// of the dashboard, to answer a question whose only moving part is the
+	// wall clock.
+	data["uptime"] = uptimeSeconds()
 
 	// Load averages (1/5/15 min) — the Uptime widget renders these. Read
 	// straight from /proc/loadavg (cheap, no extra dependency). Absent on
@@ -791,4 +796,17 @@ func GetSystemEntry(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{Success: common_err.SERVICE_ERROR, Message: entry, Data: json.RawMessage("[]")})
 	}
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: str})
+}
+
+// uptimeSeconds derives uptime from a boot instant captured on first use.
+// Boot time does not change while the process lives; only the clock does.
+var uptimeOnce sync.Once
+var bootedAt time.Time
+
+func uptimeSeconds() uint64 {
+	uptimeOnce.Do(func() {
+		up := service.MyService.System().GetSysInfo().Uptime // the one expensive call
+		bootedAt = time.Now().Add(-time.Duration(up) * time.Second)
+	})
+	return uint64(time.Since(bootedAt) / time.Second)
 }

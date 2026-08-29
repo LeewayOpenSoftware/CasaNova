@@ -13,9 +13,17 @@ type HealthService interface {
 type service struct{}
 
 func (s *service) Services() (map[bool]*[]string, error) {
-	services, err := systemctl.ListServices("casaos*")
+	// The units were renamed casaos-* → casanova-* generations ago, but this
+	// query kept the old pattern: it matched zero units, so the health panel
+	// reported an empty service list on every production box — a monitor
+	// that watched nothing and never said so. Both patterns are queried so a
+	// half-migrated install still reports its leftovers.
+	services, err := systemctl.ListServices("casanova*")
 	if err != nil {
 		return nil, err
+	}
+	if legacy, err := systemctl.ListServices("casaos*"); err == nil {
+		services = append(services, legacy...)
 	}
 
 	var running, notRunning []string
