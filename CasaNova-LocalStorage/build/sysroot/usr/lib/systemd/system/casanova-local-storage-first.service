@@ -1,0 +1,24 @@
+[Unit]
+Description=CasaNova Local Storage Init
+# Ordering only, never Requires=: this unit remounts the data disks and
+# assembles the mergerfs pool, and docker is ordered behind it so no container
+# can bind-mount /DATA while it is still a bare directory on the rootfs — that
+# window is how containers ended up writing to the shadowed rootfs path and
+# filling the system disk with data the user believed was on the pool.
+#
+# Because it is ordering-only, a failure here (exit 75 = EX_TEMPFAIL) shows up
+# in `systemctl --failed` without keeping docker or the boot target from
+# starting. Bounded degradation, not an unbootable box.
+Before=docker.service
+Before=casanova-local-storage.service
+
+[Service]
+ExecStart=/usr/bin/casanova-local-storage -init
+Type=oneshot
+# The pool assembly waits for the volumes the database expects. This is the
+# hard bound on that wait: past it systemd kills the unit, docker starts anyway
+# and the pool stays fenced rather than being assembled with disks missing.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

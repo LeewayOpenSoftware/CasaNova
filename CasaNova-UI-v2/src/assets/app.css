@@ -1,0 +1,1367 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Zaru theme fonts ────────────────────────────────────────────────
+ * Britti Sans (UI) + Space Grotesk (display/numerals). Variable fonts,
+ * so one file spans the whole weight range. Declared globally but only
+ * APPLIED under html.cn-theme-zaru — the other themes keep the system
+ * font stack, so no FOUT/weight shift unless Zaru is active. */
+@font-face {
+  font-family: 'Britti Sans';
+  src: url('./fonts/britti-sans-variable.woff2') format('woff2'),
+       url('./fonts/britti-sans-variable.woff') format('woff');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('./fonts/space-grotesk-variable.ttf') format('truetype');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* CasaNova design language — "modernized CasaOS".
+ *
+ * The first few versions of CasaNova intentionally stay close to the
+ * original CasaOS visual paradigm so existing users recognize the product
+ * immediately. We modernize the execution (proper dark/light tokens,
+ * smoother transitions, consistent radii, Lucide icons) without changing
+ * the information architecture or color identity.
+ *
+ * Color policy:
+ *   - Blue (#3b82f6) primary, inherited from PrimeVue Aura's blue ramp
+ *     via definePreset in main.ts. Matches CasaOS historically.
+ *   - Dark mode first, but every component honors the .dark class so
+ *     the light mode Storage Manager style works too.
+ *
+ * Surface policy:
+ *   - Solid, not translucent. No backdrop-filter blur.
+ *   - Radius: --surface-radius (14px) for cards, --surface-radius-sm
+ *     (10px) for inputs/buttons, --surface-radius-lg (20px) for modals.
+ *   - Elevation: one subtle shadow token per depth level.
+ */
+
+:root {
+  /* Radii — used by PrimeVue overrides below and by custom components. */
+  --cn-radius-sm: 10px;
+  --cn-radius: 14px;
+  --cn-radius-lg: 20px;
+
+  /* Accent color — runtime-customizable via the Appearance settings.
+   * The default matches the historical CasaOS blue (#3b82f6). Changing
+   * --cn-accent flows through to every surface that reads it, including
+   * the PrimeVue `--p-primary-*` mirrors written by the theme store so
+   * buttons, toggles, and inputs all update without a rebuild. */
+  --cn-accent: #3b82f6;
+  --cn-accent-hover: #2563eb;
+  --cn-accent-soft: rgb(59 130 246 / 0.15);
+
+  /* Semantic severity tokens. These were referenced by HostSettings for
+   * months but never defined — the UPS status chips rendered colorless.
+   * Each has a solid value + a *-soft (15%) background variant, since the
+   * Tailwind `/opacity` modifier does not compile on a bare var(). Same in
+   * light and dark (the hues read fine on both surfaces). */
+  --cn-success: #10b981;
+  --cn-success-soft: rgb(16 185 129 / 0.15);
+  --cn-warning: #f59e0b;
+  --cn-warning-soft: rgb(245 158 11 / 0.15);
+  --cn-danger: #ef4444;
+  --cn-danger-soft: rgb(239 68 68 / 0.15);
+
+  /* Background image slots. Empty by default; the theme store sets
+   * these when the user picks a wallpaper. --cn-dashboard-bg is read
+   * by the main layout's void area (behind floating cards), and only
+   * shows when .cn-bg-replicate is set on <html>. */
+  --cn-login-bg: none;
+  --cn-dashboard-bg: none;
+
+  /* Light-mode surfaces (storage manager style). */
+  --cn-bg: #f5f6f8;
+  --cn-surface: #ffffff;
+  --cn-surface-hover: #f8fafc;
+  --cn-border: rgb(226 232 240);
+  --cn-text: rgb(15 23 42);
+  --cn-text-muted: rgb(100 116 139);
+
+  /* Elevation shadows — soft, single source. */
+  --cn-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --cn-shadow: 0 2px 8px -2px rgb(15 23 42 / 0.08), 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --cn-shadow-lg: 0 8px 24px -8px rgb(15 23 42 / 0.15), 0 4px 8px -2px rgb(15 23 42 / 0.05);
+}
+
+.dark {
+  /* Dark-mode surfaces (app settings / file manager / dashboard style). */
+  --cn-bg: rgb(10 12 18);
+  --cn-surface: rgb(24 28 38);
+  --cn-surface-hover: rgb(30 36 48);
+  --cn-border: rgb(51 58 74);
+  --cn-text: rgb(241 245 249);
+  --cn-text-muted: rgb(148 163 184);
+
+  --cn-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --cn-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.4), 0 2px 4px 0 rgb(0 0 0 / 0.2);
+  --cn-shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 4px 12px -2px rgb(0 0 0 / 0.3);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  background-color: var(--cn-bg);
+  color: var(--cn-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------------
+ * PrimeVue overrides — keep the Aura preset but apply CasaNova's
+ * radius + elevation tokens so every component matches without us
+ * writing wrapper components for each one.
+ * ------------------------------------------------------------------ */
+
+/* Cards: the Storage Manager / dashboard widget surface. */
+.p-card {
+  border-radius: var(--cn-radius) !important;
+  box-shadow: var(--cn-shadow) !important;
+  background: var(--cn-surface) !important;
+  border: 1px solid var(--cn-border) !important;
+}
+
+/* Dialogs / modals: match the nextcloud settings + storage manager
+ * modals — bigger radius, stronger elevation, clear chrome. */
+.p-dialog,
+.p-drawer {
+  border-radius: var(--cn-radius-lg) !important;
+  box-shadow: var(--cn-shadow-lg) !important;
+  background: var(--cn-surface) !important;
+  border: 1px solid var(--cn-border) !important;
+}
+/* Drawer is edge-docked so only the inner corners are rounded. */
+.p-drawer-right {
+  border-top-left-radius: var(--cn-radius-lg) !important;
+  border-bottom-left-radius: var(--cn-radius-lg) !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* Buttons: slightly smaller radius than cards for visual hierarchy,
+ * matching CasaOS's pill-ish but not fully-pill button style. */
+.p-button {
+  border-radius: var(--cn-radius-sm) !important;
+  font-weight: 500 !important;
+  /* PrimeVue's base button sets `overflow: hidden` (for the ripple), and
+   * a flex child with overflow:hidden collapses to an automatic min-size
+   * of 0 — so inside a flex row (dashboard YSK footers, power actions,
+   * "Cargar desde disco", etc.) the label gets crushed and clipped
+   * mid-word. Anchoring min-width to the content keeps the button from
+   * shrinking below its label so short labels stay on one line. */
+  min-width: fit-content;
+}
+
+/* Never clip a button label mid-character. If a button genuinely can't
+ * fit on one line, wrap at word boundaries (readable) instead of the
+ * character-level clip that overflow:hidden produces. */
+.p-button-label {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* Inputs: match button radius so fields + buttons compose cleanly. */
+.p-inputtext,
+.p-password-input {
+  border-radius: var(--cn-radius-sm) !important;
+}
+
+/* ------------------------------------------------------------------
+ * CasaNova utility classes (used directly in components when the
+ * PrimeVue primitive doesn't cover the pattern).
+ * ------------------------------------------------------------------ */
+
+@layer components {
+  /* Widget card — the dashboard side column pattern from CasaOS:
+   * rounded dark surface with a title bar and content area.
+   *
+   * Widgets are display-only surfaces, so their text is non-selectable
+   * by default — matches how native desktop widgets behave and stops
+   * the "stray selection highlight on click" feel that makes a web UI
+   * read as web-shaped rather than app-shaped. Form inputs inside a
+   * widget (Select/InputText/Textarea/ContentEditable) opt back in
+   * via the rule below so typing and copying values still works. */
+  .cn-widget {
+    background: var(--cn-surface);
+    border: 1px solid var(--cn-border);
+    border-radius: var(--cn-radius);
+    box-shadow: var(--cn-shadow-sm);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .cn-widget input,
+  .cn-widget textarea,
+  .cn-widget [contenteditable='true'],
+  .cn-widget code,
+  .cn-widget pre {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  /* File tile — keeps the file manager icons legible against a
+   * wallpaper + transparency backdrop without going solid. The recipe:
+   *
+   *   1. Localized chamber — a slightly stronger backdrop-filter blur
+   *      behind the icon ONLY, so the fine detail of the wallpaper
+   *      fades where the icon needs contrast
+   *   2. Inner light — an `inset` box-shadow in a cool accent tint so
+   *      the tile reads as if illuminated from within, without making
+   *      the background opaque
+   *   3. Soft outer elevation — a larger drop shadow so the tile
+   *      floats above the wallpaper
+   *
+   * The icon itself (in .cn-file-icon below) adds a glow + halo drop
+   * shadow so it reads sharply against even the busiest backdrops.
+   */
+  /* Flat by default — the blurred glass + blue inner-halo read as a
+   * plasticky overlay on the file grid. A plain hover surface is the
+   * ZimaOS-style treatment; the glow can return as an opt-in icon pack. */
+  .cn-file-tile {
+    background: transparent;
+    transition: background 0.15s ease, transform 0.2s ease;
+  }
+  .cn-file-tile:hover {
+    background: var(--cn-surface-hover);
+  }
+
+  /* File icon — glow + white halo so the thin Lucide stroke keeps
+   * its weight against complex wallpaper backgrounds. Stacks two
+   * drop shadows: an accent-colored soft glow for separation, and a
+   * tiny white halo for definition. */
+  .cn-file-icon {
+    /* Flat by default. The glow is opt-in via the Appearance → icon glow
+     * toggle, which adds .cn-file-icon--glow below. */
+  }
+  /* Opt-in soft glow + halo for line icons, tinted to the icon's own color
+     (currentColor) so an accent choice glows in that accent. */
+  .cn-file-icon--glow {
+    filter:
+      drop-shadow(0 0 6px currentColor)
+      drop-shadow(0 0 2px rgb(255 255 255 / 0.3));
+    opacity: 0.98;
+  }
+
+  /* App tile — polish pass on the dashboard grid tiles. The base
+   * color is applied inline per-app, and this class layers a glass
+   * highlight gradient on top via ::before so every tile (regardless
+   * of brand color) reads as a rounded-square iOS-style app icon
+   * with a brighter top edge and a subtle dark fade at the bottom.
+   * Inspired by the Windows Vista / macOS Dock glass treatment. */
+  .cn-app-tile {
+    position: relative;
+    overflow: hidden;
+  }
+  /* Subtle top highlight only — the old strong white glass gradient
+   * (0.38 top) was the main source of the "playdoh / cheap Android"
+   * look. A faint sheen keeps the tiles from reading flat-dead without
+   * the plastic. Fully-flat "transparent" style below drops it entirely. */
+  .cn-app-tile::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.1) 0%,
+      rgb(255 255 255 / 0.03) 45%,
+      transparent 100%
+    );
+  }
+  /* Keep inner content above the gradient overlay. */
+  .cn-app-tile > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Traditional (ZimaOS-style) app-icon: the logo on a light near-white
+   * card with a soft DROP shadow (not glow), no per-app color, no glass.
+   * Selected via the app-icon style toggle (stores/iconPack.ts). */
+  .cn-app-tile--flat {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, #f7fafc 0%, #f0f2f5 100%);
+    box-shadow: 0 2px 5px rgb(0 0 0 / 0.18);
+  }
+  :root[data-theme='dark'] .cn-app-tile--flat {
+    background: var(--cn-surface);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.4);
+  }
+
+  /* Icon button — the top-bar icon row. Circular hover highlight that
+   * matches CasaOS's icon buttons. */
+  .cn-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 9999px;
+    color: var(--cn-text-muted);
+    transition: background-color 120ms ease;
+  }
+  .cn-icon-btn:hover {
+    background-color: var(--cn-surface-hover);
+    color: var(--cn-text);
+  }
+
+  /* Login backdrop — fills the viewport with a wallpaper image and a
+   * dark gradient wash on top so the card stays legible regardless
+   * of which wallpaper is set. The default is a dusk mountain vibe
+   * via a CSS gradient until we ship real wallpaper assets. */
+  .cn-login-backdrop {
+    position: fixed;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgb(0 0 0 / 0.35) 0%, rgb(0 0 0 / 0.6) 100%),
+      linear-gradient(135deg, #1e3a8a 0%, #312e81 35%, #1e1b4b 70%, #0f172a 100%);
+    background-size: cover;
+    background-position: center;
+    z-index: -1;
+  }
+
+  /* ----------------------------------------------------------------
+   * Pseudo-aero glass variant — OPT-IN, not the default.
+   *
+   * Used for surfaces that historically were jarring white modals in
+   * CasaOS (storage manager, app settings) and for the login card.
+   * NOT used for dashboard widgets, file manager rows, or data-heavy
+   * surfaces where readability beats style.
+   *
+   * Technique: layered gradient fill + 1px top inner highlight (the
+   * "Aero light edge") + soft elevation shadow. No backdrop-filter
+   * blur — the glassy feel comes from the edge highlight and the
+   * gradient, not from transparency. Works equally well over dark
+   * dashboards and over wallpaper backdrops.
+   * ---------------------------------------------------------------- */
+  .cn-glass {
+    background: linear-gradient(
+      180deg,
+      rgb(30 41 59 / 0.88) 0%,
+      rgb(17 24 39 / 0.94) 100%
+    );
+    border: 1px solid rgb(71 85 105 / 0.5);
+    border-radius: var(--cn-radius-lg);
+    box-shadow:
+      inset 0 1px 0 0 rgb(148 163 184 / 0.15), /* top highlight — Aero light edge */
+      0 2px 4px -1px rgb(0 0 0 / 0.25),
+      0 12px 32px -8px rgb(0 0 0 / 0.5);
+  }
+
+  /* Glass button variant — paired with cn-glass surfaces for ghost/
+   * secondary actions that need to read as part of the same material. */
+  .cn-glass-btn {
+    background: rgb(148 163 184 / 0.1);
+    border: 1px solid rgb(148 163 184 / 0.2);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+  }
+  .cn-glass-btn:hover {
+    background: rgb(148 163 184 / 0.16);
+    border-color: rgb(148 163 184 / 0.3);
+  }
+
+  /* Login card is cn-glass + bigger padding budget. Kept as its own
+   * class so future tweaks to the login moment don't affect every
+   * other glass surface. */
+  .cn-login-card {
+    background: linear-gradient(
+      180deg,
+      rgb(30 41 59 / 0.82) 0%,
+      rgb(17 24 39 / 0.92) 100%
+    );
+    border: 1px solid rgb(148 163 184 / 0.25);
+    border-radius: var(--cn-radius-lg);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+      0 2px 4px -1px rgb(0 0 0 / 0.25),
+      0 20px 48px -12px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Glass dialog variant. Opt in by adding `class="cn-dialog-glass"`
+ * to the specific PrimeVue Dialog instance — not global. This way
+ * the Storage Manager and App Settings modals can feel premium while
+ * functional modals (confirmations, alerts) stay solid and clear.
+ * ------------------------------------------------------------------ */
+.dark .p-dialog.cn-dialog-glass,
+.dark .p-drawer.cn-dialog-glass {
+  background: linear-gradient(
+    180deg,
+    rgb(30 41 59 / 0.92) 0%,
+    rgb(17 24 39 / 0.96) 100%
+  ) !important;
+  border: 1px solid rgb(148 163 184 / 0.25) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.08),
+    0 20px 48px -12px rgb(0 0 0 / 0.6) !important;
+}
+
+/* ------------------------------------------------------------------
+ * Theme store hooks — set on <html> by the Appearance settings so the
+ * whole app reacts to user preferences without a rebuild.
+ * ------------------------------------------------------------------ */
+
+/* Login wallpaper — replaces the default gradient backdrop. */
+html.cn-has-login-bg .cn-login-backdrop {
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 0.35) 0%, rgb(0 0 0 / 0.6) 100%),
+    var(--cn-login-bg) center / cover no-repeat !important;
+}
+
+/* Replicate dashboard wallpaper in the empty void around floating cards.
+ * Only fires when the user opts in via the "Replicate background" toggle. */
+html.cn-bg-replicate body {
+  background:
+    linear-gradient(180deg, rgb(10 12 18 / 0.82) 0%, rgb(10 12 18 / 0.92) 100%),
+    var(--cn-dashboard-bg) center / cover fixed no-repeat;
+}
+html.cn-bg-replicate:not(.dark) body {
+  background:
+    linear-gradient(180deg, rgb(245 246 248 / 0.82) 0%, rgb(245 246 248 / 0.9) 100%),
+    var(--cn-dashboard-bg) center / cover fixed no-repeat;
+}
+
+/* Opt-in transparency pass. When enabled, previously-solid floating
+ * surfaces (dashboard widget cards, settings cards) gain a subtle
+ * translucent + blurred look that lets the dashboard wallpaper peek
+ * through. Only hits surfaces that were already designed with glass
+ * in mind — data tables and dense rows keep their solid background
+ * so readability never regresses. */
+html.cn-transparent .cn-widget,
+html.cn-transparent .cn-topbar,
+html.cn-transparent .p-card {
+  background: rgb(24 28 38 / 0.72) !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border-color: rgb(148 163 184 / 0.2) !important;
+}
+html.cn-transparent:not(.dark) .cn-widget,
+html.cn-transparent:not(.dark) .cn-topbar,
+html.cn-transparent:not(.dark) .p-card {
+  background: rgb(255 255 255 / 0.72) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Theme variants — v0.1
+ *
+ * The default look (Pop!_OS-ish flat surfaces) lives above. A theme
+ * variant overlays its own CSS variable values when the corresponding
+ * `cn-theme-<id>` class is applied to <html>. This is the same shape
+ * a future uploaded theme pack will use — for now we ship two built-
+ * ins (default + longhorn) so the picker has something real to switch
+ * between.
+ *
+ *  ── Longhorn ──
+ * Inspired by Microsoft's Longhorn Aero concept (the 4074 mockups in
+ * particular): vertical glossy button gradients, soft teal-leaning
+ * accents, subtle frosted-glass cards with a faint outer ring. We
+ * don't restructure layout — just retint surfaces and gradient-ify
+ * buttons and bars so the entire app gets a recognizable "taste" of
+ * Aero without rewriting every component.
+ *
+ * Applied via class so the user can flip it on/off live (theme store
+ * toggles the class on <html> when prefs.themeVariant changes).
+ * ─────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  LONGHORN (cn-theme-longhorn)
+ *
+ * A more thorough pass at Aero: glossy gradient surfaces, a real outer
+ * blue highlight ring around panels, properly Aero buttons (top half
+ * brighter than bottom with a hard break around 50% — the trademark
+ * "wet glass" look), a heavier title-bar wash with a hairline white
+ * underline, frosted inputs, and slightly larger radii so corners feel
+ * like a soft bevel rather than a chamfer.
+ *
+ * We don't restructure layout — we only retint and re-shadow. Any
+ * component that uses .cn-widget / .p-card / .p-button automatically
+ * picks up the variant; bespoke styling in individual components still
+ * works because we touch backgrounds and shadows, not geometry.
+ * ─────────────────────────────────────────────────────────────────── */
+
+html.cn-theme-longhorn {
+  --cn-radius: 14px;
+  --cn-radius-sm: 9px;
+  --cn-radius-lg: 22px;
+
+  /* Page background — a faint sky-blue wash so the white panels feel
+   * like they're floating over something cool, not over neutral grey. */
+  --cn-bg: linear-gradient(180deg,
+              rgb(225 234 248) 0%,
+              rgb(208 222 244) 100%);
+  --cn-surface: #ffffff;
+  --cn-surface-hover: rgb(240 247 255);
+  --cn-border: rgb(170 196 232);
+  --cn-text: rgb(15 24 48);
+  --cn-text-muted: rgb(74 96 138);
+
+  /* Aero-style shadow stack: top white inset (the trademark "this
+   * panel reflects the room"), a soft outer blue glow, and a denser
+   * drop shadow. The drop-shadow length is conservative so cards
+   * don't look like they're hovering 200px above the page. */
+  --cn-shadow-sm: 0 1px 0 0 rgb(255 255 255 / 0.85) inset,
+                  0 1px 3px 0 rgb(40 60 100 / 0.15);
+  --cn-shadow:    0 1px 0 0 rgb(255 255 255 / 0.85) inset,
+                  0 0 0 1px rgb(255 255 255 / 0.5) inset,
+                  0 4px 14px -4px rgb(40 60 100 / 0.30),
+                  0 1px 2px 0 rgb(40 60 100 / 0.20);
+  --cn-shadow-lg: 0 1px 0 0 rgb(255 255 255 / 0.95) inset,
+                  0 0 0 1px rgb(255 255 255 / 0.6) inset,
+                  0 24px 50px -16px rgb(40 60 100 / 0.45),
+                  0 6px 14px -4px rgb(40 60 100 / 0.25);
+}
+
+html.cn-theme-longhorn.dark {
+  /* Dark Aero is closer to Vista's "Black Glass" tint than to plain
+   * dark mode — deep midnight blue with cyan accent highlights. */
+  --cn-bg: linear-gradient(180deg,
+              rgb(8 12 28) 0%,
+              rgb(14 22 46) 100%);
+  --cn-surface: rgb(28 40 70);
+  --cn-surface-hover: rgb(40 56 92);
+  --cn-border: rgb(96 132 188);
+  --cn-text: rgb(228 238 254);
+  --cn-text-muted: rgb(160 184 220);
+
+  --cn-shadow-sm: 0 1px 0 0 rgb(120 180 240 / 0.18) inset,
+                  0 1px 3px 0 rgb(0 0 0 / 0.6);
+  --cn-shadow:    0 1px 0 0 rgb(120 180 240 / 0.22) inset,
+                  0 0 0 1px rgb(120 180 240 / 0.10) inset,
+                  0 6px 18px -4px rgb(0 0 0 / 0.65),
+                  0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --cn-shadow-lg: 0 1px 0 0 rgb(120 180 240 / 0.28) inset,
+                  0 0 0 1px rgb(120 180 240 / 0.14) inset,
+                  0 24px 60px -16px rgb(0 0 0 / 0.75);
+}
+
+/* App background gradient — applied to <body> so the void behind
+ * widgets gets the cool wash even when the dashboard wallpaper is
+ * off. We can't put it on :root because Tailwind's preflight resets
+ * body background. */
+html.cn-theme-longhorn body {
+  background: var(--cn-bg);
+  background-attachment: fixed;
+}
+
+/* Cards / widgets — vertical gloss + the iconic outer blue ring. The
+ * inset highlight at the top sells the "wet glass" reflection more than
+ * the gradient alone does, especially in dark mode. */
+/* 4074-vibe cards — translucent cyan-tinted glass, NOT solid white.
+ * Lets `html.cn-transparent` peek through naturally, and reads as
+ * "lit pane of glass" rather than "plastic tile". */
+html.cn-theme-longhorn .cn-widget,
+html.cn-theme-longhorn .cn-glass,
+html.cn-theme-longhorn .p-card {
+  background-image: linear-gradient(180deg,
+    rgb(255 255 255 / 0.55) 0%,
+    rgb(232 244 255 / 0.45) 48%,
+    rgb(206 228 252 / 0.50) 100%) !important;
+  background-color: rgb(244 250 255 / 0.72) !important;
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid rgb(160 200 248 / 0.7) !important;
+  border-radius: var(--cn-radius);
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / 0.85) inset,
+    0 0 0 1px rgb(140 200 255 / 0.18),
+    0 12px 28px -10px rgb(20 60 130 / 0.28),
+    0 0 24px -4px rgb(120 200 255 / 0.22) !important;
+  position: relative;
+}
+/* Top-half highlight band — the "ceiling light" reflection. */
+html.cn-theme-longhorn .cn-widget::before,
+html.cn-theme-longhorn .cn-glass::before,
+html.cn-theme-longhorn .p-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 50%;
+  border-radius: var(--cn-radius) var(--cn-radius) 0 0;
+  background: linear-gradient(180deg,
+    rgb(255 255 255 / 0.55) 0%,
+    rgb(255 255 255 / 0) 100%);
+  pointer-events: none;
+}
+/* When transparency is OFF, deepen the surface so cards remain readable
+ * on a plain page (no wallpaper showing through). */
+html.cn-theme-longhorn:not(.cn-transparent) .cn-widget,
+html.cn-theme-longhorn:not(.cn-transparent) .cn-glass,
+html.cn-theme-longhorn:not(.cn-transparent) .p-card {
+  background-color: rgb(248 252 255 / 0.96) !important;
+}
+html.cn-theme-longhorn.dark .cn-widget,
+html.cn-theme-longhorn.dark .cn-glass,
+html.cn-theme-longhorn.dark .p-card {
+  background-image: linear-gradient(180deg,
+    rgb(42 70 120 / 0.55) 0%,
+    rgb(28 50 96 / 0.55) 50%,
+    rgb(18 36 76 / 0.60) 100%) !important;
+  background-color: rgb(24 40 80 / 0.72) !important;
+  border-color: rgb(120 180 240 / 0.35) !important;
+  box-shadow:
+    0 1px 0 0 rgb(160 220 255 / 0.22) inset,
+    0 0 0 1px rgb(120 200 255 / 0.10),
+    0 18px 38px -10px rgb(0 0 0 / 0.55),
+    0 0 28px -6px rgb(80 170 255 / 0.28) !important;
+}
+html.cn-theme-longhorn.dark:not(.cn-transparent) .cn-widget,
+html.cn-theme-longhorn.dark:not(.cn-transparent) .cn-glass,
+html.cn-theme-longhorn.dark:not(.cn-transparent) .p-card {
+  background-color: rgb(22 36 72 / 0.95) !important;
+}
+html.cn-theme-longhorn.dark .cn-widget::before,
+html.cn-theme-longhorn.dark .p-card::before {
+  background: linear-gradient(180deg,
+    rgb(160 200 250 / 0.18) 0%,
+    rgb(160 200 250 / 0) 100%);
+}
+
+/* Buttons — the canonical Aero gloss with a hard break at 50%. The
+ * top half is brighter than the bottom — that's the "the room is
+ * reflected in the top half of the button" effect. We layer THREE
+ * shadows: an inset top white highlight, an inset bottom dark
+ * contour, and a 1px outer drop. */
+html.cn-theme-longhorn .p-button {
+  position: relative;
+  background-image: linear-gradient(180deg,
+    rgb(255 255 255 / 0.50) 0%,
+    rgb(255 255 255 / 0.18) 49%,
+    rgb(0 0 0 / 0.0) 50%,
+    rgb(0 0 0 / 0.10) 100%) !important;
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.6) inset,
+              0 -1px 0 0 rgb(0 0 0 / 0.18) inset,
+              0 1px 0 0 rgb(255 255 255 / 0.4),
+              0 2px 4px 0 rgb(15 23 42 / 0.20) !important;
+  border-radius: var(--cn-radius-sm) !important;
+  border: 1px solid rgb(58 92 152 / 0.4) !important;
+  transition: filter 140ms ease, box-shadow 140ms ease;
+}
+html.cn-theme-longhorn .p-button:hover {
+  filter: brightness(1.12) saturate(1.1);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.7) inset,
+              0 -1px 0 0 rgb(0 0 0 / 0.2) inset,
+              0 0 0 1px rgb(120 180 240 / 0.5),
+              0 0 8px 0 rgb(120 180 240 / 0.4),
+              0 2px 4px 0 rgb(15 23 42 / 0.20);
+}
+html.cn-theme-longhorn .p-button:active {
+  filter: brightness(0.92);
+  box-shadow: 0 1px 1px 0 rgb(0 0 0 / 0.25) inset,
+              0 -1px 0 0 rgb(255 255 255 / 0.18) inset,
+              0 1px 1px 0 rgb(15 23 42 / 0.20);
+}
+/* A faint white "glint" line just below the top edge so the highlight
+ * doesn't look like a flat painted-on band — gives the button a
+ * curved shape. */
+html.cn-theme-longhorn .p-button::after {
+  content: '';
+  position: absolute;
+  top: 1px; left: 4px; right: 4px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgb(255 255 255 / 0) 0%,
+    rgb(255 255 255 / 0.7) 50%,
+    rgb(255 255 255 / 0) 100%);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Top bar — heavier title-bar wash. Two layers: a soft blue gradient
+ * BENEATH a hairline white reflection on top, separated by a darker
+ * shadow line. Matches the Longhorn 4074 mocks of the title bar more
+ * closely than a single linear gradient. */
+html.cn-theme-longhorn header,
+html.cn-theme-longhorn .cn-topbar {
+  background-image: linear-gradient(180deg,
+    rgb(238 246 254 / 0.96) 0%,
+    rgb(214 228 250 / 0.96) 50%,
+    rgb(188 208 240 / 0.96) 100%);
+  border-bottom: 1px solid rgb(110 144 196 / 0.6);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.85) inset,
+              0 -1px 0 0 rgb(80 116 176 / 0.20) inset,
+              0 2px 6px -2px rgb(40 60 100 / 0.18);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+}
+html.cn-theme-longhorn.dark header,
+html.cn-theme-longhorn.dark .cn-topbar {
+  background-image: linear-gradient(180deg,
+    rgb(42 60 100) 0%,
+    rgb(24 36 70) 50%,
+    rgb(14 22 48) 100%);
+  border-bottom-color: rgb(96 132 188 / 0.5);
+  box-shadow: 0 1px 0 0 rgb(160 200 250 / 0.22) inset,
+              0 -1px 0 0 rgb(0 0 0 / 0.4) inset,
+              0 2px 6px -2px rgb(0 0 0 / 0.5);
+}
+
+/* Sidebar / nav rails — same vertical sheen as the top bar but with
+ * a softer top-to-bottom fall-off so the eye reads it as a single
+ * sheet. */
+html.cn-theme-longhorn aside.cn-sidebar,
+html.cn-theme-longhorn nav.cn-nav {
+  background-image: linear-gradient(180deg,
+    rgb(248 252 255) 0%,
+    rgb(228 240 252) 50%,
+    rgb(208 224 246) 100%);
+  border-right: 1px solid rgb(170 196 232 / 0.8);
+  box-shadow: 1px 0 0 0 rgb(255 255 255 / 0.7) inset,
+              -1px 0 0 0 rgb(110 144 196 / 0.18) inset;
+}
+html.cn-theme-longhorn.dark aside.cn-sidebar,
+html.cn-theme-longhorn.dark nav.cn-nav {
+  background-image: linear-gradient(180deg,
+    rgb(34 50 86) 0%,
+    rgb(22 34 64) 100%);
+  border-right-color: rgb(96 132 188 / 0.5);
+  box-shadow: 1px 0 0 0 rgb(160 200 250 / 0.10) inset;
+}
+
+/* Active nav pill — soft blue glow + inset highlight + faint outer
+ * ring that makes it look "selected" rather than just "filled". */
+html.cn-theme-longhorn .cn-nav-active {
+  background-image: linear-gradient(180deg,
+    rgb(180 230 255 / 0.65) 0%,
+    rgb(120 200 250 / 0.60) 50%,
+    rgb(90 180 245 / 0.60) 100%);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.85) inset,
+              0 -1px 0 0 rgb(50 130 200 / 0.5) inset,
+              0 0 0 1px rgb(140 220 255 / 0.85),
+              0 0 22px 0 rgb(120 220 255 / 0.7),
+              0 0 38px 0 rgb(80 180 255 / 0.35);
+  color: rgb(8 32 80) !important;
+  font-weight: 600;
+}
+html.cn-theme-longhorn.dark .cn-nav-active {
+  background-image: linear-gradient(180deg,
+    rgb(120 180 240 / 0.30) 0%,
+    rgb(80 150 230 / 0.45) 100%);
+  color: rgb(220 240 255) !important;
+}
+
+/* Inputs — frosted glass with a subtle inner shadow so they look
+ * "into" the panel rather than "on top of" it. */
+html.cn-theme-longhorn .p-inputtext,
+html.cn-theme-longhorn .p-textarea,
+html.cn-theme-longhorn .p-select,
+html.cn-theme-longhorn .p-inputnumber-input {
+  background-image: linear-gradient(180deg,
+    rgb(255 255 255 / 0.7) 0%,
+    rgb(248 252 255 / 0.95) 100%);
+  border: 1px solid rgb(160 192 232);
+  border-radius: var(--cn-radius-sm);
+  box-shadow: 0 1px 2px 0 rgb(40 60 100 / 0.12) inset,
+              0 1px 0 0 rgb(255 255 255 / 0.7);
+  color: rgb(15 24 48);
+}
+html.cn-theme-longhorn .p-inputtext:focus,
+html.cn-theme-longhorn .p-textarea:focus,
+html.cn-theme-longhorn .p-inputnumber-input:focus {
+  outline: none;
+  border-color: rgb(80 140 220);
+  box-shadow: 0 1px 2px 0 rgb(40 60 100 / 0.15) inset,
+              0 0 0 3px rgb(120 180 240 / 0.35);
+}
+html.cn-theme-longhorn.dark .p-inputtext,
+html.cn-theme-longhorn.dark .p-textarea,
+html.cn-theme-longhorn.dark .p-select,
+html.cn-theme-longhorn.dark .p-inputnumber-input {
+  background-image: linear-gradient(180deg,
+    rgb(20 30 56) 0%,
+    rgb(28 42 72) 100%);
+  border-color: rgb(96 132 188 / 0.7);
+  color: rgb(228 238 254);
+}
+
+/* Dialogs / modals — heavier glass effect with the trademark outer
+ * blue glow. Vista shipped dialogs with a real outer halo; we mimic
+ * it without overdoing it. */
+html.cn-theme-longhorn .p-dialog {
+  background-image: linear-gradient(180deg,
+    rgb(255 255 255 / 0.98) 0%,
+    rgb(238 246 254 / 1) 100%);
+  border: 1px solid rgb(140 178 222);
+  border-radius: var(--cn-radius-lg);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.95) inset,
+              0 0 0 1px rgb(255 255 255 / 0.5) inset,
+              0 0 0 4px rgb(120 180 240 / 0.18),
+              0 30px 80px -20px rgb(40 60 100 / 0.55),
+              0 8px 20px -4px rgb(40 60 100 / 0.35);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+html.cn-theme-longhorn .p-dialog .p-dialog-header {
+  background-image: linear-gradient(180deg,
+    rgb(232 242 254) 0%,
+    rgb(210 226 248) 100%);
+  border-bottom: 1px solid rgb(170 196 232 / 0.7);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.85) inset;
+  border-top-left-radius: var(--cn-radius-lg);
+  border-top-right-radius: var(--cn-radius-lg);
+}
+html.cn-theme-longhorn.dark .p-dialog {
+  background-image: linear-gradient(180deg,
+    rgb(40 56 96) 0%,
+    rgb(22 34 64) 100%);
+  border-color: rgb(96 132 188 / 0.6);
+  box-shadow: 0 1px 0 0 rgb(160 200 250 / 0.25) inset,
+              0 0 0 4px rgb(120 180 240 / 0.18),
+              0 30px 80px -20px rgb(0 0 0 / 0.7);
+}
+html.cn-theme-longhorn.dark .p-dialog .p-dialog-header {
+  background-image: linear-gradient(180deg,
+    rgb(38 54 92) 0%,
+    rgb(24 38 70) 100%);
+  border-bottom-color: rgb(96 132 188 / 0.5);
+}
+
+/* ToggleSwitch — the iconic Aero pill, with a glossy thumb. */
+html.cn-theme-longhorn .p-toggleswitch-slider {
+  background-image: linear-gradient(180deg,
+    rgb(180 200 226) 0%,
+    rgb(202 218 240) 100%);
+  border: 1px solid rgb(140 168 210);
+  box-shadow: 0 1px 2px 0 rgb(40 60 100 / 0.18) inset;
+}
+html.cn-theme-longhorn .p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background-image: linear-gradient(180deg,
+    rgb(100 170 240) 0%,
+    rgb(60 130 220) 100%);
+  border-color: rgb(40 100 190);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.25) inset,
+              0 0 8px 0 rgb(120 180 240 / 0.5);
+}
+html.cn-theme-longhorn .p-toggleswitch-slider::before {
+  background-image: linear-gradient(180deg,
+    #ffffff 0%,
+    rgb(232 240 252) 100%);
+  box-shadow: 0 1px 2px 0 rgb(40 60 100 / 0.35),
+              0 1px 0 0 rgb(255 255 255 / 0.9) inset;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  ZETHUS (cn-theme-zethus)
+ *
+ * A second variant, built as an exercise of the theming surface — what
+ * happens when the inspiration is the CasaOS / ZimaOS lineage instead
+ * of Aero? Bigger radii, softer shadows, warmer accent, generous
+ * padding feel. We don't reproduce ZimaOS art — just the spatial and
+ * material rules that make it feel like itself: floating tiles with
+ * pillowy shadows, hairline borders, a faint warm tint in light mode,
+ * a deep cool slate in dark mode, and very rounded controls.
+ * ─────────────────────────────────────────────────────────────────── */
+
+html.cn-theme-zethus {
+  --cn-radius: 20px;
+  --cn-radius-sm: 14px;
+  --cn-radius-lg: 28px;
+
+  /* A warm-leaning off-white page so the panels feel furniture-like
+   * rather than clinical. The page has a very subtle vertical gradient
+   * so the void doesn't look painted flat at the bottom. */
+  --cn-bg: linear-gradient(180deg,
+              rgb(248 246 242) 0%,
+              rgb(242 238 232) 100%);
+  --cn-surface: #ffffff;
+  --cn-surface-hover: rgb(252 250 246);
+  --cn-border: rgb(232 226 216);
+  --cn-text: rgb(28 26 24);
+  --cn-text-muted: rgb(108 100 88);
+
+  /* Pillowy shadows — soft, large, slightly warm-tinted. No inset
+   * highlights; Zethus reads "matte material" rather than "glass". */
+  --cn-shadow-sm: 0 1px 3px 0 rgb(60 40 20 / 0.06);
+  --cn-shadow:    0 1px 3px 0 rgb(60 40 20 / 0.06),
+                  0 8px 24px -8px rgb(60 40 20 / 0.16);
+  --cn-shadow-lg: 0 4px 8px -2px rgb(60 40 20 / 0.10),
+                  0 30px 60px -16px rgb(60 40 20 / 0.22);
+}
+
+html.cn-theme-zethus.dark {
+  /* Deep cool slate background with a very faint vertical lift. */
+  --cn-bg: linear-gradient(180deg,
+              rgb(18 22 30) 0%,
+              rgb(14 18 26) 100%);
+  --cn-surface: rgb(28 34 46);
+  --cn-surface-hover: rgb(36 44 58);
+  --cn-border: rgb(60 70 90);
+  --cn-text: rgb(232 236 244);
+  --cn-text-muted: rgb(150 160 180);
+
+  --cn-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.5);
+  --cn-shadow:    0 2px 6px -2px rgb(0 0 0 / 0.5),
+                  0 10px 30px -10px rgb(0 0 0 / 0.6);
+  --cn-shadow-lg: 0 6px 14px -4px rgb(0 0 0 / 0.55),
+                  0 30px 60px -16px rgb(0 0 0 / 0.65);
+}
+
+html.cn-theme-zethus body {
+  background: var(--cn-bg);
+  background-attachment: fixed;
+}
+
+/* Cards — pillowy, no glass, hairline border. The hover lift is a
+ * 2px translate; transitions handle the easing. */
+html.cn-theme-zethus .cn-widget,
+html.cn-theme-zethus .cn-glass,
+html.cn-theme-zethus .p-card {
+  background: var(--cn-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--cn-border) !important;
+  border-radius: var(--cn-radius);
+  box-shadow: var(--cn-shadow) !important;
+  transition: transform 220ms cubic-bezier(.2, .8, .2, 1),
+              box-shadow 220ms cubic-bezier(.2, .8, .2, 1);
+}
+/* Transparency mode — soften the paper into translucent vellum so the
+ * wallpaper reads through, without surrendering legibility. */
+html.cn-theme-zethus.cn-transparent .cn-widget,
+html.cn-theme-zethus.cn-transparent .cn-glass,
+html.cn-theme-zethus.cn-transparent .p-card {
+  background: rgb(252 248 240 / 0.78) !important;
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+html.cn-theme-zethus.cn-transparent.dark .cn-widget,
+html.cn-theme-zethus.cn-transparent.dark .cn-glass,
+html.cn-theme-zethus.cn-transparent.dark .p-card {
+  background: rgb(30 26 22 / 0.78) !important;
+}
+html.cn-theme-zethus .cn-widget:hover,
+html.cn-theme-zethus .p-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px -4px rgb(60 40 20 / 0.10),
+              0 16px 40px -12px rgb(60 40 20 / 0.22);
+}
+html.cn-theme-zethus.dark .cn-widget:hover,
+html.cn-theme-zethus.dark .p-card:hover {
+  box-shadow: 0 6px 14px -4px rgb(0 0 0 / 0.6),
+              0 16px 40px -12px rgb(0 0 0 / 0.7);
+}
+
+/* Buttons — pill-shaped, single-color fill with a tiny inner highlight.
+ * No gradient; the personality comes from the radius + the soft shadow. */
+html.cn-theme-zethus .p-button {
+  border-radius: 999px !important;
+  padding-left: 1.1em;
+  padding-right: 1.1em;
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.18) inset,
+              0 1px 2px 0 rgb(60 40 20 / 0.10),
+              0 4px 12px -4px rgb(60 40 20 / 0.20) !important;
+  border: 1px solid transparent !important;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+html.cn-theme-zethus .p-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.2) inset,
+              0 2px 4px 0 rgb(60 40 20 / 0.15),
+              0 8px 18px -4px rgb(60 40 20 / 0.30);
+}
+html.cn-theme-zethus .p-button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px 0 rgb(60 40 20 / 0.20) inset;
+}
+
+/* Top bar — a thin pill of surface color sitting inside the page,
+ * NOT a full-bleed band. The trick is a generous border-radius on the
+ * topbar's inner container; we add a left/right margin so the page
+ * background peeks around the edges. */
+html.cn-theme-zethus header,
+html.cn-theme-zethus .cn-topbar {
+  background: var(--cn-surface);
+  border-bottom: 1px solid var(--cn-border);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.3) inset,
+              0 4px 12px -4px rgb(60 40 20 / 0.10);
+}
+html.cn-theme-zethus.dark header,
+html.cn-theme-zethus.dark .cn-topbar {
+  background: rgb(28 34 46);
+  border-bottom-color: rgb(60 70 90);
+  box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.5);
+}
+
+/* Sidebar / nav rail — same surface color as cards, with a slightly
+ * thinner right border so it reads as "this nav is part of the page",
+ * not "this nav is a separate panel". */
+html.cn-theme-zethus aside.cn-sidebar,
+html.cn-theme-zethus nav.cn-nav {
+  background: var(--cn-surface);
+  border-right: 1px solid var(--cn-border);
+}
+html.cn-theme-zethus.dark aside.cn-sidebar,
+html.cn-theme-zethus.dark nav.cn-nav {
+  background: rgb(24 30 42);
+  border-right-color: rgb(60 70 90);
+}
+
+/* Active nav pill — solid soft fill, slightly bigger radius than
+ * default to read like ZimaOS's chunky selection bars. No glow. */
+html.cn-theme-zethus .cn-nav-active {
+  background: rgb(var(--cn-accent-rgb) / 0.14);
+  color: var(--cn-accent) !important;
+  border-radius: 14px;
+  font-weight: 600;
+}
+html.cn-theme-zethus.dark .cn-nav-active {
+  background: rgb(var(--cn-accent-rgb) / 0.20);
+}
+
+/* Inputs — large pill radius, no inner shadow, only an outer hairline
+ * border + a clean accent ring on focus. */
+html.cn-theme-zethus .p-inputtext,
+html.cn-theme-zethus .p-textarea,
+html.cn-theme-zethus .p-select,
+html.cn-theme-zethus .p-inputnumber-input {
+  background: var(--cn-surface);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  box-shadow: none;
+  color: var(--cn-text);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+html.cn-theme-zethus .p-inputtext:focus,
+html.cn-theme-zethus .p-textarea:focus,
+html.cn-theme-zethus .p-inputnumber-input:focus {
+  outline: none;
+  border-color: var(--cn-accent);
+  box-shadow: 0 0 0 3px rgb(var(--cn-accent-rgb) / 0.22);
+}
+html.cn-theme-zethus.dark .p-inputtext,
+html.cn-theme-zethus.dark .p-textarea,
+html.cn-theme-zethus.dark .p-select,
+html.cn-theme-zethus.dark .p-inputnumber-input {
+  background: rgb(24 30 42);
+  border-color: rgb(60 70 90);
+}
+
+/* Dialogs — Zethus dialogs feel like sheets of paper, not glass.
+ * Big radius, soft drop shadow, no border ring. */
+html.cn-theme-zethus .p-dialog {
+  background: var(--cn-surface);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  box-shadow: var(--cn-shadow-lg);
+}
+html.cn-theme-zethus .p-dialog .p-dialog-header {
+  background: transparent;
+  border-bottom: 1px solid var(--cn-border);
+  border-top-left-radius: var(--cn-radius-lg);
+  border-top-right-radius: var(--cn-radius-lg);
+}
+
+/* ToggleSwitch — large pill, accent fill on, neutral fill off. */
+html.cn-theme-zethus .p-toggleswitch-slider {
+  background: var(--cn-border);
+  box-shadow: none;
+}
+html.cn-theme-zethus .p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background: var(--cn-accent);
+  box-shadow: 0 0 0 3px rgb(var(--cn-accent-rgb) / 0.18);
+}
+html.cn-theme-zethus .p-toggleswitch-slider::before {
+  background: #ffffff;
+  box-shadow: 0 1px 2px 0 rgb(60 40 20 / 0.20);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  ZARU (cn-theme-zaru)
+ *
+ * The most product-grade variant: a clean, bright, high-polish look in
+ * the lineage of modern appliance dashboards — crisp tiles, hairline
+ * borders, one confident blue accent, soft diffuse elevation (no gloss,
+ * no gradient wash), generous rounding, and the Britti Sans typeface
+ * (Space Grotesk for numerals). Calm, spacious, premium — the opposite
+ * of skeuomorphic. Zethus is the warm CasaOS-lineage take; Zaru is the
+ * cool, bright, "finished consumer product" take.
+ *
+ * We reproduce the spatial/material system — radii, elevation curves,
+ * the bright neutral palette, the confident accent, the typography — not
+ * any third party's artwork. Layout geometry is untouched. The blue is
+ * applied as an accent PRESET when the variant is picked (theme store
+ * writes --cn-accent inline), so component rules here read var(--cn-accent).
+ * ─────────────────────────────────────────────────────────────────── */
+
+html.cn-theme-zaru {
+  --cn-radius: 16px;
+  --cn-radius-sm: 11px;
+  --cn-radius-lg: 24px;
+
+  /* Dot grid — the surface elements sit ON, not a decoration.
+   *
+   * The unit is 16px because that is Zaru's own --cn-radius and the layout's
+   * gap-4: a card with a 16px corner lands on the grid instead of floating
+   * between two dots, which is the whole point of a measured background. It is
+   * a token rather than a literal so the two stay tied together — change the
+   * radius and you are reminded the grid moves with it.
+   *
+   * The dot is deliberately faint. It has to read as graph paper under the
+   * content, never as texture competing with it; at 1px and 7% it disappears
+   * behind a card and shows only in the gutters. */
+  --cn-grid-unit: 16px;
+  --cn-grid-dot: rgb(17 24 39 / 0.07);
+
+  /* Bright, cool-neutral page — panels sit on airy near-white so the
+   * whole surface reads "lit", not grey. */
+  --cn-bg: #eef1f6;
+  --cn-surface: #ffffff;
+  --cn-surface-hover: #f6f8fb;
+  --cn-border: rgb(17 24 39 / 0.07);
+  --cn-text: rgb(17 18 22);
+  --cn-text-muted: rgb(110 116 128);
+
+  /* Diffuse, low-contrast elevation — soft product shadows, no inset
+   * highlight, no glow. Height reads through blur, not darkness. */
+  --cn-shadow-sm: 0 1px 2px 0 rgb(16 33 71 / 0.05);
+  --cn-shadow:    0 1px 2px 0 rgb(16 33 71 / 0.06),
+                  0 6px 18px -6px rgb(16 33 71 / 0.10);
+  --cn-shadow-lg: 0 2px 6px -2px rgb(16 33 71 / 0.08),
+                  0 20px 44px -14px rgb(16 33 71 / 0.18);
+
+  font-family: 'Britti Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html.cn-theme-zaru.dark {
+  /* The grid inverts. A dark dot on a near-black page is not "subtle", it is
+   * absent — the grid would simply vanish in dark mode and the theme would
+   * look like two different products. */
+  --cn-grid-dot: rgb(255 255 255 / 0.055);
+
+  /* Deep, near-black cool grey — the premium dark-appliance surface. */
+  --cn-bg: #0b0d12;
+  --cn-surface: #16181f;
+  --cn-surface-hover: #1d2029;
+  --cn-border: rgb(255 255 255 / 0.08);
+  --cn-text: rgb(244 245 247);
+  --cn-text-muted: rgb(156 161 173);
+
+  --cn-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --cn-shadow:    0 2px 6px -2px rgb(0 0 0 / 0.45),
+                  0 10px 28px -10px rgb(0 0 0 / 0.55);
+  --cn-shadow-lg: 0 6px 16px -6px rgb(0 0 0 / 0.5),
+                  0 28px 56px -16px rgb(0 0 0 / 0.65);
+}
+
+/* Typeface app-wide; Space Grotesk (tabular) for metrics/gauge readouts. */
+html.cn-theme-zaru body {
+  /* One dot per grid intersection, over the flat page colour.
+   *
+   * `circle at 1px 1px` with a hard stop at 1px paints a crisp dot instead of a
+   * blurry blob: the gradient never gets a chance to interpolate. The dot is
+   * placed at the cell's origin so the grid's lines fall on multiples of the
+   * unit from the viewport's top-left — which is what makes content look
+   * aligned to it rather than merely on top of it.
+   *
+   * background-attachment: fixed is what sells it. A scrolling grid reads as a
+   * patterned wallpaper; a fixed one reads as the surface the page is resting
+   * on, and content visibly travels across it. */
+  background-color: var(--cn-bg);
+  background-image: radial-gradient(circle at 1px 1px, var(--cn-grid-dot) 1px, transparent 0);
+  background-size: var(--cn-grid-unit) var(--cn-grid-unit);
+  background-attachment: fixed;
+  font-family: 'Britti Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  letter-spacing: -0.006em;
+}
+html.cn-theme-zaru .cn-tabular,
+html.cn-theme-zaru .cn-metric,
+html.cn-theme-zaru .cn-gauge-value {
+  font-family: 'Space Grotesk', 'Britti Sans', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cards / widgets — crisp tiles, hairline border, soft float. No
+ * gradient, no gloss; the polish is in restraint + rounding + motion. */
+html.cn-theme-zaru .cn-widget,
+html.cn-theme-zaru .cn-glass,
+html.cn-theme-zaru .p-card {
+  background-color: var(--cn-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--cn-border) !important;
+  border-radius: var(--cn-radius);
+  box-shadow: var(--cn-shadow) !important;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+html.cn-theme-zaru .cn-widget:hover,
+html.cn-theme-zaru .p-card:hover {
+  box-shadow: var(--cn-shadow-lg) !important;
+  border-color: rgb(var(--cn-accent-rgb) / 0.18) !important;
+}
+/* Transparency on → frost the tiles lightly (visionOS-adjacent). */
+html.cn-theme-zaru.cn-transparent .cn-widget,
+html.cn-theme-zaru.cn-transparent .cn-glass,
+html.cn-theme-zaru.cn-transparent .p-card {
+  background-color: rgb(255 255 255 / 0.72) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+html.cn-theme-zaru.dark.cn-transparent .cn-widget,
+html.cn-theme-zaru.dark.cn-transparent .cn-glass,
+html.cn-theme-zaru.dark.cn-transparent .p-card {
+  background-color: rgb(22 24 31 / 0.66) !important;
+}
+
+/* Buttons — solid confident accent, softly rounded, gentle lift. */
+html.cn-theme-zaru .p-button {
+  border-radius: var(--cn-radius-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: 0 1px 2px 0 rgb(var(--cn-accent-rgb) / 0.22);
+  transition: transform .12s ease, box-shadow .18s ease, background-color .18s ease;
+}
+html.cn-theme-zaru .p-button:hover {
+  box-shadow: 0 4px 12px -2px rgb(var(--cn-accent-rgb) / 0.35);
+  transform: translateY(-1px);
+}
+html.cn-theme-zaru .p-button:active { transform: translateY(0); }
+
+/* Header / top bar — clean, frosted, hairline underline. */
+html.cn-theme-zaru header,
+html.cn-theme-zaru .cn-topbar {
+  background-color: rgb(255 255 255 / 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--cn-border);
+}
+html.cn-theme-zaru.dark header,
+html.cn-theme-zaru.dark .cn-topbar {
+  background-color: rgb(11 13 18 / 0.72);
+}
+
+/* Sidebar / nav — quiet surface, hairline divider, confident active pill. */
+html.cn-theme-zaru aside.cn-sidebar,
+html.cn-theme-zaru nav.cn-nav {
+  background-color: var(--cn-surface);
+  border-right: 1px solid var(--cn-border);
+}
+html.cn-theme-zaru.dark aside.cn-sidebar,
+html.cn-theme-zaru.dark nav.cn-nav {
+  background-color: #0e1016;
+}
+html.cn-theme-zaru .cn-nav-active {
+  background-color: var(--cn-accent-soft);
+  color: var(--cn-accent) !important;
+  font-weight: 600;
+  border-radius: var(--cn-radius-sm);
+}
+
+/* Inputs — clean field, hairline border, blue focus ring. */
+html.cn-theme-zaru .p-inputtext,
+html.cn-theme-zaru .p-textarea,
+html.cn-theme-zaru .p-select,
+html.cn-theme-zaru .p-inputnumber-input {
+  background-color: var(--cn-surface);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  box-shadow: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+html.cn-theme-zaru .p-inputtext:focus,
+html.cn-theme-zaru .p-textarea:focus,
+html.cn-theme-zaru .p-inputnumber-input:focus {
+  outline: none;
+  border-color: var(--cn-accent);
+  box-shadow: 0 0 0 3px var(--cn-accent-soft);
+}
+html.cn-theme-zaru.dark .p-inputtext,
+html.cn-theme-zaru.dark .p-textarea,
+html.cn-theme-zaru.dark .p-select,
+html.cn-theme-zaru.dark .p-inputnumber-input {
+  background-color: #12141a;
+  border-color: rgb(255 255 255 / 0.09);
+}
+
+/* Toggle — accent-filled when on. */
+html.cn-theme-zaru .p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background: var(--cn-accent);
+}
+
+
+/* ── Transient toasts (useToast) — top-right notification area ──────────────
+   Moved from the faint bottom-right corner to the top-right, tucked under the
+   56px top bar near the notification bell, with a SOLID surface + strong shadow
+   so they're easy to focus (the default was semi-transparent and easy to miss). */
+.p-toast {
+  top: 4.5rem !important;
+  right: 1rem !important;
+  max-width: min(92vw, 26rem);
+}
+.p-toast .p-toast-message {
+  background: var(--cn-surface);
+  color: var(--cn-text);
+  border: 1px solid var(--cn-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 0.30);
+  backdrop-filter: none;
+  opacity: 1;
+}
+html.dark .p-toast .p-toast-message {
+  background: #12141a;
+  border-color: rgb(255 255 255 / 0.10);
+}
+/* Severity is carried by the ICON tint + a soft full-perimeter border wash —
+   NOT a colored left rail (the rail read as an off-system element pasted on
+   top of the design; severity stays glanceable without breaking the card
+   language every other surface uses). The `html` prefix lifts specificity
+   above the dark border-color override so the tint survives in dark mode. */
+html .p-toast .p-toast-message .p-toast-message-icon { flex-shrink: 0; }
+html .p-toast .p-toast-message.p-toast-message-success .p-toast-message-icon { color: #10b981; }
+html .p-toast .p-toast-message.p-toast-message-info    .p-toast-message-icon { color: var(--cn-accent, #3b82f6); }
+html .p-toast .p-toast-message.p-toast-message-warn    .p-toast-message-icon { color: #f59e0b; }
+html .p-toast .p-toast-message.p-toast-message-error   .p-toast-message-icon { color: #ef4444; }
+html .p-toast .p-toast-message.p-toast-message-success { border-color: rgb(16 185 129 / 0.35); }
+html .p-toast .p-toast-message.p-toast-message-info    { border-color: color-mix(in srgb, var(--cn-accent, #3b82f6) 35%, transparent); }
+html .p-toast .p-toast-message.p-toast-message-warn    { border-color: rgb(245 158 11 / 0.35); }
+html .p-toast .p-toast-message.p-toast-message-error   { border-color: rgb(239 68 68 / 0.40); }
+
+/* Toast motion — spring-ish slide in from the right, quiet fade up on leave.
+   These are the Vue transition hooks PrimeVue's Toast applies per message;
+   defining them here replaces the library defaults everywhere at once. */
+.p-toast .p-toast-message-enter-from {
+  opacity: 0;
+  transform: translateX(1.25rem) scale(0.97);
+}
+.p-toast .p-toast-message-enter-active {
+  transition: opacity 0.3s cubic-bezier(0.21, 1.02, 0.73, 1),
+              transform 0.3s cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+.p-toast .p-toast-message-leave-from { opacity: 1; }
+.p-toast .p-toast-message-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease, max-height 0.3s ease 0.1s, margin 0.3s ease 0.1s;
+}
+.p-toast .p-toast-message-leave-to {
+  opacity: 0;
+  transform: translateY(-0.375rem) scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .p-toast .p-toast-message-enter-active,
+  .p-toast .p-toast-message-leave-active { transition: opacity 0.15s ease; }
+  .p-toast .p-toast-message-enter-from,
+  .p-toast .p-toast-message-leave-to { transform: none; }
+}
+
+/* Indeterminate progress bar (server-side pulls/upgrades with no % available).
+   Used by the Applications and apt update cards. */
+@keyframes cn-indeterminate-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(420%); }
+}
+.cn-indeterminate { animation: cn-indeterminate-slide 1.2s ease-in-out infinite; }

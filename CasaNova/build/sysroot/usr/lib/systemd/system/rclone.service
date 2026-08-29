@@ -1,0 +1,29 @@
+[Unit]
+Description=rclone
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+# Wave 35-P: rcd was binding /var/run/rclone/rclone.sock under default
+# /var/run perms (which is tmpfs and gone on every reboot). Use
+# RuntimeDirectory= so systemd recreates the dir at boot with 0750 perms,
+# and drop the manual mkdir/rm shims.
+RuntimeDirectory=rclone
+RuntimeDirectoryMode=0750
+# --rc-no-auth + --rc-allow-origin "*" is OK only because the rcd is on
+# a unix socket, not a TCP port. Tighten the socket so non-root callers
+# cannot drive rclone — the socket inherits the runtime directory mode.
+ExecStart=/usr/bin/rclone rcd --rc-addr unix:///var/run/rclone/rclone.sock --rc-no-auth --rc-allow-origin "*"
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=no
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ReadWritePaths=/var/run/rclone /var/lib/casanova /var/lib/casaos /DATA /mnt /media
+
+[Install]
+WantedBy=multi-user.target

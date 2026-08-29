@@ -1,0 +1,17 @@
+[common]
+RuntimePath=/var/run/casaos
+
+[app]
+LogPath=/var/log/casaos
+LogSaveName=virt-management
+LogFileExt=log
+
+[server]
+# libvirt RPC unix socket. ZimaOS runs the modular libvirt daemons, so this
+# points at virtqemud's socket. For a monolithic libvirtd, use
+# /var/run/libvirt/libvirt-sock instead.
+LibvirtSocket=/var/run/libvirt/virtqemud-sock
+# Directory where installer ISOs / OS images are stored.
+ImageDir=/DATA/Downloads/ISO
+# Directory for auto-provisioned qcow2 VM disks (libvirt default image pool).
+DiskDir=/var/lib/libvirt/images

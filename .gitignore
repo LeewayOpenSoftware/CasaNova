@@ -1,0 +1,77 @@
+# CasaNova monorepo — what stays out of history, and why.
+# Written against the actual tree, not a template. Each block names its reason.
+
+# ── Build outputs ────────────────────────────────────────────────────
+# `make package` materialises ~10 GB of staged trees and update tarballs
+# here; all of it regenerates from source.
+/build/
+
+# Compiled service binaries dropped at module roots by `go build`.
+/CasaNova/CasaNova
+/CasaNova/casanova
+/CasaNova-Gateway/CasaNova-Gateway
+/CasaNova-Gateway/casanova-gateway
+/CasaNova-MessageBus/CasaNova-MessageBus
+/CasaNova-MessageBus/casanova-message-bus
+/CasaNova-AppManagement/CasaNova-AppManagement
+/CasaNova-AppManagement/casanova-app-management
+/CasaNova-UserService/CasaNova-UserService
+/CasaNova-UserService/casanova-user-service
+/CasaNova-LocalStorage/CasaNova-LocalStorage
+/CasaNova-LocalStorage/casanova-local-storage
+/CasaNova-JobManagement/CasaNova-JobManagement
+/CasaNova-JobManagement/casanova-job-management
+/CasaNova-Virt/CasaNova-Virt
+/CasaNova-Virt/casanova-virt
+/CasaNova-Driver/CasaNova-Driver
+/CasaNova-Driver/casanova-driver
+/CasaNova-CLI/CasaNova-CLI
+/CasaNova-CLI/casanova-cli
+
+# Frontend dependency and build output.
+/CasaNova-UI-v2/node_modules/
+/CasaNova-UI-v2/dist/
+
+# ── Reference material, not project source ───────────────────────────
+# GIFTABLES: an extracted ZimaOS image kept as wire-format ground truth
+# (5.7 GB of a third party's binaries — provenance, not our code).
+/GIFTABLES/
+
+# LEGACY: third-party projects kept for reading (Cosmos, the v1 UI, …).
+# Their licenses and history are their own; they do not belong in ours.
+/LEGACY/
+/portainer-develop/
+
+# CasaNova-AppLibrary is a sibling project with its own upstream history
+# and release cycle (app catalog, fork of CasaOS-AppStore). It remains an
+# independent repository beside this one.
+/CasaNova-AppLibrary/
+
+# Upstream CasaOS git histories of the forked modules, preserved on disk
+# for archaeology after the monorepo flattened them. See
+# docs/engineering/repository-baseline.md.
+/.upstream-git-archive/
+
+# ── Local state, machine-specific, or secret-bearing ─────────────────
+# Operator handoff notes and session-context archives: they contain live
+# credentials and full working transcripts. Operational material, never
+# history. (The 86 MB context tarball in here is also the only copy.)
+/docs/handoff/
+
+# Local agent/tooling state (root and nested); the permission list embeds
+# local commands and the launch config is machine-specific.
+.claude/
+
+# Per-machine frontend overrides (the LAN backend URL of one dev box).
+/CasaNova-UI-v2/.env.local
+
+# ── Ephemera ─────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.swp
+.DS_Store
+__pycache__/
+*.pyc
+
+# Assistant-harness skill definitions (session tooling, not project source).
+/.agents/

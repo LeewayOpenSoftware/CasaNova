@@ -1,0 +1,49 @@
+[Unit]
+Description=CasaNova Virtual Machine Management Service
+# Order after gateway + message-bus, and after whichever libvirt socket the host
+# provides so qemu:///system is reachable at start. ZimaOS ships the MODULAR
+# libvirt daemons (virtqemud); a stock Debian/Ubuntu host runs the MONOLITHIC
+# libvirtd. We soft-Want both (a missing one is ignored) and hard-Require
+# neither, so the unit starts on either topology — the service self-heals its
+# libvirt connection (socket activation spins the daemon up on first connect).
+After=casanova-gateway.service
+After=casanova-message-bus.service
+After=virtqemud.socket
+After=libvirtd.socket
+After=virtnetworkd.socket
+Wants=casanova-gateway.service
+Wants=casanova-message-bus.service
+Wants=libvirtd.socket
+Wants=virtqemud.socket
+PartOf=casanova-gateway.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=notify
+ExecStartPre=/usr/bin/casanova-virt -v
+ExecStart=/usr/bin/casanova-virt -c /etc/casaos/virt-management.conf
+Restart=always
+RestartSec=5
+
+# RuntimeDirectory MUST be shared with the rest of the stack and MUST be
+# preserved across restarts. Without RuntimeDirectoryPreserve=yes, restarting
+# this unit wipes the shared /run/casaos (management.url, message-bus.url, JWT
+# public key) and crash-loops every CasaNova service. This is the known
+# runtime-dir crash-loop fix (v18.0.9).
+RuntimeDirectory=casanova casaos
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+
+NoNewPrivileges=yes
+# The service shells out to qemu-img and talks to the libvirt socket; it must
+# read/write the image + disk directories and the libvirt runtime dir.
+ProtectSystem=full
+ProtectHome=no
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ReadWritePaths=/var/lib/casanova /var/lib/casaos /var/log/casanova /var/log/casaos /var/run/casanova /var/run/casaos /var/lib/libvirt /var/run/libvirt /DATA
+
+[Install]
+WantedBy=multi-user.target

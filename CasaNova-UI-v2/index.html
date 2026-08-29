@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      Wave 29 → 30: defense-in-depth CSP. The session lives in localStorage,
+      so any reflected/stored XSS that lands in the SPA can immediately
+      siphon access + refresh tokens. The CSP locks script execution to
+      same-origin, blocks plugin objects entirely, blocks framing
+      (clickjacking), and pins API/WS connections to the same origin
+      the gateway serves us from. 'unsafe-inline' is unavoidable for
+      <style> because Vue SFC scoped styles + the rest of the UI lib
+      ecosystem inject inline style tags at runtime — script-src does
+      NOT carry that escape hatch.
+
+      img-src: cdn.jsdelivr.net (selfhst/icons CDN for app icons),
+      icon.casaos.io (CasaOS upstream icon service), and
+      *.githubusercontent.com (GitHub-hosted icons). These are images
+      only — no script execution vector — and they power the entire
+      app tile icon chain in AppCard.vue.
+
+      frame-src http: https:: the Apps section embeds the box's own apps
+      as cross-origin iframes (http://LAN-IP:port). Without the directive,
+      frame-src falls back to default-src 'self' and the browser blocks
+      every one of those frames — measured, not assumed. Scheme sources
+      still refuse data:, blob: and javascript: framing.
+
+      frame-ancestors is deliberately ABSENT: browsers ignore it in a
+      <meta> policy (spec'd behaviour, plus a console error per page), so
+      it lived here as protection that did not protect. The real directive
+      is an HTTP header set by the gateway (static_route.go).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.jsdelivr.net https://icon.casaos.io https://*.githubusercontent.com; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src http: https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <title>CasaNova</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

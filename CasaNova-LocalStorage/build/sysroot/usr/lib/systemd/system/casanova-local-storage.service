@@ -1,0 +1,32 @@
+[Unit]
+Description=CasaNova Local Storage Service
+After=casanova-gateway.service
+After=casanova-message-bus.service
+Wants=casanova-gateway.service
+Wants=casanova-message-bus.service
+PartOf=casanova-gateway.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=notify
+ExecStartPre=/usr/bin/casanova-local-storage -v
+ExecStart=/usr/bin/casanova-local-storage -c /etc/casanova/local-storage.conf
+Restart=always
+RestartSec=5
+RuntimeDirectory=casanova casaos
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+# local-storage manipulates block devices via udev/lsblk and writes mount
+# points under /mnt — keep ProtectSystem=full (not strict) so /mnt remains
+# writable, and add /mnt + /media to ReadWritePaths.
+ProtectSystem=full
+ProtectHome=no
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ReadWritePaths=/var/lib/casanova /var/lib/casaos /var/log/casanova /var/log/casaos /var/run/casanova /var/run/casaos /mnt /media /DATA
+
+[Install]
+WantedBy=multi-user.target

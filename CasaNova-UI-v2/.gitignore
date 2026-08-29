@@ -1,0 +1,7 @@
+node_modules
+build
+dist
+.env.local
+*.log
+.vite
+.DS_Store

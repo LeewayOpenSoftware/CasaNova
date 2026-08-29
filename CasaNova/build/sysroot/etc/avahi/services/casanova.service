@@ -1,0 +1,18 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">CasaNova on %h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>85</port>
+    <txt-record>vendor=casanova</txt-record>
+    <txt-record>version=1.6.2</txt-record>
+    <txt-record>path=/v2/zimaos/device/info</txt-record>
+  </service>
+  <service>
+    <type>_zimaos._tcp</type>
+    <port>85</port>
+    <txt-record>vendor=casanova</txt-record>
+    <txt-record>version=1.6.2</txt-record>
+  </service>
+</service-group>
