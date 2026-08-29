@@ -251,7 +251,8 @@ onMounted(async () => {
         :src="tab.src"
         :title="tab.title"
         class="absolute inset-0 h-full w-full border-0 bg-white"
-        allow="fullscreen; clipboard-read; clipboard-write"
+        allow="fullscreen; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
         referrerpolicy="no-referrer"
       />
 

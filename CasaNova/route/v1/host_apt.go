@@ -359,11 +359,22 @@ func readAptCache() AptStatus {
 	return st
 }
 
+// writeAptCache publishes by rename: the background check goroutine writes
+// this file while GET /apt/updates reads it, and WriteFile's truncate-then-
+// write let a poll land mid-write, fail to parse, and silently render the
+// panel as "Total=0, no updates" while the check was still running. Rename
+// makes each read see either the old snapshot or the new one, never half.
 func writeAptCache(st AptStatus) {
-	if raw, err := json.MarshalIndent(st, "", "  "); err == nil {
-		os.MkdirAll("/var/lib/casanova", 0o755)
-		_ = os.WriteFile(aptCacheFile, raw, 0o644)
+	raw, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return
 	}
+	os.MkdirAll("/var/lib/casanova", 0o755)
+	tmp := aptCacheFile + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, aptCacheFile)
 }
 
 // rebootRequired reads the Debian/Ubuntu marker files.

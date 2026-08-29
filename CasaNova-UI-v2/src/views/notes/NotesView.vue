@@ -18,7 +18,7 @@
 // Manager, included in backups, and a real Obsidian vault if you point one at
 // that folder. No database, nothing that only CasaNova can read.
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -267,14 +267,20 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 // Leaving with unsaved text is the one way this feature can lose work.
-watch(dirty, (isDirty) => {
-  const handler = (e: BeforeUnloadEvent) => {
-    e.preventDefault()
-    e.returnValue = ''
-  }
-  if (isDirty) window.addEventListener('beforeunload', handler)
-  else window.removeEventListener('beforeunload', handler)
-})
+//
+// ONE stable handler, registered once, that consults `dirty` when the event
+// fires. The previous shape created a fresh closure inside the watch: adding
+// closure A on dirty=true and then removing closure B (never registered) on
+// dirty=false — so A stayed attached forever, the browser kept showing
+// "unsaved changes" after every successful save, and each edit/save cycle
+// leaked one more live listener.
+function warnIfDirty(e: BeforeUnloadEvent) {
+  if (!dirty.value) return
+  e.preventDefault()
+  e.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', warnIfDirty))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnIfDirty))
 
 onMounted(refresh)
 </script>
