@@ -35,6 +35,9 @@ func (r *APIRoute) GetActionTypes(c echo.Context) error {
 }
 
 func (r *APIRoute) RegisterActionTypes(c echo.Context) error {
+	if err := requireBusMutator(c); err != nil {
+		return err
+	}
 	var actionTypes []codegen.ActionType
 	if err := c.Bind(&actionTypes); err != nil {
 		message := err.Error()
@@ -77,6 +80,9 @@ func (r *APIRoute) GetActionType(c echo.Context, sourceID codegen.SourceID, name
 }
 
 func (r *APIRoute) TriggerAction(c echo.Context, sourceID codegen.SourceID, name codegen.EventName) error {
+	if err := requireBusMutator(c); err != nil {
+		return err
+	}
 	actionType, err := r.services.ActionTypeService.GetActionType(sourceID, name)
 	if err != nil {
 		message := err.Error()

@@ -448,6 +448,12 @@ func GetAlertHistory(ctx echo.Context) error {
 
 // POST /v1/sys/alerts/test/:id — Test a rule by generating a fake alert event.
 func PostAlertTest(ctx echo.Context) error {
+	// Same gate as every sibling alert mutation. A test-fire is not read-only:
+	// it sends real messages through the configured channel — an ungated
+	// endpoint here is a spam primitive wearing the box's identity.
+	if err := requirePerm(ctx, rbac.PermSystemConfig); err != nil {
+		return err
+	}
 	id := ctx.Param("id")
 
 	cfg, err := loadAlertConfig()

@@ -130,6 +130,12 @@ func GetNotifications(ctx echo.Context) error {
 // POST /v1/sys/notifications/read   body: {"ids": [1, 2, 3]}
 // POST /v1/sys/notifications/read   body: {"all": true}
 func PostMarkNotificationRead(ctx echo.Context) error {
+	// Reads stay at PermSystemRead (the dashboard widgets poll them), but
+	// mutating another principal's view of history is operator work:
+	// PermAppStart is the narrowest permission guests do not hold.
+	if err := requirePerm(ctx, rbac.PermAppStart); err != nil {
+		return err
+	}
 	svc := service.Notifications()
 	if svc == nil {
 		return ctx.JSON(http.StatusServiceUnavailable, model.Result{
@@ -176,6 +182,12 @@ func PostMarkNotificationRead(ctx echo.Context) error {
 //
 // DELETE /v1/sys/notifications/:id
 func DeleteNotification(ctx echo.Context) error {
+	// Reads stay at PermSystemRead (the dashboard widgets poll them), but
+	// mutating another principal's view of history is operator work:
+	// PermAppStart is the narrowest permission guests do not hold.
+	if err := requirePerm(ctx, rbac.PermAppStart); err != nil {
+		return err
+	}
 	svc := service.Notifications()
 	if svc == nil {
 		return ctx.JSON(http.StatusServiceUnavailable, model.Result{

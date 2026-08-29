@@ -49,28 +49,25 @@ import (
 // this layer.
 var validDevicePath = regexp.MustCompile(`^/dev/[a-zA-Z0-9]+$`)
 
-// validateDevicePath returns an error response if path is not a valid block device path.
+// validateDevicePath refuses anything that is not a bare /dev/<name> block
+// device path. It returns echo.NewHTTPError — NEVER ctx.JSON — because
+// ctx.JSON returns the serializer's error, which is nil on success, and a
+// caller doing `if err := validateDevicePath(...); err != nil { return err }`
+// would sail straight past the refusal into the destructive operation. That
+// is the gate-return defect class this codebase has hit three times before;
+// this function was the fourth.
 func validateDevicePath(ctx echo.Context, path string) error {
 	// Belt-and-suspenders: explicitly reject obviously hostile bytes
 	// before consulting the regex. The regex would catch them all, but
 	// an explicit check makes the failure mode obvious in audit logs.
 	if strings.ContainsAny(path, " \t\r\n;&|$`\\\"'<>*?()[]{}#~") || strings.ContainsRune(path, 0) {
-		return ctx.JSON(http.StatusBadRequest, model.Result{
-			Success: common_err.INVALID_PARAMS,
-			Message: "invalid device path: shell metacharacters are not allowed",
-		})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid device path: shell metacharacters are not allowed")
 	}
 	if strings.Contains(path, "..") {
-		return ctx.JSON(http.StatusBadRequest, model.Result{
-			Success: common_err.INVALID_PARAMS,
-			Message: "invalid device path: traversal sequences are not allowed",
-		})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid device path: traversal sequences are not allowed")
 	}
 	if !validDevicePath.MatchString(path) {
-		return ctx.JSON(http.StatusBadRequest, model.Result{
-			Success: common_err.INVALID_PARAMS,
-			Message: "invalid device path: must match /dev/[a-zA-Z0-9]+",
-		})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid device path: must match /dev/[a-zA-Z0-9]+")
 	}
 	return nil
 }

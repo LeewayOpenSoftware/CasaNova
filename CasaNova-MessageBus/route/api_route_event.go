@@ -38,6 +38,9 @@ func (r *APIRoute) GetEventTypes(ctx echo.Context) error {
 }
 
 func (r *APIRoute) RegisterEventTypes(ctx echo.Context) error {
+	if err := requireBusMutator(ctx); err != nil {
+		return err
+	}
 	var eventTypes []codegen.EventType
 	if err := ctx.Bind(&eventTypes); err != nil {
 		message := err.Error()
@@ -80,6 +83,9 @@ func (r *APIRoute) GetEventType(ctx echo.Context, sourceID codegen.SourceID, nam
 }
 
 func (r *APIRoute) PublishEvent(ctx echo.Context, sourceID codegen.SourceID, name codegen.EventName) error {
+	if err := requireBusMutator(ctx); err != nil {
+		return err
+	}
 	var properties map[string]string
 	body, err := io.ReadAll(io.LimitReader(ctx.Request().Body, 1<<20)) // 1MB max
 	if err != nil {
