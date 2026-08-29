@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -264,7 +265,39 @@ func (p *PowerOrchestrator) SetConfig(c PowerConfig) error {
 	// 0600: this file holds the shared Forza credential, so it must not be
 	// world-readable to every uid on the host (including any container that
 	// bind-mounts /var/lib/casanova).
-	return os.WriteFile(powerConfigFile, raw, 0o600)
+	return writeFileAtomic(powerConfigFile, raw, 0o600)
+}
+
+// writeFileAtomic publishes a file with rename(2) so a crash mid-write can
+// never leave a torn copy at the real path. The file this protects is the
+// one that decides whether UPS orchestration runs at all: a truncated JSON
+// here fails to parse at boot, the orchestrator starts unconfigured, and
+// nothing says so until the next power cut — the exact moment the loss is
+// unrecoverable. fsync before rename, because rename ordering without
+// content durability is how "atomic" writes still produce empty files after
+// power loss.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op after a successful rename
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // RedactedConfig is Config for callers that only need to READ it.

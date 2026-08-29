@@ -275,7 +275,12 @@ func (s *tuningService) persist(mutate func(*tuningState)) {
 	st.Version = 1
 	mutate(&st)
 	if raw, err := json.MarshalIndent(st, "", "  "); err == nil {
-		_ = os.WriteFile(tuningStateFile, raw, 0o600)
+		// Atomic: this file is the ONLY record of every persisted knob
+		// (governor, EPP, swappiness, spindown, sysctl...). os.WriteFile
+		// truncates first, so one crash mid-write erased all of it at once
+		// — and unlike a bad value, an absent file fails silently: Reapply
+		// simply applies nothing and the box quietly runs untuned.
+		_ = writeTuningFileAtomic(tuningStateFile, raw, 0o600)
 	}
 }
 
@@ -363,4 +368,36 @@ func meminfoField(key string) int64 {
 		}
 	}
 	return 0
+}
+
+// writeTuningFileAtomic publishes a file with rename(2) so a crash mid-write can
+// never leave a torn copy at the real path. The file this protects is the
+// one that decides whether UPS orchestration runs at all: a truncated JSON
+// here fails to parse at boot, the orchestrator starts unconfigured, and
+// nothing says so until the next power cut — the exact moment the loss is
+// unrecoverable. fsync before rename, because rename ordering without
+// content durability is how "atomic" writes still produce empty files after
+// power loss.
+func writeTuningFileAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op after a successful rename
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }

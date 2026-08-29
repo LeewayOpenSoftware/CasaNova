@@ -529,19 +529,46 @@ func writeArchiveEntry(ctx context.Context, target string, src io.Reader, perm o
 		// user and archiver's own behaviour here is an accident, not a rule.
 		perm = 0o644
 	}
-	// O_NOFOLLOW: if something already sits at target and it is a symlink, we
-	// must not write THROUGH it. The archive's own link entries are refused
-	// before we get here, but a link planted in the destination beforehand
-	// (any container with write access to /DATA can do that) would otherwise
-	// redirect an extracted member anywhere on the host, as root.
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, perm)
+	// Write beside, publish by rename. The previous shape opened target with
+	// O_TRUNC directly, which destroys the pre-existing file the moment the
+	// member starts — so a corrupt archive, a cancel, or a full disk left the
+	// user with a partial file where their old copy used to be. Extraction
+	// over existing data must be all-or-nothing per member: the old file
+	// survives every failure, and only a fully-written member replaces it.
+	//
+	// A symlink already sitting at target is refused outright, preserving the
+	// contract the old O_NOFOLLOW enforced (and the test that pins it): a
+	// planted link in the destination is an attack shape, and refusing loudly
+	// beats both writing through it and silently deleting it. ELOOP semantics
+	// via error, not via the kernel flag, because the actual write now goes
+	// to a fresh CreateTemp name where nothing can be planted.
+	if st, lerr := os.Lstat(target); lerr == nil && st.Mode()&os.ModeSymlink != 0 {
+		return 0, &os.PathError{Op: "extract", Path: target, Err: syscall.ELOOP}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".extract-*")
 	if err != nil {
 		return 0, err
 	}
-	defer out.Close()
+	cleanup := func() { tmp.Close(); os.Remove(tmp.Name()) }
+	if err := tmp.Chmod(perm); err != nil {
+		cleanup()
+		return 0, err
+	}
 
-	n, err := io.Copy(out, io.LimitReader(&stallReader{ctx: ctx, r: src, touch: touch}, limit))
-	return n, err
+	n, err := io.Copy(tmp, io.LimitReader(&stallReader{ctx: ctx, r: src, touch: touch}, limit))
+	if err != nil {
+		cleanup()
+		return n, err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return n, err
+	}
+	if err := os.Rename(tmp.Name(), target); err != nil {
+		os.Remove(tmp.Name())
+		return n, err
+	}
+	return n, nil
 }
 
 // stallReader makes a plain archive stream cancelable and reports progress.
