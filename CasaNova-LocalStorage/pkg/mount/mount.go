@@ -1,6 +1,11 @@
 package mount
 
-import "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/utils/command"
+import (
+	"context"
+	"time"
+
+	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/utils/command"
+)
 
 func Mount(source string, mountpoint string, fstype *string, options *string) error {
 	args := []string{"--verbose"}
@@ -15,7 +20,13 @@ func Mount(source string, mountpoint string, fstype *string, options *string) er
 
 	args = append(args, source, mountpoint)
 
-	if _, err := command.ExecuteCommand("mount", args...); err != nil {
+	// Bounded: mount against a dead NFS/SMB server otherwise blocks in the
+	// kernel forever, and this is reachable from an HTTP handler. 90s is
+	// generous for any healthy mount; a hung one is turned into an error
+	// instead of a stuck worker.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if _, err := command.ExecuteCommandContext(ctx, "mount", args...); err != nil {
 		return err
 	}
 
@@ -23,7 +34,9 @@ func Mount(source string, mountpoint string, fstype *string, options *string) er
 }
 
 func UmountByMountPoint(mountpoint string) error {
-	if _, err := command.ExecuteCommand("umount", "--force", "--verbose", "--quiet", mountpoint); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if _, err := command.ExecuteCommandContext(ctx, "umount", "--force", "--verbose", "--quiet", mountpoint); err != nil {
 		return err
 	}
 

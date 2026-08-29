@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/external"
 	"github.com/LeewayOpenSoftware/CasaNova-Driver/model"
@@ -126,7 +126,7 @@ func (g *gpuService) Select(load bool) (string, error) {
 	} else {
 		args = append(args, "--skip-modules")
 	}
-	out, err := exec.Command(bin, args...).CombinedOutput()
+	out, err := runBounded(120*time.Second, bin, args...)
 	if err != nil {
 		return string(out), fmt.Errorf("gpu driver-select: %w", err)
 	}

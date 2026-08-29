@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,9 +10,26 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Driver/model"
 )
+
+// runBounded executes a kernel-facing binary with both a deadline and a
+// WaitDelay. The deadline covers the ordinary slow cases; WaitDelay covers
+// the one CommandContext cannot: modprobe stuck in uninterruptible sleep
+// because the hardware wedged (a GPU fallen off the bus is the classic —
+// and the exact moment an operator starts poking driver buttons). SIGKILL
+// does nothing to D-state, so without WaitDelay the handler would inherit
+// the hang; with it, the HTTP worker is released and the orphan is left to
+// the kernel.
+func runBounded(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = 10 * time.Second
+	return cmd.CombinedOutput()
+}
 
 const procModules = "/proc/modules"
 
@@ -88,7 +106,7 @@ func (m *moduleService) List() ([]model.KernelModule, error) {
 // under updates/ or extra/ — i.e. installed via a driver package rather than
 // shipped in-tree. Best-effort: returns false when modinfo is unavailable.
 func moduleIsOutOfTree(name string) bool {
-	out, err := exec.Command("modinfo", "-F", "filename", name).Output()
+	out, err := runBounded(15*time.Second, "modinfo", "-F", "filename", name)
 	if err != nil {
 		return false
 	}
@@ -120,7 +138,7 @@ func (m *moduleService) Load(name string) error {
 	if !moduleNameRe.MatchString(name) {
 		return fmt.Errorf("invalid module name %q", name)
 	}
-	out, err := exec.Command("modprobe", normalizeModuleName(name)).CombinedOutput()
+	out, err := runBounded(60*time.Second, "modprobe", normalizeModuleName(name))
 	if err != nil {
 		return fmt.Errorf("modprobe %s: %v: %s", name, err, strings.TrimSpace(string(out)))
 	}
@@ -133,8 +151,8 @@ func (m *moduleService) Unload(name string) error {
 		return fmt.Errorf("invalid module name %q", name)
 	}
 	mod := normalizeModuleName(name)
-	if out, err := exec.Command("modprobe", "-r", mod).CombinedOutput(); err != nil {
-		if out2, err2 := exec.Command("rmmod", mod).CombinedOutput(); err2 != nil {
+	if out, err := runBounded(60*time.Second, "modprobe", "-r", mod); err != nil {
+		if out2, err2 := runBounded(60*time.Second, "rmmod", mod); err2 != nil {
 			return fmt.Errorf("unload %s: %v: %s", name, err2, strings.TrimSpace(string(out2)))
 		}
 		_ = out

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -329,7 +328,7 @@ func DeleteBackup(ctx echo.Context) error {
 
 // discoverApps shells out to docker to list running containers (app names).
 func discoverApps() []string {
-	out, err := exec.Command("docker", "ps", "--format", "{{.Names}}").Output()
+	out, err := execOutBounded(10*time.Second, "docker", "ps", "--format", "{{.Names}}")
 	if err != nil {
 		return []string{}
 	}

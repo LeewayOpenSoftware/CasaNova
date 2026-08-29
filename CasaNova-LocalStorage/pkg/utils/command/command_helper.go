@@ -199,14 +199,11 @@ func ExecLSBLK() ([]byte, error) {
 // probes that run on the boot path use the bounded helpers above instead.
 func ExecuteCommand(name string, arg ...string) ([]byte, error) {
 	cmd := exec2.Command(name, arg...)
-	println(cmd.String())
 
 	out, err := cmd.Output()
-	println(string(out))
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			message := string(exitError.Stderr)
-			println(message)
 			return nil, errors.New(message)
 		}
 		return nil, err

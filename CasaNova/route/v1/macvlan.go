@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
+	"time"
 )
 
 // Validation patterns for macvlan user input.
@@ -106,7 +106,7 @@ func dockerNetworkExists(name string) bool {
 		logger.Error("invalid network name", zap.String("name", name))
 		return false
 	}
-	out, err := exec.Command("docker", "network", "ls", "--filter", "name=^"+name+"$", "--format", "{{.Name}}").Output()
+	out, err := execOutBounded(10*time.Second, "docker", "network", "ls", "--filter", "name=^"+name+"$", "--format", "{{.Name}}")
 	if err != nil {
 		return false
 	}
@@ -115,7 +115,7 @@ func dockerNetworkExists(name string) bool {
 
 // listDockerContainers returns running container IDs and names.
 func listDockerContainers() []AppIPAssignment {
-	out, err := exec.Command("docker", "ps", "--format", "{{.ID}}|{{.Names}}|{{.Image}}").Output()
+	out, err := execOutBounded(10*time.Second, "docker", "ps", "--format", "{{.ID}}|{{.Names}}|{{.Image}}")
 	if err != nil {
 		return nil
 	}
@@ -139,7 +139,7 @@ func listDockerContainers() []AppIPAssignment {
 
 // getContainerNetworks returns which networks a container is connected to.
 func getContainerNetworks(containerID string) []string {
-	out, err := exec.Command("docker", "inspect", "--format", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", containerID).Output()
+	out, err := execOutBounded(10*time.Second, "docker", "inspect", "--format", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", containerID)
 	if err != nil {
 		return nil
 	}
@@ -152,9 +152,9 @@ func getContainerIP(containerID, networkName string) string {
 	if !dockerNetworkNameRe.MatchString(networkName) {
 		return ""
 	}
-	out, err := exec.Command("docker", "inspect", "--format",
+	out, err := execOutBounded(10*time.Second, "docker", "inspect", "--format",
 		fmt.Sprintf("{{(index .NetworkSettings.Networks \"%s\").IPAddress}}", networkName),
-		containerID).Output()
+		containerID)
 	if err != nil {
 		return ""
 	}
@@ -378,8 +378,7 @@ func PostMacvlanConfig(ctx echo.Context) error {
 
 		// Remove existing network if it exists (to update config)
 		if dockerNetworkExists(netName) {
-			cmd := exec.Command("docker", "network", "rm", netName)
-			if out, err := cmd.CombinedOutput(); err != nil {
+			if out, err := execRunBounded(30*time.Second, "docker", "network", "rm", netName); err != nil {
 				logger.Error("failed to remove existing macvlan network", zap.Error(err), zap.String("output", string(out)))
 				// Network might be in use — try to proceed without removing
 			}
@@ -402,8 +401,7 @@ func PostMacvlanConfig(ctx echo.Context) error {
 		}
 		args = append(args, netName)
 
-		cmd := exec.Command("docker", args...)
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := execRunBounded(30*time.Second, "docker", args...); err != nil {
 			return ctx.JSON(http.StatusInternalServerError, model.Result{
 				Success: common_err.SERVICE_ERROR,
 				Message: fmt.Sprintf("Failed to create macvlan network: %s — %s", err.Error(), strings.TrimSpace(string(out))),
@@ -418,10 +416,10 @@ func PostMacvlanConfig(ctx echo.Context) error {
 			// Disconnect all containers first
 			for _, a := range macvlanState.Assignments {
 				if a.Enabled {
-					exec.Command("docker", "network", "disconnect", "-f", netName, a.AppID).Run()
+					execRunBounded(30*time.Second, "docker", "network", "disconnect", "-f", netName, a.AppID) //nolint:errcheck — best-effort cleanup
 				}
 			}
-			exec.Command("docker", "network", "rm", netName).Run()
+			execRunBounded(30*time.Second, "docker", "network", "rm", netName) //nolint:errcheck — best-effort cleanup
 		}
 		macvlanState.Created = false
 		// Reset all assignments
@@ -484,7 +482,7 @@ func PutMacvlanApp(ctx echo.Context) error {
 					})
 				}
 				// Disconnect first if already connected
-				exec.Command("docker", "network", "disconnect", netName, a.AppID).Run()
+				execRunBounded(30*time.Second, "docker", "network", "disconnect", netName, a.AppID) //nolint:errcheck — best-effort cleanup
 
 				// Connect with static IP
 				connectArgs := []string{"network", "connect"}
@@ -493,8 +491,7 @@ func PutMacvlanApp(ctx echo.Context) error {
 				}
 				connectArgs = append(connectArgs, netName, a.AppID)
 
-				cmd := exec.Command("docker", connectArgs...)
-				if out, err := cmd.CombinedOutput(); err != nil {
+				if out, err := execRunBounded(30*time.Second, "docker", connectArgs...); err != nil {
 					return ctx.JSON(http.StatusInternalServerError, model.Result{
 						Success: common_err.SERVICE_ERROR,
 						Message: fmt.Sprintf("Failed to connect container: %s — %s", err.Error(), strings.TrimSpace(string(out))),
@@ -505,7 +502,7 @@ func PutMacvlanApp(ctx echo.Context) error {
 				macvlanState.Assignments[i].IPAddress = req.IPAddress
 			} else {
 				// Disconnect from macvlan
-				exec.Command("docker", "network", "disconnect", netName, a.AppID).Run()
+				execRunBounded(30*time.Second, "docker", "network", "disconnect", netName, a.AppID) //nolint:errcheck — best-effort cleanup
 				macvlanState.Assignments[i].Enabled = false
 				macvlanState.Assignments[i].IPAddress = ""
 			}
@@ -544,10 +541,10 @@ func DeleteMacvlanConfig(ctx echo.Context) error {
 		// Disconnect all containers first
 		for _, a := range macvlanState.Assignments {
 			if a.Enabled {
-				exec.Command("docker", "network", "disconnect", "-f", netName, a.AppID).Run()
+				execRunBounded(30*time.Second, "docker", "network", "disconnect", "-f", netName, a.AppID) //nolint:errcheck — best-effort cleanup
 			}
 		}
-		if out, err := exec.Command("docker", "network", "rm", netName).CombinedOutput(); err != nil {
+		if out, err := execRunBounded(30*time.Second, "docker", "network", "rm", netName); err != nil {
 			return ctx.JSON(http.StatusInternalServerError, model.Result{
 				Success: common_err.SERVICE_ERROR,
 				Message: fmt.Sprintf("Failed to remove network: %s — %s", err.Error(), string(out)),

@@ -291,7 +291,18 @@ func runDD(mountPoint, mode, size string) (BenchmarkResult, error) {
 	writeMBps := parseDDSpeed(string(wOut))
 
 	// Drop cache before read so we measure real disk IO.
-	exec.Command("sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches").Run()
+	func() {
+		// `sync` flushes EVERY filesystem, including whatever disk is being
+		// benchmarked precisely because it misbehaves — a wedged one parks
+		// sync in D-state. The write/read phases around this are already
+		// deadline-bound; without a bound here the whole benchmark handler
+		// could still hang on the one unbounded step between them.
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches")
+		cmd.WaitDelay = 5 * time.Second
+		_ = cmd.Run()
+	}()
 
 	readCmd := exec.CommandContext(ddCtx, "dd", "if="+scratch, "of=/dev/null", "bs=1M", "status=progress")
 	rOut, err := readCmd.CombinedOutput()

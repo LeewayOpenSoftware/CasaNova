@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
@@ -129,7 +130,7 @@ func probeNUT(host, name string) UPSInfo {
 		if host != "" {
 			listArgs = append(listArgs, host)
 		}
-		out, err := exec.Command("upsc", listArgs...).Output()
+		out, err := execOutBounded(15*time.Second, "upsc", listArgs...)
 		if err != nil {
 			info.Error = "cannot reach upsd" + hostSuffix(host)
 			return info
@@ -147,7 +148,7 @@ func probeNUT(host, name string) UPSInfo {
 	if host != "" {
 		target = name + "@" + host
 	}
-	vals, err := exec.Command("upsc", target).Output()
+	vals, err := execOutBounded(15*time.Second, "upsc", target)
 	if err != nil {
 		info.Error = "cannot query " + target
 		return info
@@ -172,7 +173,7 @@ func hostSuffix(host string) string {
 
 func probeAPC() UPSInfo {
 	info := UPSInfo{Tool: "apcupsd"}
-	out, err := exec.Command("apcaccess", "status").Output()
+	out, err := execOutBounded(15*time.Second, "apcaccess", "status")
 	if err != nil {
 		return info
 	}
