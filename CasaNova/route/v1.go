@@ -146,18 +146,7 @@ func InitV1Router() http.Handler {
 
 			return claims, nil
 		},
-		TokenLookupFuncs: []echo_middleware.ValuesExtractor{
-			func(ctx echo.Context) ([]string, error) {
-				auth := ctx.Request().Header.Get(echo.HeaderAuthorization)
-				if len(auth) > 7 && strings.EqualFold(auth[:7], "bearer ") {
-					return []string{auth[7:]}, nil
-				}
-				if len(auth) > 0 {
-					return []string{auth}, nil
-				}
-				return []string{ctx.QueryParam("token")}, nil
-			},
-		},
+		TokenLookupFuncs: []echo_middleware.ValuesExtractor{wsTokenExtractor},
 	}))
 	{
 		// OAuth callback for cloud storage. Still outside any auth gate by
@@ -659,26 +648,32 @@ func strictJWT() echo.MiddlewareFunc {
 			commonmw.SetRoleInContext(c, claims.Role, claims.ID)
 			return claims, nil
 		},
-		TokenLookupFuncs: []echo_middleware.ValuesExtractor{
-			func(ctx echo.Context) ([]string, error) {
-				auth := ctx.Request().Header.Get(echo.HeaderAuthorization)
-				if len(auth) > 7 && strings.EqualFold(auth[:7], "bearer ") {
-					return []string{auth[7:]}, nil
-				}
-				if len(auth) > 0 {
-					return []string{auth}, nil
-				}
-				// WebSocket endpoints: browsers cannot send custom headers
-				// during the WS handshake, so accept the JWT from a
-				// dedicated ?jwt= param. The SSH session token stays in
-				// ?token= and is consumed by WsSsh — using the same param
-				// name for both would make strictJWT try to validate the
-				// hex session ID as a JWT, which always fails.
-				if jwtParam := ctx.QueryParam("jwt"); jwtParam != "" {
-					return []string{jwtParam}, nil
-				}
-				return []string{ctx.QueryParam("token")}, nil
-			},
-		},
+		TokenLookupFuncs: []echo_middleware.ValuesExtractor{wsTokenExtractor},
 	})
+}
+
+// wsTokenExtractor reads the bearer token from the Authorization header,
+// falling back to the query string for WebSocket handshakes (browsers cannot
+// set headers there).
+//
+// ONE function, shared by the v1Group middleware and strictJWT. They were
+// separate inline literals and drifted: strictJWT learned to read ?jwt= while
+// the group extractor still read only ?token=, so /v1/sys/wsssh — which sends
+// ?jwt=<JWT>&token=<opaque ssh session id> — had its hex session id handed to
+// jwt.Validate and 401'd at the group before strictJWT ever ran. The
+// integrated terminal died at exactly that point, with the route-level fix
+// sitting unreachable behind a group-level refusal. Sharing one function is
+// what stops them drifting again; ws_token_extractor_test.go pins it.
+func wsTokenExtractor(ctx echo.Context) ([]string, error) {
+	auth := ctx.Request().Header.Get(echo.HeaderAuthorization)
+	if len(auth) > 7 && strings.EqualFold(auth[:7], "bearer ") {
+		return []string{auth[7:]}, nil
+	}
+	if len(auth) > 0 {
+		return []string{auth}, nil
+	}
+	if jwtParam := ctx.QueryParam("jwt"); jwtParam != "" {
+		return []string{jwtParam}, nil
+	}
+	return []string{ctx.QueryParam("token")}, nil
 }
