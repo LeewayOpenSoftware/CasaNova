@@ -678,9 +678,9 @@ function onClick() {
           :class="iconPack.appIconStyle === 'transparent' ? '' : '[filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.35))]'"
         >{{ app.initial }}</span>
       </div>
-      <!-- Status LED — a slim bar in the gutter beneath the tile.
-           Suppressed on preview stubs: the ribbon below claims the same
-           strip, and a stub has no container whose state to report. -->
+      <!-- Status LED — a slim vertical bar down the tile's left edge.
+           Suppressed on preview stubs: those have no container whose state
+           there would be to report. -->
       <span
         v-if="!app.preview"
         :class="['cn-app-led', statusDotClass]"
