@@ -59,6 +59,13 @@ func (a *AppManagement) MyComposeAppList(ctx echo.Context) error {
 	listCtx, cancel := context.WithTimeout(ctx.Request().Context(), 15*time.Second)
 	defer cancel()
 
+	// Serve the recent listing when nothing has changed: see
+	// compose_app_list_cache.go for why the cache holds the finished value
+	// rather than the parsed apps.
+	if cached, ok := cachedComposeAppList(); ok {
+		return ctx.JSON(http.StatusOK, codegen.ComposeAppListOK{Data: &cached})
+	}
+
 	// Never check for updates during the list call — it hits Docker
 	// registries synchronously per app and can take minutes when DNS
 	// is slow or unavailable.
@@ -71,6 +78,7 @@ func (a *AppManagement) MyComposeAppList(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, codegen.ResponseInternalServerError{Message: &message})
 	}
 
+	storeComposeAppList(composeAppsWithStoreInfo)
 	return ctx.JSON(http.StatusOK, codegen.ComposeAppListOK{
 		Data: &composeAppsWithStoreInfo,
 	})
@@ -184,6 +192,14 @@ func (a *AppManagement) IsNewComposeUncontrolled(newComposeApp *service.ComposeA
 }
 
 func (a *AppManagement) ApplyComposeAppSettings(ctx echo.Context, id codegen.ComposeAppID, params codegen.ApplyComposeAppSettingsParams) error {
+	// Anything that changes an app must drop the cached listing, or the next
+	// poll reports the world as it was up to listCacheTTL ago — a user who
+	// clicks stop would watch the app stay "running". Deferred so it fires on
+	// every exit path, including the rejections that did nothing: dropping a
+	// cache that was still valid costs one extra parse, keeping a stale one
+	// costs the user's trust in the display.
+	defer invalidateComposeAppListCache()
+
 	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
 		return err
 	}
@@ -380,6 +396,14 @@ func (a *AppManagement) ApplyComposeAppSettings(ctx echo.Context, id codegen.Com
 }
 
 func (a *AppManagement) InstallComposeApp(ctx echo.Context, params codegen.InstallComposeAppParams) error {
+	// Anything that changes an app must drop the cached listing, or the next
+	// poll reports the world as it was up to listCacheTTL ago — a user who
+	// clicks stop would watch the app stay "running". Deferred so it fires on
+	// every exit path, including the rejections that did nothing: dropping a
+	// cache that was still valid costs one extra parse, keeping a stale one
+	// costs the user's trust in the display.
+	defer invalidateComposeAppListCache()
+
 	if err := requirePerm(ctx, rbac.PermAppInstall); err != nil {
 		return err
 	}
@@ -486,6 +510,14 @@ func (a *AppManagement) InstallComposeApp(ctx echo.Context, params codegen.Insta
 }
 
 func (a *AppManagement) UninstallComposeApp(ctx echo.Context, id codegen.ComposeAppID, params codegen.UninstallComposeAppParams) error {
+	// Anything that changes an app must drop the cached listing, or the next
+	// poll reports the world as it was up to listCacheTTL ago — a user who
+	// clicks stop would watch the app stay "running". Deferred so it fires on
+	// every exit path, including the rejections that did nothing: dropping a
+	// cache that was still valid costs one extra parse, keeping a stale one
+	// costs the user's trust in the display.
+	defer invalidateComposeAppListCache()
+
 	if err := requirePerm(ctx, rbac.PermAppInstall); err != nil {
 		return err
 	}
@@ -531,6 +563,14 @@ func (a *AppManagement) UninstallComposeApp(ctx echo.Context, id codegen.Compose
 }
 
 func (a *AppManagement) UpdateComposeApp(ctx echo.Context, id codegen.ComposeAppID, params codegen.UpdateComposeAppParams) error {
+	// Anything that changes an app must drop the cached listing, or the next
+	// poll reports the world as it was up to listCacheTTL ago — a user who
+	// clicks stop would watch the app stay "running". Deferred so it fires on
+	// every exit path, including the rejections that did nothing: dropping a
+	// cache that was still valid costs one extra parse, keeping a stale one
+	// costs the user's trust in the display.
+	defer invalidateComposeAppListCache()
+
 	if err := requirePerm(ctx, rbac.PermAppInstall); err != nil {
 		return err
 	}
@@ -593,6 +633,14 @@ func (a *AppManagement) UpdateComposeApp(ctx echo.Context, id codegen.ComposeApp
 }
 
 func (a *AppManagement) SetComposeAppStatus(ctx echo.Context, id codegen.ComposeAppID) error {
+	// Anything that changes an app must drop the cached listing, or the next
+	// poll reports the world as it was up to listCacheTTL ago — a user who
+	// clicks stop would watch the app stay "running". Deferred so it fires on
+	// every exit path, including the rejections that did nothing: dropping a
+	// cache that was still valid costs one extra parse, keeping a stale one
+	// costs the user's trust in the display.
+	defer invalidateComposeAppListCache()
+
 	if err := requirePerm(ctx, rbac.PermAppStart); err != nil {
 		return err
 	}
