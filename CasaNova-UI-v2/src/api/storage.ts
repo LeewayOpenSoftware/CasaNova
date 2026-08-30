@@ -293,10 +293,39 @@ export interface ResizeResult {
   output: string
 }
 
+// Both operations below shell out to a tool that works on a real disk, and
+// both inherited the shared client's 10 second timeout — which is correct for
+// the reads that make up most of this file and wrong for these two.
+//
+// What that looked like: axios aborted at 10s and rendered "timeout of 10000ms
+// exceeded" in the dialog. The benchmark had already started and went on to
+// finish on the server; only the answer was thrown away. The message says
+// nothing about the disk, so there was no way to tell a slow drive from a
+// broken feature — and the same shape of bug had already cost this codebase a
+// download that appeared to run five times.
+//
+// The rule these follow: the client limit must EXCEED the server's own bound.
+// The server kills a wedged fio and reports why; if axios gives up first, that
+// real diagnosis is replaced by a generic timeout, and the useful error is the
+// one nobody sees. Keep these above the ceilings in
+// CasaNova-LocalStorage/route/v1/disk_ops.go.
+
+/** Server bounds a quick run at 90s and a deep run at 3min (two fio phases,
+ *  plus laying out the scratch file). These sit above both. */
+const BENCHMARK_TIMEOUT_MS: Record<'quick' | 'deep', number> = {
+  quick: 120_000,
+  deep: 210_000,
+}
+
+/** resize2fs / xfs_growfs on a multi-terabyte filesystem is minutes of real
+ *  work, and the handler bounds itself at 10 minutes. */
+const RESIZE_TIMEOUT_MS = 11 * 60_000
+
 export async function resizeDisk(device: string): Promise<ResizeResult> {
   const res = await client.post<{ success: number; data: ResizeResult }>(
     '/v1/storage/resize',
     { path: device },
+    { timeout: RESIZE_TIMEOUT_MS },
   )
   return res.data.data
 }
@@ -319,6 +348,7 @@ export async function benchmarkDisk(
   const res = await client.post<{ success: number; data: BenchmarkResult }>(
     '/v1/storage/benchmark',
     { path: device, mode },
+    { timeout: BENCHMARK_TIMEOUT_MS[mode] },
   )
   return res.data.data
 }

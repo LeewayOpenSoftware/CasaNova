@@ -368,12 +368,20 @@ func runFio(mountPoint, mode, size string) (BenchmarkResult, error) {
 	defer exec.Command("rm", "-f", scratch).Run()
 
 	// fio's --runtime caps in-flight IO, but the binary itself can wedge
-	// (e.g. waiting for a dying disk to ACK). Bound the whole exec at a
-	// ceiling well above two nominal phases so a stuck device can't pin the
-	// handler indefinitely.
-	runtimeSec := map[string]string{"quick": "5", "deep": "20"}[mode]
-	hardCap := 5 * time.Minute // sanity ceiling, covers both phases
-	cmdCtx, cancel := context.WithTimeout(context.Background(), hardCap)
+	// (e.g. waiting for a dying disk to ACK), so the exec is bounded too.
+	//
+	// The bound is proportional to the mode rather than a blanket ceiling.
+	// Two phases at runtimeSec each, plus fio laying out the scratch file and
+	// opening it O_DIRECT, is the real cost; the slack above that is for a
+	// slow spinning disk, not for a dead one. A flat five minutes was both too
+	// loose to bound a wedged device usefully and far longer than any caller
+	// is willing to wait — see BENCHMARK_TIMEOUT_MS in the UI's storage API,
+	// which has to exceed whatever this is.
+	runtimeSec, ceiling := "5", 90*time.Second
+	if mode == "deep" {
+		runtimeSec, ceiling = "20", 3*time.Minute
+	}
+	cmdCtx, cancel := context.WithTimeout(context.Background(), ceiling)
 	defer cancel()
 
 	// Sequential: 1 MiB blocks, modest depth. This is the number that answers
