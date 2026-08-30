@@ -141,7 +141,7 @@ func TestPublishEventDoesNotReport200WhenTheEventIsNotAccepted(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader([]byte(`{"foo":"bar"}`)))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
-	assert.NilError(t, apiRoute.PublishEvent(e.NewContext(req, rec), "b11", "b11:event:test"))
+	assert.NilError(t, apiRoute.PublishEvent(e.NewContext(asInternalPublisher(req), rec), "b11", "b11:event:test"))
 	assert.Equal(t, rec.Code, http.StatusServiceUnavailable)
 }
 
@@ -179,6 +179,6 @@ func TestPublishEventStillReports200WhenTheDispatcherAcceptsIt(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader([]byte(`{"foo":"bar"}`)))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
-	assert.NilError(t, apiRoute.PublishEvent(e.NewContext(req, rec), "b11", "b11:event:test"))
+	assert.NilError(t, apiRoute.PublishEvent(e.NewContext(asInternalPublisher(req), rec), "b11", "b11:event:test"))
 	assert.Equal(t, rec.Code, http.StatusOK, "body: %s", rec.Body.String())
 }

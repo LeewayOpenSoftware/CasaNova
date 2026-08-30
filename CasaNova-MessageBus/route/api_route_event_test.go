@@ -16,6 +16,15 @@ import (
 	"gotest.tools/assert"
 )
 
+// asInternalPublisher stamps a test request as having arrived over the
+// internal unix socket — the identity every in-house publisher actually has.
+// The mutator gate added to the publish/register handlers refuses anything
+// else without PermSystemConfig, and these tests exercise routing mechanics,
+// not authorization (mutator_gate_test.go owns that truth table).
+func asInternalPublisher(req *http.Request) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), unixSocketCtxKey, true))
+}
+
 var json2 = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func TestEventRoute(t *testing.T) {
@@ -55,7 +64,7 @@ func TestEventRoute(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/", bytes.NewReader(eventTypesJSON))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
-	err = apiRoute.RegisterEventTypes(e.NewContext(req, rec))
+	err = apiRoute.RegisterEventTypes(e.NewContext(asInternalPublisher(req), rec))
 	assert.NilError(t, err)
 	assert.Equal(t, rec.Code, http.StatusOK)
 
