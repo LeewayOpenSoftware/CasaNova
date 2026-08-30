@@ -16,10 +16,16 @@ const (
 // install on 5.0.0.devN can still apply this build cleanly.
 const VERSION = "0.1.0"
 
-// DISPLAY_VERSION is the user-facing release label shown on the About
-// page and update notifications. Calendar-versioned YY.MM derived from
-// the release month.
-const DISPLAY_VERSION = "26.06"
+// DISPLAY_VERSION is the user-facing release label (calendar YY.MM).
+//
+// NOTHING reads this constant. The label users actually see comes from the
+// Makefile's DISPLAY_VERSION, injected into the frontend build as
+// VITE_DISPLAY_VERSION — and the two had drifted apart (26.06 here, 26.08
+// there, with 26.07 hardcoded as the UI's fallback). Three copies of one
+// fact, none of them agreeing, is how a release ships announcing the wrong
+// version. Kept in step with the Makefile and marked as the mirror it is;
+// the Makefile is the source.
+const DISPLAY_VERSION = "26.10"
 
 // CHANNEL is the default release channel. Overridden by -ldflags.
 // Values: "dev", "stable", "beta"

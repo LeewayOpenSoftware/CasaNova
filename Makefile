@@ -23,9 +23,14 @@ GOARCH ?= amd64
 # pipeline could not ship anything at all.
 BASE_VERSION ?= 18.6.2
 # Display version — user-facing label on the About page (YY.MM)
-DISPLAY_VERSION ?= 26.08
+DISPLAY_VERSION ?= 26.10
 # Release channel: dev (development), st (stable), beta
-CHANNEL ?= dev
+# This is release/26.10: the line stabilising toward CasaNova 26.10.
+# BASE_VERSION deliberately stays 18.6.2 — the internal build version is a
+# separate axis from the public label (see docs/development/release-strategy.md),
+# and renumbering a line that is already installed on the test box buys nothing
+# while risking the updater's downgrade guard.
+CHANNEL ?= beta
 # Build number within this channel (auto-incremented or set by CI)
 BUILD_NUM ?= 1
 # Compile timestamp: DDMMYYHHmm

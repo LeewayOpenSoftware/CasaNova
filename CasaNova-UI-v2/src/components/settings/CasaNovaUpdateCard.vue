@@ -27,7 +27,7 @@ const selectedPackagePath = ref<string | null>(null)
 const uploadProgress = ref<{ loaded: number; total: number; name: string } | null>(null)
 const rollbackInFlight = ref(false)
 const buildVersion = ref<string>('—')
-const displayVersion = ref<string>(import.meta.env.VITE_DISPLAY_VERSION || '26.07')
+const displayVersion = ref<string>(import.meta.env.VITE_DISPLAY_VERSION || '26.10')
 const buildChannel = computed(() => updates.status.channel || 'dev')
 
 async function onRollback() {

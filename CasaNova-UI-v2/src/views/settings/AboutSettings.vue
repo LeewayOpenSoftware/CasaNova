@@ -16,7 +16,7 @@ const { t } = useI18n()
 const updates = useUpdatesStore()
 
 const buildVersion = ref<string>('—')
-const displayVersion = ref<string>(import.meta.env.VITE_DISPLAY_VERSION || '26.07')
+const displayVersion = ref<string>(import.meta.env.VITE_DISPLAY_VERSION || '26.10')
 const buildChannel = computed(() => updates.status.channel || 'dev')
 
 onMounted(async () => {
