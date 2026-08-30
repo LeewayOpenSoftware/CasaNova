@@ -354,6 +354,19 @@ func WriteToPath(data []byte, path, name string) error {
 // accidentally widen permissions, regardless of process umask. Read
 // bits for group/other are preserved when the caller asked for them —
 // callers that need 0o600 must request it explicitly.
+// WriteToFullPath writes data and publishes it with rename(2). The temp file
+// has a RANDOM name (CreateTemp), not the old fixed fullPath+".tmp":
+//
+//   - the fixed name was pre-plantable. A symlink dropped at "<dest>.tmp" was
+//     opened WITHOUT O_EXCL and followed, so an attacker who could guess a
+//     path CasaNova would write (PutFileContent's directories are
+//     user-controlled) redirected the write anywhere on the host, as root.
+//   - two concurrent writers to the same fullPath shared that one tmp name
+//     and clobbered each other's bytes, publishing a torn file.
+//
+// The destination itself is still replaced by rename, exactly as before — a
+// symlink AT the destination is replaced (not written through), which is the
+// long-standing behaviour every caller already expects.
 func WriteToFullPath(data []byte, fullPath string, perm fs.FileMode) error {
 	perm = perm &^ 0o022
 	dir := filepath.Dir(fullPath)
@@ -361,12 +374,22 @@ func WriteToFullPath(data []byte, fullPath string, perm fs.FileMode) error {
 		return err
 	}
 
-	tmpPath := fullPath + ".tmp"
-	file, err := os.OpenFile(tmpPath,
-		os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
-		perm,
-	)
+	// Temp in the SAME directory so the rename stays same-filesystem atomic
+	// (a temp in /tmp would make rename a cross-device copy, defeating the
+	// point). Random name closes the plant-and-clobber holes above.
+	file, err := os.CreateTemp(dir, ".write-*")
 	if err != nil {
+		return err
+	}
+	tmpPath := file.Name()
+
+	// CreateTemp forces 0600; restore the caller's intended mode. PutFileContent
+	// passes the existing file's mode (setuid/setgid bits included), and the
+	// old code preserved it via the OpenFile perm arg — so this must too, or an
+	// executable/sgid file silently loses its bits on every edit.
+	if err := file.Chmod(perm); err != nil {
+		file.Close()
+		os.Remove(tmpPath)
 		return err
 	}
 
@@ -396,8 +419,10 @@ func WriteToFullPath(data []byte, fullPath string, perm fs.FileMode) error {
 }
 
 // SpliceFiles concatenates chunk files produced by a chunked upload into a
-// single destination file, deleting each chunk immediately after it has
-// been read. This keeps peak disk usage at ~1x file size instead of 2x.
+// single destination file. The chunks are removed only after the assembled
+// file has been synced and renamed into place — they are the upload's resume
+// state, and deleting them any earlier means one crash mid-splice loses both
+// the chunks and the partial result (see the comment at the deletion site).
 func SpliceFiles(dir, path string, length int, startPoint int) error {
 	fullPath := path
 	tmpPath := fullPath + ".tmp"
@@ -417,6 +442,16 @@ func SpliceFiles(dir, path string, length int, startPoint int) error {
 
 	bufferedWriter := bufio.NewWriter(file)
 
+	// Chunks are deleted only AFTER the assembled file has been synced and
+	// renamed into place. The previous shape deleted each chunk the moment
+	// it was consumed — to avoid holding 2x the size on disk — which meant a
+	// crash, a full disk at Flush, or any late error destroyed both sides at
+	// once: the chunks were gone and the error path removed the partial tmp
+	// too. An interrupted upload the user can RESUME (the chunks are the
+	// resume state) became an upload they must redo from byte zero. The 2x
+	// window is the price of never losing both copies; it lasts only for the
+	// duration of the splice.
+	chunkPaths := make([]string, 0, length)
 	for i := 0; i < length+startPoint-1; i++ {
 		chunkPath := dir + "/" + strconv.Itoa(i+startPoint)
 		data, err := os.ReadFile(chunkPath)
@@ -428,13 +463,7 @@ func SpliceFiles(dir, path string, length int, startPoint int) error {
 			os.Remove(tmpPath)
 			return err
 		}
-		// Delete the chunk right after reading it — no need to hold 2x
-		// the file size on disk while the splice is running.
-		if err := os.Remove(chunkPath); err != nil {
-			// Non-fatal: we've already consumed the data, the worst case
-			// is a leftover chunk file that the startup sweep will clean.
-			log.Printf("SpliceFiles: failed to remove %s: %v", chunkPath, err)
-		}
+		chunkPaths = append(chunkPaths, chunkPath)
 	}
 
 	if err := bufferedWriter.Flush(); err != nil {
@@ -447,7 +476,19 @@ func SpliceFiles(dir, path string, length int, startPoint int) error {
 	}
 	// Close before rename so the fd is released on all platforms.
 	file.Close()
-	return os.Rename(tmpPath, fullPath)
+	if err := os.Rename(tmpPath, fullPath); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	// The assembled file is in place; the chunks are now redundant.
+	for _, chunkPath := range chunkPaths {
+		if err := os.Remove(chunkPath); err != nil {
+			// Non-fatal: worst case is leftover chunks the startup sweep
+			// cleans; the user's data is already safe.
+			log.Printf("SpliceFiles: failed to remove %s: %v", chunkPath, err)
+		}
+	}
+	return nil
 }
 
 func GetCompressionAlgorithm(t string) (string, archiver.Writer, error) {

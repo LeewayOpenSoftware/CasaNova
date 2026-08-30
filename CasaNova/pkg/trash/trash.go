@@ -119,9 +119,37 @@ func (m *Manager) Trash(srcPath string) (*Entry, error) {
 	baseName := filepath.Base(absPath)
 	trashedName := pickUniqueName(filesDir, infoDir, baseName)
 
+	// Order: metadata FIRST, then the rename. The two steps cannot be one
+	// atomic operation, so a crash between them must land on the recoverable
+	// side. The old order (rename, then info) parked the crash on the wrong
+	// one: the file was already in files/ with no .trashinfo, so List —
+	// which enumerates info/ — could never show it and Restore could never
+	// find it. Invisible, unrestorable, and nothing ever said so. With info
+	// first, the crash leaves a .trashinfo pointing at a file that never
+	// moved: List detects exactly that (file missing from files/), skips it
+	// and removes the stale info. One side is cleanable garbage; the other
+	// was silent data loss.
+	deletionTime := time.Now()
+	infoContent := fmt.Sprintf("[Trash Info]\nPath=%s\nDeletionDate=%s\n",
+		absPath,
+		deletionTime.Format("2006-01-02T15:04:05"),
+	)
+	infoPath := filepath.Join(infoDir, trashedName+".trashinfo")
+	if err := writeInfoDurably(infoPath, infoContent); err != nil {
+		return nil, fmt.Errorf("write trashinfo: %w", err)
+	}
+
+	if trashCrashWindowHook != nil {
+		trashCrashWindowHook()
+	}
+
 	// Move the file (rename on same filesystem = atomic, near-instant).
 	destPath := filepath.Join(filesDir, trashedName)
 	if err := os.Rename(absPath, destPath); err != nil {
+		// Nothing moved: removing the just-written info restores the world
+		// exactly as it was. (Under the old order this compensation was a
+		// second rename that could itself fail, stranding the file.)
+		_ = os.Remove(infoPath)
 		// If the rename fails with EXDEV (cross-device), the caller
 		// passed a path that isn't actually on this filesystem. That's
 		// a bug in ensureTrashDir — report it clearly.
@@ -131,20 +159,6 @@ func (m *Manager) Trash(srcPath string) (*Entry, error) {
 			}
 		}
 		return nil, fmt.Errorf("move to trash: %w", err)
-	}
-
-	// Write the .trashinfo metadata file.
-	deletionTime := time.Now()
-	infoContent := fmt.Sprintf("[Trash Info]\nPath=%s\nDeletionDate=%s\n",
-		absPath,
-		deletionTime.Format("2006-01-02T15:04:05"),
-	)
-	infoPath := filepath.Join(infoDir, trashedName+".trashinfo")
-	if err := os.WriteFile(infoPath, []byte(infoContent), 0o644); err != nil {
-		// If we can't write the metadata, restore the file to its original location
-		// so the user isn't left with an untracked file in trash.
-		_ = os.Rename(destPath, absPath)
-		return nil, fmt.Errorf("write trashinfo: %w", err)
 	}
 
 	return &Entry{
@@ -194,6 +208,15 @@ func (m *Manager) List(searchRoots []string) ([]Entry, error) {
 			entry, err := readEntry(trashRoot, f.Name())
 			if err != nil {
 				continue // skip malformed entries
+			}
+			// A .trashinfo whose file never arrived is the residue of a
+			// crash between metadata and rename (metadata is written
+			// first, on purpose — see MoveToTrash). The original file
+			// never moved, so this record describes nothing: showing it
+			// would offer a Restore that must fail. Clean it and move on.
+			if _, err := os.Lstat(filepath.Join(trashRoot, "files", entry.TrashedName)); err != nil {
+				_ = os.Remove(filepath.Join(infoDir, f.Name()))
+				continue
 			}
 			entries = append(entries, *entry)
 		}
@@ -316,7 +339,7 @@ func (m *Manager) Purge(searchRoots []string) (int, error) {
 // ensureTrashDir finds the mount point containing filePath and creates
 // the trash directory structure there. Returns the path to .Trash-casanova/.
 func ensureTrashDir(filePath string) (string, error) {
-	mountPoint, err := findMountpoint(filePath)
+	mountPoint, err := findMountpointFn(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -567,4 +590,34 @@ func discoverMountpoints() ([]string, error) {
 		mountpoints = append(mountpoints, mountPoint)
 	}
 	return mountpoints, scanner.Err()
+}
+
+// trashCrashWindowHook runs, when non-nil, in the gap between writing the
+// .trashinfo and renaming the file — the window a crash-consistency test
+// needs to stand in. Nil in production; the compiler erases the branch.
+var trashCrashWindowHook func()
+
+// findMountpointFn is the mountpoint resolver, a variable so tests can pin
+// the trash root to a TempDir instead of the real filesystem's mounts.
+var findMountpointFn = findMountpoint
+
+// writeInfoDurably writes the .trashinfo with an fsync before returning:
+// the metadata is the recovery record, and rename ordering means nothing if
+// the record itself can evaporate in the crash it exists to survive.
+func writeInfoDurably(path, content string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(path)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(path)
+		return err
+	}
+	return f.Close()
 }
