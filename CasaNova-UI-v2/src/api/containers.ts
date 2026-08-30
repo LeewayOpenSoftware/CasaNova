@@ -8,6 +8,7 @@
 // API layer is mechanical.
 
 import client from './client'
+import { buildComposeYaml } from './composeFromForm'
 
 export type ContainerState = 'running' | 'stopped' | 'unhealthy' | 'updating' | 'crashed'
 
@@ -365,13 +366,27 @@ export interface InstallManualRequest {
   env?: Array<{ key: string; value: string }>
 }
 
+/**
+ * installManual — install an app described by the wizard's form.
+ *
+ * The form is converted to a compose document and sent as YAML. It used to
+ * POST the structured body itself, but the endpoint reads its body through
+ * YAMLfromRequest, which treats JSON as a COMPOSE document — and no handler
+ * anywhere accepts {image, tag, title, …}. The server therefore parsed an
+ * object with no services, produced an empty project, let Docker name it at
+ * random and failed with "no container found for project <random-name>".
+ * Downloads ran, the progress card completed, and nothing was installed.
+ */
 export async function installManual(
   body: InstallManualRequest,
 ): Promise<{ id: string; progressUrl: string }> {
+  const yaml = buildComposeYaml(body)
   const res = await client.post<{
     success: number
     data: { id: string; progressUrl: string }
-  }>('/v2/app_management/compose', body)
+  }>('/v2/app_management/compose', yaml, {
+    headers: { 'Content-Type': 'application/yaml' },
+  })
   return res.data.data
 }
 
