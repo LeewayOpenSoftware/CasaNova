@@ -10,6 +10,8 @@ package v1
 // mountpoint, and its single child /dev/sda1 is ext4 at /mnt/UNIT5.
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	model1 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/model"
@@ -110,5 +112,81 @@ func TestMountedFilesystems_ReportsEveryCandidateSoResizeCanRefuse(t *testing.T)
 	})
 	if len(got) != 2 {
 		t.Fatalf("want both candidates so the caller can refuse, got %+v", got)
+	}
+}
+
+// ---- benchmark: each field must come from the workload it names ----
+//
+// The benchmark ran ONE 4 KiB random job and filled all four result fields
+// from it. Its bandwidth was reported as sequential throughput, so a 5.5 TB
+// drive that streams ~70 MB/s was displayed as 0.36 MB/s — which is just its
+// 90 IOPS x 4 KiB, the same measurement wearing the other label. The dialog
+// promised "sequential + random" and delivered random twice.
+//
+// This substitutes the phase runner so the mapping can be checked without a
+// disk: the two workloads return deliberately unmistakable numbers, and the
+// test asserts which one reached which field.
+
+func TestRunFio_MapsEachFieldToItsOwnWorkload(t *testing.T) {
+	original := runPhase
+	t.Cleanup(func() { runPhase = original })
+
+	var seen [][]string
+	runPhase = func(_ context.Context, _, _, _ string, workload ...string) (fioPhase, error) {
+		seen = append(seen, workload)
+		for _, w := range workload {
+			if w == "--rw=randrw" {
+				// Random pass: high IOPS, negligible bandwidth.
+				return fioPhase{ReadBps: 7, WriteBps: 8, ReadIOPS: 900, WriteIOPS: 400}, nil
+			}
+		}
+		// Sequential pass: real bandwidth, low IOPS.
+		return fioPhase{ReadBps: 100 * 1024 * 1024, WriteBps: 50 * 1024 * 1024, ReadIOPS: 1, WriteIOPS: 2}, nil
+	}
+
+	res, err := runFio("/tmp", "quick", "8M")
+	if err != nil {
+		t.Fatalf("runFio: %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("want two passes — one sequential, one random — got %d: %v", len(seen), seen)
+	}
+	if res.SeqReadMBps != 100 || res.SeqWriteMBps != 50 {
+		t.Errorf("throughput must come from the sequential pass, got %.2f/%.2f MB/s",
+			res.SeqReadMBps, res.SeqWriteMBps)
+	}
+	if res.RandReadIOPS != 900 || res.RandWriteIOPS != 400 {
+		t.Errorf("IOPS must come from the random pass, got %.0f/%.0f",
+			res.RandReadIOPS, res.RandWriteIOPS)
+	}
+}
+
+func TestRunFio_SequentialPassUsesLargeBlocks(t *testing.T) {
+	// The distinction only exists if the block sizes differ. Collapsing both
+	// passes to 4 KiB would restore the original bug while keeping two calls,
+	// so the mapping test above would still pass.
+	original := runPhase
+	t.Cleanup(func() { runPhase = original })
+
+	var blockSizes []string
+	runPhase = func(_ context.Context, _, _, _ string, workload ...string) (fioPhase, error) {
+		for _, w := range workload {
+			if strings.HasPrefix(w, "--bs=") {
+				blockSizes = append(blockSizes, w)
+			}
+		}
+		return fioPhase{}, nil
+	}
+	if _, err := runFio("/tmp", "quick", "8M"); err != nil {
+		t.Fatalf("runFio: %v", err)
+	}
+	if len(blockSizes) != 2 || blockSizes[0] == blockSizes[1] {
+		t.Fatalf("the two passes must use different block sizes, got %v", blockSizes)
+	}
+	if blockSizes[0] != "--bs=1M" {
+		t.Errorf("sequential throughput needs large blocks, got %s", blockSizes[0])
+	}
+	if blockSizes[1] != "--bs=4k" {
+		t.Errorf("random IOPS needs 4k blocks, got %s", blockSizes[1])
 	}
 }

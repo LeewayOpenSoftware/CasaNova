@@ -284,37 +284,38 @@ func runBenchmark(mountPoint, mode string) (BenchmarkResult, error) {
 	return runDD(mountPoint, mode, size)
 }
 
-func runFio(mountPoint, mode, size string) (BenchmarkResult, error) {
-	scratch := mountPoint + "/.cn-bench.tmp"
-	defer exec.Command("rm", "-f", scratch).Run()
+// fioPhase is one fio invocation's numbers. fio reports bandwidth and IOPS
+// for reads and writes separately; which of the four a caller cares about
+// depends on what workload it just ran.
+type fioPhase struct {
+	ReadBps   float64
+	WriteBps  float64
+	ReadIOPS  float64
+	WriteIOPS float64
+}
 
-	// fio's --runtime caps in-flight IO, but the binary itself can wedge
-	// (e.g. waiting for a dying disk to ACK). Bound the whole exec at
-	// runtime+30s so a stuck device can't pin the handler past the
-	// nominal test duration by more than a fraction.
-	runtimeSec := map[string]string{"quick": "5", "deep": "20"}[mode]
-	hardCap := 5 * time.Minute // sanity ceiling
-	cmdCtx, cancel := context.WithTimeout(context.Background(), hardCap)
-	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, "fio",
+// runFioPhase runs one workload against the scratch file and parses its
+// summary. Everything that is the same for every phase — direct IO, the
+// engine, the scratch path, JSON output — lives here; the caller supplies
+// only what makes its workload that workload.
+func runFioPhase(ctx context.Context, scratch, size, runtimeSec string, workload ...string) (fioPhase, error) {
+	argv := []string{
 		"--name=cn-bench",
-		"--filename="+scratch,
-		"--size="+size,
+		"--filename=" + scratch,
+		"--size=" + size,
 		"--direct=1",
 		"--ioengine=libaio",
-		"--iodepth=16",
-		"--rw=randrw",
-		"--bs=4k",
-		"--rwmixread=70",
 		"--numjobs=1",
-		"--runtime="+runtimeSec,
+		"--runtime=" + runtimeSec,
 		"--time_based",
 		"--group_reporting",
 		"--output-format=json",
-	)
-	out, err := cmd.Output()
+	}
+	argv = append(argv, workload...)
+
+	out, err := exec.CommandContext(ctx, "fio", argv...).Output()
 	if err != nil {
-		return BenchmarkResult{Mode: mode, Engine: "fio"}, fmt.Errorf("fio: %w", err)
+		return fioPhase{}, fmt.Errorf("fio: %w", err)
 	}
 	var parsed struct {
 		Jobs []struct {
@@ -329,19 +330,75 @@ func runFio(mountPoint, mode, size string) (BenchmarkResult, error) {
 		} `json:"jobs"`
 	}
 	if err := json.Unmarshal(out, &parsed); err != nil {
-		return BenchmarkResult{Mode: mode, Engine: "fio"}, fmt.Errorf("fio json: %w", err)
+		return fioPhase{}, fmt.Errorf("fio json: %w", err)
 	}
 	if len(parsed.Jobs) == 0 {
-		return BenchmarkResult{Mode: mode, Engine: "fio"}, fmt.Errorf("fio returned no jobs")
+		return fioPhase{}, fmt.Errorf("fio returned no jobs")
 	}
 	j := parsed.Jobs[0]
+	return fioPhase{
+		ReadBps:   j.Read.BW_bytes,
+		WriteBps:  j.Write.BW_bytes,
+		ReadIOPS:  j.Read.IOPS,
+		WriteIOPS: j.Write.IOPS,
+	}, nil
+}
+
+// runPhase is the seam the mapping test writes through. runFio's bug was not
+// in how it talked to fio, it was in which workload each result field was fed
+// from — so the test needs to substitute the workloads, not the parsing.
+var runPhase = runFioPhase
+
+// runFio measures the two things the result claims to report, in two passes.
+//
+// WHY TWO. This used to run a single 4 KiB random job and fill in all four
+// result fields from it: its bandwidth became "sequential throughput" and its
+// IOPS became "random IOPS". Those are the same measurement counted two ways —
+// 90.9 IOPS x 4 KiB is exactly the 0.36 MB/s that got reported as sequential —
+// so a 5.5 TB drive that streams around 180 MB/s was shown as doing 0.36, and
+// the dialog's promise of "sequential + random" was true of neither number.
+// Anyone comparing two disks on that figure was comparing random IOPS while
+// reading a label that said throughput.
+//
+// So: one pass with a large block size for streaming bandwidth, one with 4 KiB
+// at depth for random IOPS. Each field now comes from the workload that field
+// names.
+func runFio(mountPoint, mode, size string) (BenchmarkResult, error) {
+	scratch := mountPoint + "/.cn-bench.tmp"
+	defer exec.Command("rm", "-f", scratch).Run()
+
+	// fio's --runtime caps in-flight IO, but the binary itself can wedge
+	// (e.g. waiting for a dying disk to ACK). Bound the whole exec at a
+	// ceiling well above two nominal phases so a stuck device can't pin the
+	// handler indefinitely.
+	runtimeSec := map[string]string{"quick": "5", "deep": "20"}[mode]
+	hardCap := 5 * time.Minute // sanity ceiling, covers both phases
+	cmdCtx, cancel := context.WithTimeout(context.Background(), hardCap)
+	defer cancel()
+
+	// Sequential: 1 MiB blocks, modest depth. This is the number that answers
+	// "how fast does a large file copy go".
+	seq, err := runPhase(cmdCtx, scratch, size, runtimeSec,
+		"--rw=rw", "--bs=1M", "--iodepth=8", "--rwmixread=50")
+	if err != nil {
+		return BenchmarkResult{Mode: mode, Engine: "fio"}, err
+	}
+
+	// Random: 4 KiB at depth 16, read-weighted. This is the number that
+	// answers "how does it behave under a database or many small files".
+	rnd, err := runPhase(cmdCtx, scratch, size, runtimeSec,
+		"--rw=randrw", "--bs=4k", "--iodepth=16", "--rwmixread=70")
+	if err != nil {
+		return BenchmarkResult{Mode: mode, Engine: "fio"}, err
+	}
+
 	return BenchmarkResult{
 		Mode:          mode,
 		Engine:        "fio",
-		SeqReadMBps:   j.Read.BW_bytes / 1024 / 1024,
-		SeqWriteMBps:  j.Write.BW_bytes / 1024 / 1024,
-		RandReadIOPS:  j.Read.IOPS,
-		RandWriteIOPS: j.Write.IOPS,
+		SeqReadMBps:   seq.ReadBps / 1024 / 1024,
+		SeqWriteMBps:  seq.WriteBps / 1024 / 1024,
+		RandReadIOPS:  rnd.ReadIOPS,
+		RandWriteIOPS: rnd.WriteIOPS,
 	}, nil
 }
 
