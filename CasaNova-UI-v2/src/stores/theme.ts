@@ -188,6 +188,11 @@ export const useThemeStore = defineStore('theme', () => {
 
     // Boolean class toggles — drive CSS selectors in app.css.
     root.classList.toggle('cn-has-login-bg', !!prefs.value.loginBackgroundUrl)
+    // Independent of the replicate toggle: "Fondo del panel" must show on the
+    // panel whether or not the user also asked for it on every other page.
+    // Previously only the replicate rule consumed --cn-dashboard-bg, so
+    // picking a wallpaper without ticking that box changed nothing.
+    root.classList.toggle('cn-has-dashboard-bg', !!prefs.value.dashboardBackgroundUrl)
     root.classList.toggle('cn-bg-replicate', prefs.value.replicateBackground && !!prefs.value.dashboardBackgroundUrl)
     root.classList.toggle('cn-transparent', prefs.value.transparencyEnabled)
 

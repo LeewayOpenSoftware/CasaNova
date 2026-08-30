@@ -35,6 +35,21 @@ watch(
   },
 )
 
+// The dashboard wallpaper is a DASHBOARD background: it shows here, and on
+// other pages only when the user ticks "replicate". CSS cannot ask the router
+// where it is, so the route publishes itself as a class on <html> — the same
+// channel the theme store already uses for its own toggles.
+watch(
+  () => route.name,
+  (name) => {
+    document.documentElement.classList.toggle('cn-route-dashboard', name === 'home')
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  document.documentElement.classList.remove('cn-route-dashboard')
+})
+
 onMounted(() => {
   notifications.startPolling()
   updates.startPolling()

@@ -428,17 +428,55 @@ html.cn-has-login-bg .cn-login-backdrop {
     var(--cn-login-bg) center / cover no-repeat !important;
 }
 
-/* Replicate dashboard wallpaper in the empty void around floating cards.
- * Only fires when the user opts in via the "Replicate background" toggle. */
-html.cn-bg-replicate body {
-  background:
-    linear-gradient(180deg, rgb(10 12 18 / 0.82) 0%, rgb(10 12 18 / 0.92) 100%),
-    var(--cn-dashboard-bg) center / cover fixed no-repeat;
-}
-html.cn-bg-replicate:not(.dark) body {
+/* Dashboard wallpaper.
+ *
+ * The image lives on <html>, NOT on body, and that is the whole design.
+ *
+ * It used to be painted by `html.cn-bg-replicate body`, which every theme
+ * silently defeated: longhorn and zethus set `background: var(--cn-bg)` on
+ * body — the shorthand, which resets background-image to none — and zaru sets
+ * its own background-image (the dot grid). All three carry the same
+ * specificity as the wallpaper rule and appear LATER in this file, so source
+ * order decided it and the wallpaper never rendered under any theme. It also
+ * only ever fired with "replicate" ticked, so the plain "Fondo del panel"
+ * setting did nothing at all.
+ *
+ * Painting on <html> puts the image UNDER body's own background rather than
+ * fighting it for the same slot, which gives the layer stack the themes
+ * actually want, bottom to top:
+ *
+ *     wallpaper  →  scrim  →  (zaru's dot grid)  →  content
+ *
+ * body then only has to become transparent to let it through; the grid rides
+ * above the image exactly as intended, so Zaru shows all three at once.
+ *
+ * The scrim is not decoration: text contrast on this dashboard is designed
+ * against a flat --cn-bg, and an arbitrary user photo underneath would break
+ * it. The gradient keeps the reading surface predictable whatever the image.
+ */
+html.cn-has-dashboard-bg.cn-route-dashboard,
+html.cn-has-dashboard-bg.cn-bg-replicate {
   background:
     linear-gradient(180deg, rgb(245 246 248 / 0.82) 0%, rgb(245 246 248 / 0.9) 100%),
     var(--cn-dashboard-bg) center / cover fixed no-repeat;
+  background-color: var(--cn-bg);
+}
+html.cn-has-dashboard-bg.cn-route-dashboard.dark,
+html.cn-has-dashboard-bg.cn-bg-replicate.dark {
+  background:
+    linear-gradient(180deg, rgb(10 12 18 / 0.82) 0%, rgb(10 12 18 / 0.92) 100%),
+    var(--cn-dashboard-bg) center / cover fixed no-repeat;
+  background-color: var(--cn-bg);
+}
+
+/* Two classes beat every `html.cn-theme-* body` rule on specificity, so this
+ * wins no matter where the theme blocks sit in the file — the ordering trap
+ * that broke the previous implementation cannot come back. Only the COLOUR is
+ * cleared: background-image stays untouched, which is what preserves zaru's
+ * grid on top of the wallpaper. */
+html.cn-has-dashboard-bg.cn-route-dashboard body,
+html.cn-has-dashboard-bg.cn-bg-replicate body {
+  background-color: transparent;
 }
 
 /* Opt-in transparency pass. When enabled, previously-solid floating
