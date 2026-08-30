@@ -510,17 +510,22 @@ const menuItems = computed<MenuItem[]>(() => {
 // Status dot color mapping — intentional reuse of the same palette the
 // notification levels use so the visual language stays consistent.
 const statusDotClass = computed(() => {
+  // The LED under the tile, not a badge on top of it. A corner dot competes
+  // with the artwork it sits on — worse on a translucent tile, where it also
+  // has to fight whatever the wallpaper puts behind it. A thin bar in the
+  // gutter reads as an indicator light under the icon: peripheral when
+  // everything is running, obvious the moment one goes red.
   switch (props.app.status) {
     case 'running':
-      return 'bg-emerald-500 ring-2 ring-emerald-500/30'
+      return 'cn-app-led--running'
     case 'stopped':
-      return 'bg-slate-500 ring-2 ring-slate-500/30'
+      return 'cn-app-led--stopped'
     case 'updating':
-      return 'bg-blue-500 ring-2 ring-blue-500/30 animate-pulse'
+      return 'cn-app-led--updating'
     case 'unhealthy':
-      return 'bg-red-500 ring-2 ring-red-500/30'
+      return 'cn-app-led--unhealthy'
     default:
-      return 'bg-slate-500'
+      return 'cn-app-led--stopped'
   }
 })
 
@@ -673,12 +678,12 @@ function onClick() {
           :class="iconPack.appIconStyle === 'transparent' ? '' : '[filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.35))]'"
         >{{ app.initial }}</span>
       </div>
-      <!-- Status dot — top-right of the tile. -->
+      <!-- Status LED — a slim bar in the gutter beneath the tile.
+           Suppressed on preview stubs: the ribbon below claims the same
+           strip, and a stub has no container whose state to report. -->
       <span
-        :class="[
-          'absolute right-1 top-1 h-3 w-3 rounded-full',
-          statusDotClass,
-        ]"
+        v-if="!app.preview"
+        :class="['cn-app-led', statusDotClass]"
         :aria-label="app.status"
       />
       <!-- Loading overlay while a lifecycle action is in flight -->
