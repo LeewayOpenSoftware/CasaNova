@@ -80,12 +80,10 @@ function pickDockerHubImage(r: DockerHubResult) {
   mode.value = 'manual'
 }
 
-function fmtPulls(n: number): string {
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
-  if (n >= 1e3) return (n / 1e3).toFixed(0) + 'K'
-  return String(n)
-}
+// Docker Hub's v4 search returns the pull count already rounded, as its own
+// wording ("1B+", "50K+"). The local formatter it replaces took an exact
+// number and produced a different approximation; keeping Hub's string means
+// the dashboard says exactly what Hub says.
 
 // When prefillYaml is provided (from the library's "Custom Install"),
 // auto-switch to Import → Compose mode and populate the textarea.
@@ -336,7 +334,7 @@ function onCancel() {
             <p v-if="r.description" class="mt-0.5 truncate text-xs text-[var(--cn-text-muted)]">{{ r.description }}</p>
             <div class="mt-1 flex items-center gap-3 text-[11px] text-[var(--cn-text-muted)]">
               <span class="flex items-center gap-1"><AppIcon name="Star" :size="11" /> {{ r.stars.toLocaleString() }}</span>
-              <span class="flex items-center gap-1"><AppIcon name="Download" :size="11" /> {{ fmtPulls(r.pulls) }}</span>
+              <span class="flex items-center gap-1"><AppIcon name="Download" :size="11" /> {{ r.pulls }}</span>
             </div>
           </div>
           <AppIcon name="ChevronRight" :size="16" class="mt-1 shrink-0 text-[var(--cn-text-muted)]" />

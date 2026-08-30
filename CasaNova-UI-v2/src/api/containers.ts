@@ -802,7 +802,8 @@ export interface DockerHubResult {
   name: string        // pullable image name (library/<x> for official images)
   description: string
   stars: number
-  pulls: number
+  /** Human-formatted by Docker Hub itself: "1B+", "50K+". */
+  pulls: string
   official: boolean
 }
 
