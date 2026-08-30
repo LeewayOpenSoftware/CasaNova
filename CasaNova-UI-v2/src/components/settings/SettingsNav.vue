@@ -6,10 +6,13 @@
 // The list is grouped into two buckets:
 //   1. Core — things every user cares about (general, users, storage,
 //      containers, network, security)
-//   2. Advanced — power-user features (backups, scheduled, audit, about)
-// Groups are separated by a hairline with a small label, matching how
+//   2. Advanced — power-user features (backups, logs, audit, diagnostics)
+// Groups are separated by a hairline above a small label, matching how
 // most modern settings UIs (macOS Ventura+, GNOME Settings, VS Code)
-// present their sections.
+// present their sections. The hairline is drawn in the template below:
+// this comment used to describe one that was never there, leaving the
+// two groups distinguished only by a muted label that reads like just
+// another row in a list of twenty-two.
 
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -64,7 +67,6 @@ const sections = computed<SettingsNavSection[]>(() => {
   if (showMigration.value) {
     advanced.push({ to: '/app/settings/migration', labelKey: 'settings.nav.migration', icon: 'ArrowRightLeft' })
   }
-  advanced.push({ to: '/app/settings/about', labelKey: 'settings.nav.about', icon: 'Info' })
   return [
     {
       labelKey: 'settings.nav.core',
@@ -86,6 +88,11 @@ const sections = computed<SettingsNavSection[]>(() => {
         { to: '/app/settings/server', labelKey: 'settings.nav.server', icon: 'Server' },
         { to: '/app/settings/host', labelKey: 'settings.nav.host', icon: 'TerminalSquare' },
         { to: '/app/settings/updates', labelKey: 'settings.nav.updates', icon: 'RefreshCcw' },
+        // About sat at the very bottom, after the audit log and the
+        // diagnostics — which made "what version am I running" a trip
+        // through the power-user shelf. It is a basic question, so it
+        // closes the basic group instead.
+        { to: '/app/settings/about', labelKey: 'settings.nav.about', icon: 'Info' },
       ],
     },
     { labelKey: 'settings.nav.advanced', entries: advanced },
@@ -95,24 +102,30 @@ const sections = computed<SettingsNavSection[]>(() => {
 
 <template>
   <nav class="cn-widget flex flex-col gap-4 p-2 sm:p-3 md:gap-5">
-    <div v-for="section in sections" :key="section.labelKey" class="flex flex-col gap-1">
-      <!-- Section header. Small, uppercase, muted — lives above the
-           entries to group them visually. -->
-      <div class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--cn-text-muted)] sm:px-3">
-        {{ t(section.labelKey) }}
-      </div>
+    <template v-for="(section, i) in sections" :key="section.labelKey">
+      <!-- The rule between groups. Only between: a line above the first
+           label would fence the rail off from its own container. -->
+      <div v-if="i > 0" class="mx-2 border-t border-[var(--cn-border)] sm:mx-3" />
 
-      <router-link
-        v-for="entry in section.entries"
-        :key="entry.to"
-        :to="entry.to"
-        active-class="cn-nav-active"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-[var(--cn-text-muted)] transition-colors hover:bg-[var(--cn-surface-hover)] hover:text-[var(--cn-text)] sm:gap-3 sm:px-3"
-      >
-        <AppIcon :name="entry.icon" :size="17" class="shrink-0" />
-        <span class="truncate">{{ t(entry.labelKey) }}</span>
-      </router-link>
-    </div>
+      <div class="flex flex-col gap-1">
+        <!-- Section header. Small, uppercase, muted — lives above the
+             entries to group them visually. -->
+        <div class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--cn-text-muted)] sm:px-3">
+          {{ t(section.labelKey) }}
+        </div>
+
+        <router-link
+          v-for="entry in section.entries"
+          :key="entry.to"
+          :to="entry.to"
+          active-class="cn-nav-active"
+          class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-[var(--cn-text-muted)] transition-colors hover:bg-[var(--cn-surface-hover)] hover:text-[var(--cn-text)] sm:gap-3 sm:px-3"
+        >
+          <AppIcon :name="entry.icon" :size="17" class="shrink-0" />
+          <span class="truncate">{{ t(entry.labelKey) }}</span>
+        </router-link>
+      </div>
+    </template>
   </nav>
 </template>
 
