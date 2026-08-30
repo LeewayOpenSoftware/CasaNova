@@ -10,6 +10,7 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import ToggleSwitch from 'primevue/toggleswitch'
 import SettingsPage from '@/components/settings/SettingsPage.vue'
+import ThemePacksSection from '@/components/settings/ThemePacksSection.vue'
 import SettingsCard from '@/components/settings/SettingsCard.vue'
 import WallpaperPicker from '@/components/settings/WallpaperPicker.vue'
 import { useThemeStore, type ThemeVariant } from '@/stores/theme'
@@ -87,7 +88,7 @@ function toggleTheme() {
 <template>
   <SettingsPage
     icon="Paintbrush"
-    :title="t('settings.appearance.title')"
+    :title="t('settings.appearance.title_with_themes')"
     :description="t('settings.appearance.description')"
   >
     <SettingsCard>
@@ -411,5 +412,23 @@ function toggleTheme() {
         </p>
       </div>
     </SettingsCard>
+
+    <!-- Theme packs, folded in from what used to be its own rail entry.
+         Choosing a theme and managing the packs themes come from are the
+         same errand; splitting them meant picking a pack on one page and
+         navigating to another to apply it. The heading keeps the section
+         legible as its own thing inside the merged page. -->
+    <div class="mt-2 flex items-center gap-2 border-t border-[var(--cn-border)] pt-5">
+      <AppIcon name="Palette" :size="15" class="text-[var(--cn-text-muted)]" />
+      <div>
+        <h2 class="text-sm font-semibold text-[var(--cn-text)]">
+          {{ t('settings.theme_packs.title') }}
+        </h2>
+        <p class="text-xs text-[var(--cn-text-muted)]">
+          {{ t('settings.theme_packs.subtitle') }}
+        </p>
+      </div>
+    </div>
+    <ThemePacksSection />
   </SettingsPage>
 </template>

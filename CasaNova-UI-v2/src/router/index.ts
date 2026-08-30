@@ -210,9 +210,12 @@ const routes: RouteRecordRaw[] = [
             path: 'remote-access',
             component: () => import('@/views/settings/RemoteAccessSettings.vue'),
           },
-          {
+                    {
+            // Folded into Appearance. Kept as a redirect rather than deleted:
+            // a bookmark or a link from an older release should land on the
+            // section, not on a blank router miss.
             path: 'theme-packs',
-            component: () => import('@/views/settings/ThemePacksSettings.vue'),
+            redirect: '/app/settings/appearance',
           },
         ],
       },

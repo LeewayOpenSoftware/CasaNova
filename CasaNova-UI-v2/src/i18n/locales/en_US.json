@@ -802,7 +802,8 @@
       "updates": "Updates",
       "migration": "Migration",
       "remote_access": "Remote access",
-      "theme_packs": "Theme packs"
+      "theme_packs": "Theme packs",
+      "appearance_themes": "Appearance & themes"
     },
     "appStores": {
       "title": "App Sources",
@@ -903,7 +904,8 @@
     },
     "appearance": {
       "title": "Appearance",
-      "description": "Theme, colors, icon pack and interface backgrounds."
+      "description": "Theme, colors, icon pack and interface backgrounds.",
+      "title_with_themes": "Appearance & themes"
     },
     "general": {
       "title": "General",

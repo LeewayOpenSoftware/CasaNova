@@ -70,8 +70,11 @@ const sections = computed<SettingsNavSection[]>(() => {
       labelKey: 'settings.nav.core',
       entries: [
         { to: '/app/settings/general', labelKey: 'settings.nav.general', icon: 'Settings' },
-        { to: '/app/settings/appearance', labelKey: 'settings.nav.appearance', icon: 'Paintbrush' },
-        { to: '/app/settings/theme-packs', labelKey: 'settings.nav.theme_packs', icon: 'Palette' },
+        // Theme packs used to be its own entry. It is now a section inside
+        // Appearance: picking a theme and managing the packs they come from
+        // are one errand, and splitting them made you navigate between two
+        // pages to finish it.
+        { to: '/app/settings/appearance', labelKey: 'settings.nav.appearance_themes', icon: 'Paintbrush' },
         { to: '/app/settings/users', labelKey: 'settings.nav.users', icon: 'Users' },
         { to: '/app/settings/storage', labelKey: 'settings.nav.storage', icon: 'HardDrive' },
         { to: '/app/settings/apps', labelKey: 'settings.nav.apps', icon: 'LayoutGrid' },

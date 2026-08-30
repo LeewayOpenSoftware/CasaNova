@@ -802,7 +802,8 @@
       "updates": "Atualizações",
       "migration": "Migração",
       "remote_access": "Acesso remoto",
-      "theme_packs": "Pacotes de tema"
+      "theme_packs": "Pacotes de tema",
+      "appearance_themes": "Aparência e temas"
     },
     "appStores": {
       "title": "Fontes de aplicativos",
@@ -903,7 +904,8 @@
     },
     "appearance": {
       "title": "Aparência",
-      "description": "Tema, cores, pacote de ícones e planos de fundo da interface."
+      "description": "Tema, cores, pacote de ícones e planos de fundo da interface.",
+      "title_with_themes": "Aparência e temas"
     },
     "general": {
       "title": "Geral",

@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import AppIcon from '@/components/ui/AppIcon.vue'
-// ThemePacksSettings — upload, list, delete, and activate uploaded
+// ThemePacksSection — upload, list, delete, and activate uploaded
 // theme packs. A theme pack is a .zip with a theme.json + tokens.css
 // + optional assets/, served from the backend at /v1/sys/themes/<id>/.
 // Switching to a pack is the same as picking a built-in variant in
 // General → Appearance — we set themeVariant = `custom:<id>` on the
 // theme store, which then auto-injects the pack's tokens.css.
+//
+// Extracted from a page of its own into a section, because choosing a theme
+// and managing the packs those themes come from are the same errand: having
+// them on separate rail entries meant picking a pack, then navigating
+// elsewhere to apply it. It renders only its cards — the enclosing page owns
+// the header — so it can sit under Appearance without nesting one page inside
+// another.
 
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from 'primevue/button'
-import SettingsPage from '@/components/settings/SettingsPage.vue'
 import SettingsCard from '@/components/settings/SettingsCard.vue'
 import { listThemePacks, uploadThemePack, deleteThemePack, type ThemePackInfo } from '@/api/themePacks'
 import { safeCall } from '@/api/safeCall'
@@ -108,11 +114,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <SettingsPage
-    icon="Palette"
-    :title="t('settings.theme_packs.title')"
-    :description="t('settings.theme_packs.subtitle')"
-  >
+  <div class="flex flex-col gap-4">
     <!-- Upload -->
     <SettingsCard
       :title="t('settings.theme_packs.upload_title')"
@@ -210,5 +212,5 @@ onMounted(() => {
         </li>
       </ul>
     </SettingsCard>
-  </SettingsPage>
+  </div>
 </template>
