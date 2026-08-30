@@ -32,7 +32,13 @@ vi.mock('./client', () => ({
     get: (url: string, cfg?: { timeout?: number }) => {
       calls.push({ url, body: undefined, cfg })
       const data =
-        url === '/v1/disks' ? { disks: [], avail: [] } : url === '/v1/storage' ? [] : {}
+        url === '/v1/disks'
+          ? { disks: [], avail: [] }
+          : url === '/v1/storage'
+            ? []
+            : url.includes('standby')
+              ? { minutes: 0 }
+              : {}
       return Promise.resolve({ data: { success: 200, data } })
     },
   },
@@ -89,11 +95,23 @@ describe('disk operations outwait the server', () => {
     expect(t!).toBeGreaterThan(SERVER_BOUND_MS.resize)
   })
 
-  it('the fast reads on this module still use the shared default', async () => {
-    // Guards the guard. If every call in storage.ts carried a long timeout,
-    // the tests above would pass while a hung listDisks froze the page for
-    // minutes. Opting out is deliberate and rare, not the house style.
+  it('the hardware enumerations outwait lsblk and smartctl', async () => {
+    // listDisks used to be this file's example of a fast read. It is not one:
+    // it walks real hardware, where lsblk is bounded at 30s and smartctl at 6s
+    // per disk. Timing out threw away the degraded inventory the backend had
+    // assembled — which it assembles precisely when a disk is sick.
     await storage.listDisks()
+    const disksCall = calls.find((c) => c.url === '/v1/disks')
+    expect(disksCall?.cfg?.timeout, '/v1/disks inherits the 10s default').toBeDefined()
+    expect(disksCall!.cfg!.timeout!).toBeGreaterThan(30_000)
+  })
+
+  it('a genuinely fast read still uses the shared default', async () => {
+    // Guards the guard. If every call in storage.ts carried a long timeout,
+    // the tests above would pass while a hung request froze the page for
+    // minutes. Opting out is deliberate and rare, not the house style.
+    // GetStandby returns ctx.JSON from its own body — no exec, no disk.
+    await storage.getStandbySettings()
     expect(calls.at(-1)?.cfg?.timeout).toBeUndefined()
   })
 })

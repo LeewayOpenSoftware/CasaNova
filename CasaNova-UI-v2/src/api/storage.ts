@@ -62,14 +62,23 @@ interface RawDisk {
   reallocated_sectors?: number
 }
 
+/** Both enumerations walk real hardware: lsblk is bounded at 30s and smartctl
+ *  at 6s per disk (command_helper.go:33, :25). Timing out discards the
+ *  degraded inventory the backend assembled — which it assembles precisely
+ *  when a disk is sick, i.e. when you most need to see it. */
+const DISK_ENUM_TIMEOUT_MS = 60_000
+const STORAGE_ROOTS_TIMEOUT_MS = 45_000
+
 export async function listDisks(): Promise<DiskEntry[]> {
   // Fetch both the disk list and storage mounts to cross-reference
   const [disksRes, storageRes, utilRes] = await Promise.all([
-    client.get<{ success: number; data: { disks: RawDisk[]; avail: RawDisk[] } }>('/v1/disks'),
+    client.get<{ success: number; data: { disks: RawDisk[]; avail: RawDisk[] } }>('/v1/disks', {
+      timeout: DISK_ENUM_TIMEOUT_MS,
+    }),
     client.get<{ success: number; data: Array<{
       disk_name: string; path: string; type: string
       children?: Array<{ drive_name: string; mount_point: string; type: string; size: string; avail: string }>
-    }> }>('/v1/storage').catch(() => ({ data: { data: [] } })),
+    }> }>('/v1/storage', { timeout: DISK_ENUM_TIMEOUT_MS }).catch(() => ({ data: { data: [] } })),
     client.get<{ success: number; data: { sys_disk?: { size: number; used: number; avail: number } } }>(
       '/v1/sys/utilization',
     ).catch(() => ({ data: { data: { sys_disk: null } } })),
@@ -413,6 +422,7 @@ export interface StorageRoot {
 export async function listStorageRoots(): Promise<StorageRoot[]> {
   const res = await client.get<{ success: number; data: StorageRoot[] }>(
     '/v2/local_storage/storage',
+    { timeout: STORAGE_ROOTS_TIMEOUT_MS },
   )
   return res.data.data ?? []
 }

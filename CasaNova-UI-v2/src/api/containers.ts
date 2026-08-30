@@ -253,9 +253,31 @@ function resolveIcon(name: string, image: string, storeIcon: string): string {
   return ''
 }
 
+// Server-side bounds, read from the handlers rather than assumed. The client
+// has to outlast each one, or axios replaces the server's answer — including
+// its honest error — with "timeout of 10000ms exceeded".
+//
+//   compose list      15s  compose_app.go:59
+//   container list    15s  CasaNova/route/v1/containers.go:175
+//   container stats   10s  containers.go:347  ← exactly the old default, so
+//                          the client aborted at the very moment the server
+//                          was due to answer
+//   stop / restart    30s  container_ctl.go:62, which runs `docker stop -t 10`
+//                          — ten seconds of SIGTERM grace before SIGKILL is
+//                          the entire old budget on its own, so any container
+//                          that does not die on SIGTERM (databases, anything
+//                          flushing state) timed out deterministically. The
+//                          store swallows that in a bare catch, so refreshAll
+//                          never ran: the UI reported failure and kept
+//                          rendering a container that had stopped.
+const LIST_TIMEOUT_MS = 25_000
+const STATS_TIMEOUT_MS = 20_000
+const LIFECYCLE_TIMEOUT_MS = 40_000
+
 export async function listApps(): Promise<AppEntryApi[]> {
   const res = await client.get<BackendComposeResponse>(
     '/v2/app_management/compose',
+    { timeout: LIST_TIMEOUT_MS },
   )
   const raw = res.data.data ?? {}
   return Object.entries(raw).map(([name, app]) => {
@@ -624,7 +646,7 @@ export async function getContainerStats(): Promise<ContainerStats[]> {
   const res = await client.get<{
     success: number
     data: Array<{ id?: string; name?: string; cpuPercent?: number; memoryMB?: number }>
-  }>('/v1/container/stats')
+  }>('/v1/container/stats', { timeout: STATS_TIMEOUT_MS })
   return (res.data.data ?? []).map((c) => ({
     name: c.name ?? '',
     cpuPercent: typeof c.cpuPercent === 'number' ? Math.round(c.cpuPercent * 100) / 100 : 0,
@@ -719,6 +741,7 @@ export interface AllContainersResponse {
 export async function getAllContainers(): Promise<AllContainersResponse> {
   const res = await client.get<{ success: number; data: AllContainersResponse }>(
     '/v1/container/all',
+    { timeout: LIST_TIMEOUT_MS },
   )
   return res.data.data
 }
@@ -728,11 +751,15 @@ export async function startContainer(id: string): Promise<void> {
 }
 
 export async function stopContainer(id: string): Promise<void> {
-  await client.post(`/v1/container/${encodeURIComponent(id)}/stop`)
+  await client.post(`/v1/container/${encodeURIComponent(id)}/stop`, undefined, {
+    timeout: LIFECYCLE_TIMEOUT_MS,
+  })
 }
 
 export async function restartContainer(id: string): Promise<void> {
-  await client.post(`/v1/container/${encodeURIComponent(id)}/restart`)
+  await client.post(`/v1/container/${encodeURIComponent(id)}/restart`, undefined, {
+    timeout: LIFECYCLE_TIMEOUT_MS,
+  })
 }
 
 /**

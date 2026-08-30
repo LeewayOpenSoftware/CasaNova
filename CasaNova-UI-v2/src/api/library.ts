@@ -200,6 +200,14 @@ export async function unregisterStore(id: string): Promise<void> {
   await client.delete(`/v2/app_management/stores/${encodeURIComponent(id)}`)
 }
 
+/** StoreSync calls SyncRemoteStore inline — no goroutine — and the download it
+ *  drives is bounded at 5 minutes (downloadHelper/getter.go:68). At the shared
+ *  10s default the button reported failure while the catalog downloaded and
+ *  installed anyway. */
+const STORE_SYNC_TIMEOUT_MS = 6 * 60_000
+
 export async function syncStore(id: string): Promise<void> {
-  await client.post(`/v2/app_management/stores/${encodeURIComponent(id)}/sync`)
+  await client.post(`/v2/app_management/stores/${encodeURIComponent(id)}/sync`, undefined, {
+    timeout: STORE_SYNC_TIMEOUT_MS,
+  })
 }

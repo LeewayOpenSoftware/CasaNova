@@ -286,8 +286,16 @@ export interface UPSInfo {
   error?: string
 }
 
+/** Each upsc/apcaccess call is bounded at 15s with a further 5s WaitDelay
+ *  (host_ups.go:133,151,176 and cmd_exec.go:28,31), and a read makes more than
+ *  one. Below that the card errored on every poll instead of saying it could
+ *  not reach upsd. */
+const UPS_TIMEOUT_MS = 50_000
+
 export async function getUPS(): Promise<UPSInfo> {
-  const res = await client.get<{ success: number; data: UPSInfo }>('/v1/sys/host/ups')
+  const res = await client.get<{ success: number; data: UPSInfo }>('/v1/sys/host/ups', {
+    timeout: UPS_TIMEOUT_MS,
+  })
   return res.data.data
 }
 
@@ -300,7 +308,11 @@ export async function getUPSConfig(): Promise<UPSConfig> {
 
 // Set a remote NUT host (e.g. 192.168.3.214) — empty host reverts to local.
 export async function setUPSConfig(host: string, upsName: string): Promise<UPSInfo> {
-  const res = await client.put<{ success: number; data: UPSInfo }>('/v1/sys/host/ups/config', { host, upsName })
+  const res = await client.put<{ success: number; data: UPSInfo }>(
+    '/v1/sys/host/ups/config',
+    { host, upsName },
+    { timeout: UPS_TIMEOUT_MS },
+  )
   return res.data.data
 }
 
