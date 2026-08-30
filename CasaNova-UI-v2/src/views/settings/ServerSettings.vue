@@ -184,46 +184,83 @@ async function confirmShutdown() {
     :title="t('settings.server.title')"
     :description="t('settings.server.description')"
   >
-    <!-- Hero card: server image + identity -->
-    <SettingsCard :title="t('settings.server.identity')">
-      <div class="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
-        <!-- Server image -->
-        <div class="flex w-32 shrink-0 items-center justify-center sm:w-40">
-          <img
-            src="/assets/brand/server.png"
-            alt="Server"
-            class="h-auto w-full drop-shadow-lg"
-          />
-        </div>
-        <!-- Identity info -->
-        <div class="flex flex-1 flex-col gap-3">
-          <div>
-            <div class="text-2xl font-bold text-[var(--cn-text)]">{{ hwHostname }}</div>
-            <!-- Model — resolved from product_name, falling back to the
-                 motherboard when the BIOS ships a placeholder. Hidden
-                 when there is genuinely nothing to show. -->
-            <div v-if="hwModel" class="mt-0.5 text-sm font-medium text-[var(--cn-text-muted)]">
-              {{ hwModel }}
+    <!-- Hero row: identity on the left, power actions beside it.
+         Reboot and shutdown used to sit in the last card on the page,
+         below the stats and the port map — several screens of scrolling
+         away from the only thing an operator opening this page in a
+         hurry wants. They are short controls and the identity card runs
+         out of text well before it runs out of width, so the two share a
+         row: the hero gives up the space it was not using, and the
+         actions land in the first screenful.
+
+         Below lg the column collapses and they stack in the same order,
+         which keeps the actions above the fold on a phone too. -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <!-- Identity: server image + hostname/model/uptime/board -->
+      <SettingsCard :title="t('settings.server.identity')">
+        <div class="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+          <!-- Server image -->
+          <div class="flex w-32 shrink-0 items-center justify-center sm:w-40">
+            <img
+              src="/assets/brand/server.png"
+              alt="Server"
+              class="h-auto w-full drop-shadow-lg"
+            />
+          </div>
+          <!-- Identity info -->
+          <div class="flex flex-1 flex-col gap-3">
+            <div>
+              <div class="text-2xl font-bold text-[var(--cn-text)]">{{ hwHostname }}</div>
+              <!-- Model — resolved from product_name, falling back to the
+                   motherboard when the BIOS ships a placeholder. Hidden
+                   when there is genuinely nothing to show. -->
+              <div v-if="hwModel" class="mt-0.5 text-sm font-medium text-[var(--cn-text-muted)]">
+                {{ hwModel }}
+              </div>
+              <div class="mt-0.5 text-xs text-[var(--cn-text-muted)]">
+                {{ hwArch }} &middot; {{ hwKernel }}
+              </div>
             </div>
-            <div class="mt-0.5 text-xs text-[var(--cn-text-muted)]">
-              {{ hwArch }} &middot; {{ hwKernel }}
+            <div class="flex items-center gap-2 text-sm text-[var(--cn-text)]">
+              <AppIcon name="Clock" :size="14" class="text-[var(--cn-text-muted)]" />
+              <span>{{ t('settings.server.uptime') }}:</span>
+              <span class="font-mono font-medium">{{ formatUptime(uptime) }}</span>
+            </div>
+            <!-- Motherboard — surfaced here (not only on the Network page)
+                 so the About/Server page shows the physical board. -->
+            <div v-if="motherboardLabel" class="flex items-center gap-2 text-sm text-[var(--cn-text)]">
+              <AppIcon name="CircuitBoard" :size="14" class="text-[var(--cn-text-muted)]" />
+              <span>{{ t('settings.server.motherboard') }}:</span>
+              <span class="font-medium">{{ motherboardLabel }}</span>
             </div>
           </div>
-          <div class="flex items-center gap-2 text-sm text-[var(--cn-text)]">
-            <AppIcon name="Clock" :size="14" class="text-[var(--cn-text-muted)]" />
-            <span>{{ t('settings.server.uptime') }}:</span>
-            <span class="font-mono font-medium">{{ formatUptime(uptime) }}</span>
-          </div>
-          <!-- Motherboard — surfaced here (not only on the Network page)
-               so the About/Server page shows the physical board. -->
-          <div v-if="motherboardLabel" class="flex items-center gap-2 text-sm text-[var(--cn-text)]">
-            <AppIcon name="CircuitBoard" :size="14" class="text-[var(--cn-text-muted)]" />
-            <span>{{ t('settings.server.motherboard') }}:</span>
-            <span class="font-medium">{{ motherboardLabel }}</span>
-          </div>
         </div>
-      </div>
-    </SettingsCard>
+      </SettingsCard>
+
+      <!-- Power actions, now beside the identity rather than below the
+           whole page. -->
+      <SettingsCard
+        :title="t('settings.server.power')"
+        :description="t('settings.server.power_desc')"
+      >
+        <div class="flex flex-wrap gap-3">
+          <Button
+            severity="warn"
+            :label="t('settings.server.reboot')"
+            @click="rebootDialogVisible = true"
+          >
+            <template #icon><AppIcon name="RotateCcw" :size="16" /></template>
+          </Button>
+          <Button
+            severity="danger"
+            :label="t('settings.server.shutdown')"
+            @click="shutdownDialogVisible = true"
+          >
+            <template #icon><AppIcon name="Power" :size="16" /></template>
+          </Button>
+        </div>
+      </SettingsCard>
+    </div>
 
     <!-- System info grid -->
     <SettingsCard :title="t('settings.server.system_info')" :description="t('settings.server.system_info_desc')">
@@ -326,25 +363,6 @@ async function confirmShutdown() {
          keeps the visual rhythm consistent with the other sections. -->
     <SystemStatsPanel />
 
-    <!-- Power actions -->
-    <SettingsCard :title="t('settings.server.power')" :description="t('settings.server.power_desc')">
-      <div class="flex flex-wrap gap-3">
-        <Button
-          severity="warn"
-          :label="t('settings.server.reboot')"
-          @click="rebootDialogVisible = true"
-        >
-          <template #icon><AppIcon name="RotateCcw" :size="16" /></template>
-        </Button>
-        <Button
-          severity="danger"
-          :label="t('settings.server.shutdown')"
-          @click="shutdownDialogVisible = true"
-        >
-          <template #icon><AppIcon name="Power" :size="16" /></template>
-        </Button>
-      </div>
-    </SettingsCard>
   </SettingsPage>
 
   <!-- Reboot confirmation dialog -->
