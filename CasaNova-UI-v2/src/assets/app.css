@@ -835,7 +835,6 @@ html.cn-theme-longhorn .p-button::after {
  * BENEATH a hairline white reflection on top, separated by a darker
  * shadow line. Matches the Longhorn 4074 mocks of the title bar more
  * closely than a single linear gradient. */
-html.cn-theme-longhorn header,
 html.cn-theme-longhorn .cn-topbar {
   background-image: linear-gradient(180deg,
     rgb(238 246 254 / 0.96) 0%,
@@ -848,7 +847,6 @@ html.cn-theme-longhorn .cn-topbar {
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
 }
-html.cn-theme-longhorn.dark header,
 html.cn-theme-longhorn.dark .cn-topbar {
   background-image: linear-gradient(180deg,
     rgb(42 60 100) 0%,
@@ -1131,14 +1129,12 @@ html.cn-theme-zethus .p-button:active {
  * NOT a full-bleed band. The trick is a generous border-radius on the
  * topbar's inner container; we add a left/right margin so the page
  * background peeks around the edges. */
-html.cn-theme-zethus header,
 html.cn-theme-zethus .cn-topbar {
   background: var(--cn-surface);
   border-bottom: 1px solid var(--cn-border);
   box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.3) inset,
               0 4px 12px -4px rgb(60 40 20 / 0.10);
 }
-html.cn-theme-zethus.dark header,
 html.cn-theme-zethus.dark .cn-topbar {
   background: rgb(28 34 46);
   border-bottom-color: rgb(60 70 90);
@@ -1379,14 +1375,12 @@ html.cn-theme-zaru .p-button:hover {
 html.cn-theme-zaru .p-button:active { transform: translateY(0); }
 
 /* Header / top bar — clean, frosted, hairline underline. */
-html.cn-theme-zaru header,
 html.cn-theme-zaru .cn-topbar {
   background-color: rgb(255 255 255 / 0.8);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--cn-border);
 }
-html.cn-theme-zaru.dark header,
 html.cn-theme-zaru.dark .cn-topbar {
   background-color: rgb(11 13 18 / 0.72);
 }
@@ -1510,3 +1504,25 @@ html .p-toast .p-toast-message.p-toast-message-error   { border-color: rgb(239 6
   100% { transform: translateX(420%); }
 }
 .cn-indeterminate { animation: cn-indeterminate-slide 1.2s ease-in-out infinite; }
+
+/* Page titles over a wallpaper.
+ *
+ * The theme rules above used to include a bare `header` selector alongside
+ * `.cn-topbar`. That was written for the app's top bar, but `header` matches
+ * EVERY <header> in the app — so every settings page's title picked up an
+ * opaque frame meant for the chrome, and it ignored the transparency toggle
+ * because it was painted with a solid background.
+ *
+ * With that gone the title sits directly on the page, which is what the
+ * transparency setting is for. What it still needs is contrast: a photograph
+ * underneath can put light pixels behind light text. A text shadow buys that
+ * without drawing a box — the letters get their own edge instead of the block
+ * getting a frame. Only under cn-transparent, since on a flat surface the
+ * shadow would be visible for no reason.
+ */
+html.cn-transparent .cn-page-title {
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55), 0 0 12px rgb(0 0 0 / 0.35);
+}
+html.cn-transparent:not(.dark) .cn-page-title {
+  text-shadow: 0 1px 3px rgb(255 255 255 / 0.7), 0 0 12px rgb(255 255 255 / 0.5);
+}

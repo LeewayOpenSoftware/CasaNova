@@ -38,8 +38,8 @@ defineProps<{
         <component v-else-if="icon" :is="icon" :size="24" />
       </div>
       <div class="min-w-0 flex-1 pt-0.5">
-        <h1 class="text-xl font-semibold text-[var(--cn-text)]">{{ title }}</h1>
-        <p v-if="description" class="mt-1 text-sm text-[var(--cn-text-muted)]">
+        <h1 class="cn-page-title text-xl font-semibold text-[var(--cn-text)]">{{ title }}</h1>
+        <p v-if="description" class="cn-page-title mt-1 text-sm text-[var(--cn-text-muted)]">
           {{ description }}
         </p>
       </div>
