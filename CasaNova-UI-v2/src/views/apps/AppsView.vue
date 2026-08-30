@@ -19,6 +19,7 @@ import { useI18n } from 'vue-i18n'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppTileIcon from '@/components/apps/AppTileIcon.vue'
 import { useContainersStore } from '@/stores/containers'
 import { appHost, resolveBoxLanIp } from '@/composables/useAppOrder'
 import {
@@ -217,7 +218,13 @@ onMounted(async () => {
           :class="activeTab === tab.id ? 'bg-[var(--cn-surface-hover)] text-[var(--cn-text)]' : 'text-[var(--cn-text-muted)] hover:text-[var(--cn-text)]'"
           @click="activeTab = tab.id"
         >
-          <img v-if="tab.iconUrl" :src="tab.iconUrl" class="h-4 w-4 rounded-sm" alt="" />
+          <AppTileIcon
+            :icon-url="tab.iconUrl"
+            :id="tab.id"
+            :name="tab.title"
+            size-class="h-4 w-4 rounded-sm"
+            text-class="text-[8px]"
+          />
           <span class="truncate">{{ tab.title }}</span>
           <button
             class="rounded p-0.5 opacity-0 transition-opacity hover:bg-[var(--cn-surface)] group-hover:opacity-100"
@@ -292,10 +299,7 @@ onMounted(async () => {
                 class="cn-widget flex flex-col items-center gap-2 p-4 transition-transform hover:scale-[1.02]"
                 @click="openApp(c)"
               >
-                <img v-if="c.app.iconUrl" :src="c.app.iconUrl" class="h-12 w-12 rounded-xl" alt="" />
-                <div v-else class="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--cn-surface-hover)] text-lg font-semibold text-[var(--cn-text-muted)]">
-                  {{ (c.app.title || c.app.id).charAt(0).toUpperCase() }}
-                </div>
+                <AppTileIcon :icon-url="c.app.iconUrl" :id="c.app.id" :name="c.app.title" />
                 <span class="max-w-full truncate text-sm text-[var(--cn-text)]">{{ c.app.title || c.app.id }}</span>
               </button>
             </div>
@@ -317,10 +321,7 @@ onMounted(async () => {
                 :title="c.open.mode === 'newtab' ? c.open.reason : ''"
                 @click="openApp(c)"
               >
-                <img v-if="c.app.iconUrl" :src="c.app.iconUrl" class="h-12 w-12 rounded-xl" alt="" />
-                <div v-else class="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--cn-surface-hover)] text-lg font-semibold text-[var(--cn-text-muted)]">
-                  {{ (c.app.title || c.app.id).charAt(0).toUpperCase() }}
-                </div>
+                <AppTileIcon :icon-url="c.app.iconUrl" :id="c.app.id" :name="c.app.title" />
                 <span class="max-w-full truncate text-sm text-[var(--cn-text)]">{{ c.app.title || c.app.id }}</span>
                 <span class="flex items-center gap-1 text-[10px] text-[var(--cn-text-muted)]">
                   <AppIcon name="ExternalLink" :size="10" />
@@ -341,10 +342,7 @@ onMounted(async () => {
                 class="cn-widget flex flex-col items-center gap-2 p-4 opacity-60 transition-opacity hover:opacity-90"
                 @click="openApp(c)"
               >
-                <img v-if="c.app.iconUrl" :src="c.app.iconUrl" class="h-12 w-12 rounded-xl" alt="" />
-                <div v-else class="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--cn-surface-hover)] text-lg font-semibold text-[var(--cn-text-muted)]">
-                  {{ (c.app.title || c.app.id).charAt(0).toUpperCase() }}
-                </div>
+                <AppTileIcon :icon-url="c.app.iconUrl" :id="c.app.id" :name="c.app.title" />
                 <span class="max-w-full truncate text-sm text-[var(--cn-text)]">{{ c.app.title || c.app.id }}</span>
                 <span class="flex items-center gap-1 text-[10px] text-[var(--cn-text-muted)]">
                   <AppIcon name="ExternalLink" :size="10" />

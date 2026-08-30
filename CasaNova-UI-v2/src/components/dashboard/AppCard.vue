@@ -190,6 +190,7 @@ function writeIconCache(id: string, sig: string, url: string | null) {
 // "Preview" ribbon badge so users know the feature isn't ready yet.
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { appIconCandidates } from '@/composables/appIconCandidates'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Menu from 'primevue/menu'
@@ -240,56 +241,13 @@ const props = defineProps<{
 // doesn't. Dropping it silently turned working tiles into letter tiles,
 // and because a "no icon" verdict is cached for 24 h a reload would not
 // have brought them back.
-const ICON_CDN = 'https://cdn.jsdelivr.net/gh/selfhst/icons/png'
-const ICON_CDN_SVG = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg'
-
-const iconCandidates = computed<string[]>(() => {
-  const urls: string[] = []
-  const seen = new Set<string>()
-  const add = (u: string | undefined) => {
-    if (!u) return
-    if (seen.has(u)) return
-    seen.add(u)
-    urls.push(u)
-  }
-
-  // 1. The backend-resolved URL is always tried first — it may point
-  //    at a CasaOS or custom CDN we don't know how to probe.
-  add(props.app.iconUrl)
-
-  // 2. Normalized kebab slugs from the app id + name. These are the
-  //    short identifiers that actually match selfhst filenames.
-  const slugify = (raw: string | undefined) =>
-    (raw ?? '')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-  const slugs = new Set([slugify(props.app.id), slugify(props.app.name)])
-
-  // 3. For each slug, emit png → svg candidates on the selfhst CDN.
-  //    Order matters: png first because <img> renders them without any
-  //    extra wrangling and they're the most commonly-populated format
-  //    in the repo.
-  for (const slug of slugs) {
-    if (!slug) continue
-    add(`${ICON_CDN}/${slug}.png`)
-    add(`${ICON_CDN_SVG}/${slug}.svg`)
-  }
-
-  // 4. Same again for the separator-less form, tried only after every
-  //    kebab candidate has failed. `add` dedupes, so single-word apps
-  //    (where compact === kebab) cost nothing extra: the common case
-  //    stays at 7 candidates, still far from the old ~19.
-  for (const slug of slugs) {
-    const compact = slug.replace(/-/g, '')
-    if (!compact) continue
-    add(`${ICON_CDN}/${compact}.png`)
-    add(`${ICON_CDN_SVG}/${compact}.svg`)
-  }
-
-  return urls
-})
+// The candidate list itself lives in appIconCandidates so the Apps section
+// walks exactly the same one. It used to be inlined here, and the second
+// renderer that did not have it showed empty squares for icons this card
+// resolved fine.
+const iconCandidates = computed<string[]>(() =>
+  appIconCandidates({ iconUrl: props.app.iconUrl, id: props.app.id, name: props.app.name }),
+)
 
 // Cache identity for this tile: the candidate list is derived from the
 // app id (the cache key) plus these two fields, so a change in either
