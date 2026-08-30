@@ -2,11 +2,15 @@ package v1
 
 // Per-disk operations that don't fit storage.go's "format / mount /
 // unmount" trio: online filesystem resize and a quick benchmark. Both
-// are admin-only (PermStorageWrite) and operate on a mounted partition
-// — no whole-disk paths, no system-disk targets.
+// are admin-only (PermStorageWrite) and act on a mounted filesystem.
 //
-//   POST /v1/storage/resize     { path: "/dev/sdb1" }
-//   POST /v1/storage/benchmark  { path: "/dev/sdb1", mode?: "quick" | "deep" }
+// The caller may name either the partition or the whole disk. The
+// storage page only has disk rows, so in practice it always sends the
+// disk; mountedFilesystems below resolves that to the filesystem the
+// operation can actually touch.
+//
+//   POST /v1/storage/resize     { path: "/dev/sdb"  | "/dev/sdb1" }
+//   POST /v1/storage/benchmark  { path: "/dev/sda"  | "/dev/sda1", mode?: "quick" | "deep" }
 
 import (
 	"bufio"
@@ -22,6 +26,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
+	model1 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/model"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service"
 	"github.com/labstack/echo/v4"
 )
@@ -44,6 +49,45 @@ var resizeCommands = map[string]struct {
 	"xfs":   {true, []string{"xfs_growfs"}},
 	"btrfs": {true, []string{"btrfs", "filesystem", "resize", "max"}},
 	"f2fs":  {false, []string{"resize.f2fs", "-s"}},
+}
+
+// mountedFS is a filesystem an operation can act on: where it lives, where
+// it is mounted, and what it is formatted as.
+type mountedFS struct {
+	Device     string
+	MountPoint string
+	FsType     string
+}
+
+// mountedFilesystems returns every mounted filesystem at or beneath a device.
+//
+// WHY THIS EXISTS. Both handlers below used to read info.MountPoint straight
+// off the device the caller named, and reject the request when it was empty.
+// A whole disk is never itself mounted — its partitions are — and the storage
+// page has no partition rows: every menu entry passes the disk. So the check
+// was true on every real click, and both operations answered "partition must
+// be mounted" about partitions that were mounted the whole time. On the test
+// box, /dev/sda reports no mountpoint while its only child /dev/sda1 is
+// mounted at /mnt/UNIT5.
+//
+// The walk is recursive rather than one level deep so a filesystem sitting on
+// LVM or LUKS (disk → partition → crypt → lv) is still found.
+func mountedFilesystems(node model1.LSBLKModel) []mountedFS {
+	found := []mountedFS{}
+	// A swap partition reports "[SWAP]" as its mountpoint. It is not a
+	// directory, so writing a scratch file there or growing it online is
+	// meaningless — excluded so it can never be picked as a target.
+	if node.MountPoint != "" && strings.HasPrefix(node.MountPoint, "/") {
+		found = append(found, mountedFS{
+			Device:     node.Path,
+			MountPoint: node.MountPoint,
+			FsType:     node.FsType,
+		})
+	}
+	for _, child := range node.Children {
+		found = append(found, mountedFilesystems(child)...)
+	}
+	return found
 }
 
 func PostResizeDisk(ctx echo.Context) error {
@@ -71,23 +115,44 @@ func PostResizeDisk(ctx echo.Context) error {
 			Message: "unknown device",
 		})
 	}
-	if info.MountPoint == "" {
+	// Resizing is a real mutation, so it resolves only when the answer is
+	// unambiguous. A disk holding two mounted filesystems gives no basis for
+	// choosing one, and guessing would grow a filesystem the operator never
+	// named — so it says which candidates it found and stops.
+	mounts := mountedFilesystems(info)
+	if len(mounts) == 0 {
 		return ctx.JSON(http.StatusBadRequest, model.Result{
 			Success: common_err.INVALID_PARAMS,
-			Message: "partition must be mounted before resize",
+			Message: fmt.Sprintf("%s has no mounted filesystem; mount it before resizing", path),
 		})
 	}
-	spec, ok := resizeCommands[info.FsType]
+	if len(mounts) > 1 {
+		names := make([]string, 0, len(mounts))
+		for _, m := range mounts {
+			names = append(names, m.Device)
+		}
+		return ctx.JSON(http.StatusBadRequest, model.Result{
+			Success: common_err.INVALID_PARAMS,
+			Message: fmt.Sprintf("%s holds several mounted filesystems (%s); name the one to resize",
+				path, strings.Join(names, ", ")),
+		})
+	}
+	fs := mounts[0]
+
+	spec, ok := resizeCommands[fs.FsType]
 	if !ok {
 		return ctx.JSON(http.StatusBadRequest, model.Result{
 			Success: common_err.INVALID_PARAMS,
-			Message: fmt.Sprintf("filesystem %q does not support online resize", info.FsType),
+			Message: fmt.Sprintf("filesystem %q does not support online resize", fs.FsType),
 		})
 	}
 
-	target := path
+	// resize2fs takes the device, xfs_growfs and btrfs take the mount point.
+	// Either way it is the resolved filesystem's own path, never the disk the
+	// caller named — resize2fs /dev/sda would fail on a partitioned disk.
+	target := fs.Device
 	if spec.useMount {
-		target = info.MountPoint
+		target = fs.MountPoint
 	}
 	argv := append([]string{}, spec.argv...)
 	argv = append(argv, target)
@@ -114,7 +179,7 @@ func PostResizeDisk(ctx echo.Context) error {
 		Success: common_err.SUCCESS,
 		Message: common_err.GetMsg(common_err.SUCCESS),
 		Data: map[string]string{
-			"fs":     info.FsType,
+			"fs":     fs.FsType,
 			"target": target,
 			"output": strings.TrimSpace(string(out)),
 		},
@@ -167,16 +232,29 @@ func PostBenchmarkDisk(ctx echo.Context) error {
 			Message: "unknown device",
 		})
 	}
-	if info.MountPoint == "" {
+	// Unlike resize, several candidates are not ambiguous here: every
+	// filesystem on the device sits on the same hardware, and the benchmark
+	// only writes a scratch file it deletes. So it takes the first and names
+	// it in the result, because "180 MB/s" without a target is not a
+	// measurement anyone can repeat.
+	mounts := mountedFilesystems(info)
+	if len(mounts) == 0 {
 		return ctx.JSON(http.StatusBadRequest, model.Result{
 			Success: common_err.INVALID_PARAMS,
-			Message: "partition must be mounted before benchmark",
+			Message: fmt.Sprintf("%s has no mounted filesystem to benchmark; mount it first", path),
 		})
 	}
+	fs := mounts[0]
 
 	start := time.Now()
-	res, err := runBenchmark(info.MountPoint, mode)
+	res, err := runBenchmark(fs.MountPoint, mode)
 	res.DurationMS = time.Since(start).Milliseconds()
+	where := fmt.Sprintf("measured on %s (%s)", fs.MountPoint, fs.Device)
+	if res.Notes == "" {
+		res.Notes = where
+	} else {
+		res.Notes += "; " + where
+	}
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{
 			Success: common_err.SERVICE_ERROR,
