@@ -73,7 +73,11 @@ async function loadPools() {
 async function loadVolumes() {
   if (!pool.value) return
   const r = await safeCall(() => virtApi.listVolumes(pool.value))
-  volumes.value = r.data ?? []
+  // libvirt reports a subdirectory inside the pool as a volume with zero
+  // capacity — /var/lib/libvirt/images/pool shows up next to the real disks.
+  // It is not a disk anyone can attach, and offering a delete button for a
+  // directory is worse than not listing it.
+  volumes.value = (r.data ?? []).filter((v) => v.capacity > 0)
 }
 
 async function addISO() {
