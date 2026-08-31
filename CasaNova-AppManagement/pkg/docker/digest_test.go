@@ -58,7 +58,7 @@ func TestCompareDigest(t *testing.T) {
 	imageInfo, _, err := cli.ImageInspectWithRaw(ctx, imageName)
 	assert.NilError(t, err)
 
-	match, err := docker.CompareDigest(imageName, imageInfo.RepoDigests)
+	match, err := docker.CompareDigest(context.Background(), imageName, imageInfo.RepoDigests)
 	assert.NilError(t, err)
 
 	assert.Assert(t, match)

@@ -164,9 +164,18 @@ export async function installFromLibrary(composeYaml: string): Promise<string> {
 /**
  * getUpgradableApps — returns apps that have updates available.
  */
+/** The sweep this drives checks every installed app against its registry. It
+ *  used to have no deadline at all: three uncancellable HTTP calls per app,
+ *  ~90s each in the worst case, multiplied by however many apps have a cold
+ *  cache. The handler now bounds the whole pass at 100s and returns what it
+ *  managed to check, so this has to sit above that — otherwise axios aborts
+ *  first and the partial answer the budget exists to produce is discarded. */
+const UPGRADABLE_TIMEOUT_MS = 130_000
+
 export async function getUpgradableApps(): Promise<UpgradableApp[]> {
   const res = await client.get<{ data: UpgradableApp[] }>(
     '/v2/app_management/apps/upgradable',
+    { timeout: UPGRADABLE_TIMEOUT_MS },
   )
   return res.data.data ?? []
 }

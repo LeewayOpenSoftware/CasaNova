@@ -108,7 +108,7 @@ func (ds *dockerService) PullLatestImage(ctx context.Context, imageName string) 
 		return false, err
 	}
 
-	if match, err := docker.CompareDigest(imageName, imageInfo1.RepoDigests); err != nil {
+	if match, err := docker.CompareDigest(ctx, imageName, imageInfo1.RepoDigests); err != nil {
 		// do nothing
 	} else if match {
 		return false, nil

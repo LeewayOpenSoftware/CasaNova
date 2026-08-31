@@ -616,7 +616,11 @@ func (a *AppStoreManagement) WorkDir() (string, error) {
 	return "", fmt.Errorf("not implemented: AppStoreManagement is a virtual appstore")
 }
 
-func (a *AppStoreManagement) IsUpdateAvailable(composeApp *ComposeApp) bool {
+// IsUpdateAvailable answers from a one-hour cache when it can. On a miss it
+// talks to the image's registry, which is why it takes a context: the caller
+// decides how long the whole sweep may run, and a request that has already
+// given up should not leave registry calls running behind it.
+func (a *AppStoreManagement) IsUpdateAvailable(ctx context.Context, composeApp *ComposeApp) bool {
 	storeID := composeApp.Name
 	if value, err := a.isAppUpgradable.Get(storeID); err == nil {
 		switch value := value.(type) {
@@ -628,7 +632,7 @@ func (a *AppStoreManagement) IsUpdateAvailable(composeApp *ComposeApp) bool {
 		}
 	}
 
-	isUpdate, err := a.isUpdateAvailable(composeApp)
+	isUpdate, err := a.isUpdateAvailable(ctx, composeApp)
 	if err != nil {
 		logger.Error("failed to check if update is available", zap.Error(err))
 		return false
@@ -637,7 +641,7 @@ func (a *AppStoreManagement) IsUpdateAvailable(composeApp *ComposeApp) bool {
 	return isUpdate
 }
 
-func (a *AppStoreManagement) isUpdateAvailable(composeApp *ComposeApp) (bool, error) {
+func (a *AppStoreManagement) isUpdateAvailable(ctx context.Context, composeApp *ComposeApp) (bool, error) {
 	// handle no tag logic and for easy to test
 	storeInfo, err := composeApp.StoreInfo(false)
 	if err != nil {
@@ -665,7 +669,7 @@ func (a *AppStoreManagement) isUpdateAvailable(composeApp *ComposeApp) (bool, er
 		return false, nil
 	}
 
-	return a.IsUpdateAvailableWith(composeApp, storeComposeApp)
+	return a.IsUpdateAvailableWith(ctx, composeApp, storeComposeApp)
 }
 
 // the patch is have no choice
@@ -676,7 +680,7 @@ var NoUpdateBlacklist = []string{
 	"johnguan/stable-diffusion-webui:latest",
 }
 
-func (a *AppStoreManagement) IsUpdateAvailableWith(composeApp *ComposeApp, storeComposeApp *ComposeApp) (bool, error) {
+func (a *AppStoreManagement) IsUpdateAvailableWith(ctx context.Context, composeApp *ComposeApp, storeComposeApp *ComposeApp) (bool, error) {
 	currentTag, err := composeApp.MainTag()
 	if err != nil {
 		logger.Error("failed to get current tag", zap.Error(err))
@@ -696,7 +700,10 @@ func (a *AppStoreManagement) IsUpdateAvailableWith(composeApp *ComposeApp, store
 		// half-open if the daemon was wedged. The unbounded ctx meant
 		// any single hung ImageInspect froze the calling goroutine
 		// until daemon restart.
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// Derived from the caller's context, not from Background: a request
+		// that has already spent its budget must not start another 15 seconds
+		// of work. Whichever deadline is nearer wins.
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		cli, clientErr := docker.SharedClient()
 		if clientErr != nil {
@@ -716,7 +723,7 @@ func (a *AppStoreManagement) IsUpdateAvailableWith(composeApp *ComposeApp, store
 			return false, clientErr
 		}
 
-		match, clientErr := docker.CompareDigest(mainService.Image, imageInfo.RepoDigests)
+		match, clientErr := docker.CompareDigest(ctx, mainService.Image, imageInfo.RepoDigests)
 		if clientErr != nil {
 			logger.Error("failed to compare digest", zap.Error(clientErr))
 			return false, clientErr

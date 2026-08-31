@@ -431,6 +431,12 @@ func FilterCatalogByAppStoreID(catalog map[string]*service.ComposeApp, appStoreI
 	})
 }
 
+// upgradableSweepBudget bounds the whole "which apps have updates" pass. It
+// has to sit under the client's own timeout for that call, or the client
+// aborts first and the partial answer this budget exists to produce is thrown
+// away — the exact failure the budget is here to avoid.
+const upgradableSweepBudget = 100 * time.Second
+
 func (a *AppManagement) UpgradableAppList(ctx echo.Context) error {
 	composeApps, err := service.MyService.Compose().List(ctx.Request().Context())
 
@@ -449,8 +455,28 @@ func (a *AppManagement) UpgradableAppList(ctx echo.Context) error {
 		storeCatalog = map[string]*service.ComposeApp{}
 	}
 
+	// One budget for the whole sweep, not one per app.
+	//
+	// Bounding each check individually is not enough here: this loop runs over
+	// every installed app, and a cold cache (a restart, or any store sync,
+	// which purges it) sends all of them down the registry path at once. At 15
+	// seconds each that is minutes for a single request — so the sweep gets a
+	// deadline of its own and reports what it managed to check rather than
+	// running until the caller has long since given up.
+	//
+	// The apps it did not reach simply do not appear as upgradable this time;
+	// the next call, with a warm cache for the ones already done, gets further.
+	sweepCtx, cancelSweep := context.WithTimeout(ctx.Request().Context(), upgradableSweepBudget)
+	defer cancelSweep()
+	checked, skipped := 0, 0
+
 	for id, composeApp := range composeApps {
 		if composeApp == nil {
+			continue
+		}
+
+		if sweepCtx.Err() != nil {
+			skipped++
 			continue
 		}
 
@@ -494,7 +520,8 @@ func (a *AppManagement) UpgradableAppList(ctx echo.Context) error {
 			targetTag = mainTag
 		}
 
-		if service.MyService.AppStoreManagement().IsUpdateAvailable(composeApp) {
+		checked++
+		if service.MyService.AppStoreManagement().IsUpdateAvailable(sweepCtx, composeApp) {
 			upgradableAppList = append(upgradableAppList, codegen.UpgradableAppInfo{
 				Title:      string(title),
 				Version:    targetTag,
@@ -503,6 +530,15 @@ func (a *AppManagement) UpgradableAppList(ctx echo.Context) error {
 				Icon:       storeInfo.Icon,
 			})
 		}
+	}
+
+	if skipped > 0 {
+		// Said out loud rather than silently returning a short list: a user
+		// who sees fewer updates than they expect deserves to know the sweep
+		// ran out of time, not to conclude the apps are up to date.
+		logger.Info("upgradable sweep hit its budget",
+			zap.Int("checked", checked), zap.Int("skipped", skipped),
+			zap.Duration("budget", upgradableSweepBudget))
 	}
 
 	//  sort upgradableAppList by title

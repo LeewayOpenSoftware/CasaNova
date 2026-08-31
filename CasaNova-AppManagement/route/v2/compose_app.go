@@ -598,7 +598,7 @@ func (a *AppManagement) UpdateComposeApp(ctx echo.Context, id codegen.ComposeApp
 
 	if params.Force != nil && !*params.Force {
 		// check if updateAvailable
-		if !service.MyService.AppStoreManagement().IsUpdateAvailable(composeApp) {
+		if !service.MyService.AppStoreManagement().IsUpdateAvailable(ctx.Request().Context(), composeApp) {
 			message := fmt.Sprintf("compose app `%s` is up to date", id)
 			return ctx.JSON(http.StatusOK, codegen.ComposeAppUpdateOK{Message: &message})
 		}
@@ -1109,7 +1109,7 @@ func composeAppsWithStoreInfo(ctx context.Context, opts composeAppsWithStoreInfo
 
 		if opts.checkIsUpdateAvailable {
 			// check if updateAvailable
-			updateAvailable := service.MyService.AppStoreManagement().IsUpdateAvailable(composeApp)
+			updateAvailable := service.MyService.AppStoreManagement().IsUpdateAvailable(ctx, composeApp)
 			composeAppWithStoreInfo.UpdateAvailable = &updateAvailable
 		}
 

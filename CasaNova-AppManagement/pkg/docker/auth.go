@@ -4,6 +4,7 @@ credit: https://github.com/containrrr/watchtower
 package docker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,8 +23,14 @@ type TokenResponse struct {
 // ChallengeHeader is the HTTP Header containing challenge instructions
 const ChallengeHeader = "WWW-Authenticate"
 
-// GetChallenge fetches a challenge for the registry hosting the provided image
-func GetChallenge(imageName string) (string, error) {
+// GetChallenge fetches a challenge for the registry hosting the provided image.
+//
+// Takes a context because checking one image for updates makes THREE outbound
+// registry calls — challenge, token, digest — and none of them used to carry
+// one. Each was capped only by the shared client's 30 second timeout, so a
+// slow or rate-limited registry cost up to 90 seconds per image that nothing
+// could cancel, inside a loop over every installed app.
+func GetChallenge(ctx context.Context, imageName string) (string, error) {
 	var err error
 	var URL url.URL
 
@@ -32,7 +39,7 @@ func GetChallenge(imageName string) (string, error) {
 	}
 
 	var req *http.Request
-	if req, err = GetChallengeRequest(URL); err != nil {
+	if req, err = GetChallengeRequest(ctx, URL); err != nil {
 		return "", err
 	}
 
@@ -48,7 +55,7 @@ func GetChallenge(imageName string) (string, error) {
 	return strings.ToLower(v), nil
 }
 
-func GetToken(challenge string, registryAuth string, imageName string) (string, error) {
+func GetToken(ctx context.Context, challenge string, registryAuth string, imageName string) (string, error) {
 	if strings.HasPrefix(challenge, "basic") {
 		if registryAuth == "" {
 			return "", fmt.Errorf("no credentials available")
@@ -58,15 +65,15 @@ func GetToken(challenge string, registryAuth string, imageName string) (string, 
 	}
 
 	if strings.HasPrefix(challenge, "bearer") {
-		return GetBearerHeader(challenge, imageName, registryAuth)
+		return GetBearerHeader(ctx, challenge, imageName, registryAuth)
 	}
 
 	return "", errors.New("unsupported challenge type from registry")
 }
 
 // GetChallengeRequest creates a request for getting challenge instructions
-func GetChallengeRequest(URL url.URL) (*http.Request, error) {
-	req, err := http.NewRequest(http.MethodGet, URL.String(), nil)
+func GetChallengeRequest(ctx context.Context, URL url.URL) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, URL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +83,7 @@ func GetChallengeRequest(URL url.URL) (*http.Request, error) {
 }
 
 // GetBearerHeader tries to fetch a bearer token from the registry based on the challenge instructions
-func GetBearerHeader(challenge string, img string, registryAuth string) (string, error) {
+func GetBearerHeader(ctx context.Context, challenge string, img string, registryAuth string) (string, error) {
 	client := httpClient()
 	if strings.Contains(img, ":") {
 		img = strings.Split(img, ":")[0]
@@ -88,7 +95,7 @@ func GetBearerHeader(challenge string, img string, registryAuth string) (string,
 	}
 
 	var r *http.Request
-	if r, err = http.NewRequest(http.MethodGet, authURL.String(), nil); err != nil {
+	if r, err = http.NewRequestWithContext(ctx, http.MethodGet, authURL.String(), nil); err != nil {
 		return "", err
 	}
 

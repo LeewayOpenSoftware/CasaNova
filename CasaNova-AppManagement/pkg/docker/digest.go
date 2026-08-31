@@ -57,15 +57,15 @@ type Platform struct {
 }
 
 // CompareDigest ...
-func CompareDigest(imageName string, repoDigests []string) (bool, error) {
+func CompareDigest(ctx context.Context, imageName string, repoDigests []string) (bool, error) {
 	var digest string
 
-	token, url, err := tokenAndURL(imageName)
+	token, url, err := tokenAndURL(ctx, imageName)
 	if err != nil {
 		return false, err
 	}
 
-	if digest, err = GetDigest(url, token); err != nil {
+	if digest, err = GetDigest(ctx, url, token); err != nil {
 		return false, err
 	}
 
@@ -104,12 +104,12 @@ func TransformAuth(registryAuth string) string {
 }
 
 // GetDigest from registry using a HEAD request to prevent rate limiting
-func GetDigest(url string, token string) (string, error) {
+func GetDigest(ctx context.Context, url string, token string) (string, error) {
 	if token == "" {
 		return "", errors.New("could not fetch token")
 	}
 
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create HEAD request: %w", err)
 	}
@@ -132,16 +132,15 @@ func GetDigest(url string, token string) (string, error) {
 }
 
 func GetManifest(ctx context.Context, imageName string) (interface{}, string, error) {
-	token, url, err := tokenAndURL(imageName)
+	token, url, err := tokenAndURL(ctx, imageName)
 	if err != nil {
 		return nil, "", err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create GET request: %w", err)
 	}
-	req = req.WithContext(ctx)
 	addDefaultHeaders(&req.Header, token)
 
 	res, err := httpClient().Do(req)
@@ -181,19 +180,19 @@ func GetManifest(ctx context.Context, imageName string) (interface{}, string, er
 	}
 }
 
-func tokenAndURL(imageName string) (string, string, error) {
+func tokenAndURL(ctx context.Context, imageName string) (string, string, error) {
 	opts, err := GetPullOptions(imageName)
 	if err != nil {
 		return "", "", err
 	}
 
 	registryAuth := TransformAuth(opts.RegistryAuth)
-	challenge, err := GetChallenge(imageName)
+	challenge, err := GetChallenge(ctx, imageName)
 	if err != nil {
 		return "", "", err
 	}
 
-	token, err := GetToken(challenge, registryAuth, imageName)
+	token, err := GetToken(ctx, challenge, registryAuth, imageName)
 	if err != nil {
 		return "", "", err
 	}

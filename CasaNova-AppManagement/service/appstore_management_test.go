@@ -130,7 +130,7 @@ func TestIsUpgradable(t *testing.T) {
 	localComposeApp, err := service.LoadComposeAppFromConfigFile(*storeComposeAppStoreInfo.StoreAppID, composeFilePath)
 	assert.NilError(t, err)
 
-	upgradable, err := appStoreManagement.IsUpdateAvailableWith(localComposeApp, storeComposeApp)
+	upgradable, err := appStoreManagement.IsUpdateAvailableWith(context.Background(), localComposeApp, storeComposeApp)
 	assert.NilError(t, err)
 	assert.Assert(t, !upgradable)
 
@@ -147,7 +147,7 @@ func TestIsUpgradable(t *testing.T) {
 	// A genuinely newer catalog version IS an update. The fixture ships
 	// 1.23.1, so 1.24.0 is the real upgrade case.
 	setStoreImage(storeMainAppImage + ":1.24.0")
-	upgradable, err = appStoreManagement.IsUpdateAvailableWith(localComposeApp, storeComposeApp)
+	upgradable, err = appStoreManagement.IsUpdateAvailableWith(context.Background(), localComposeApp, storeComposeApp)
 	assert.NilError(t, err)
 	assert.Assert(t, upgradable)
 
@@ -156,7 +156,7 @@ func TestIsUpgradable(t *testing.T) {
 	// for any differing tag, so a stale catalog silently downgraded an
 	// app that was already newer.
 	setStoreImage(storeMainAppImage + ":1.22.0")
-	upgradable, err = appStoreManagement.IsUpdateAvailableWith(localComposeApp, storeComposeApp)
+	upgradable, err = appStoreManagement.IsUpdateAvailableWith(context.Background(), localComposeApp, storeComposeApp)
 	assert.NilError(t, err)
 	assert.Assert(t, !upgradable)
 
@@ -166,7 +166,7 @@ func TestIsUpgradable(t *testing.T) {
 	// branch above.) This case used to assert the opposite and was the
 	// last remnant of the `!=` semantics.
 	setStoreImage(storeMainAppImage + ":test")
-	upgradable, err = appStoreManagement.IsUpdateAvailableWith(localComposeApp, storeComposeApp)
+	upgradable, err = appStoreManagement.IsUpdateAvailableWith(context.Background(), localComposeApp, storeComposeApp)
 	assert.NilError(t, err)
 	assert.Assert(t, !upgradable)
 }

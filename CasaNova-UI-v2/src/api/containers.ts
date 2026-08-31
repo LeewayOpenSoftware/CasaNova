@@ -273,6 +273,11 @@ function resolveIcon(name: string, image: string, storeIcon: string): string {
 const LIST_TIMEOUT_MS = 25_000
 const STATS_TIMEOUT_MS = 20_000
 const LIFECYCLE_TIMEOUT_MS = 40_000
+// checkForUpdates and pullAppUpdate both run the store-availability gate,
+// which reaches the image's registry. That gate used to make three
+// uncancellable HTTP calls of up to 30 seconds each; it is bounded at 15s per
+// app now, on top of a catalog build that may be cold.
+const UPDATE_CHECK_TIMEOUT_MS = 60_000
 
 export async function listApps(): Promise<AppEntryApi[]> {
   const res = await client.get<BackendComposeResponse>(
@@ -664,7 +669,9 @@ export async function checkForUpdates(id: string): Promise<{
     data: {
       services: Array<{ serviceId: string; hasUpdate: boolean; newTag?: string }>
     }
-  }>(`/v2/app_management/compose/${encodeURIComponent(id)}/check_updates`)
+  }>(`/v2/app_management/compose/${encodeURIComponent(id)}/check_updates`, undefined, {
+    timeout: UPDATE_CHECK_TIMEOUT_MS,
+  })
   return res.data.data
 }
 
@@ -682,7 +689,7 @@ export async function pullAppUpdate(id: string, force = false): Promise<string> 
   const res = await client.patch<{ success: number; message?: string }>(
     `/v2/app_management/compose/${encodeURIComponent(id)}`,
     undefined,
-    { params: { force } },
+    { params: { force }, timeout: UPDATE_CHECK_TIMEOUT_MS },
   )
   return res.data.message ?? ''
 }

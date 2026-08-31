@@ -280,7 +280,7 @@ func (a *AppManagement) PostComposeCheckUpdates(ctx echo.Context) error {
 
 	// Availability is per-app (the store catalog is the unit of versioning),
 	// so compute it once instead of re-querying for every service.
-	hasUpdate := service.MyService.AppStoreManagement().IsUpdateAvailable(composeApp)
+	hasUpdate := service.MyService.AppStoreManagement().IsUpdateAvailable(ctx.Request().Context(), composeApp)
 
 	results := []serviceUpdate{}
 	for _, svc := range composeApp.Services {
