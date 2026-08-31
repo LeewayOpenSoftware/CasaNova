@@ -48,6 +48,14 @@ func (a *AppManagement) PullImages(ctx echo.Context, params codegen.PullImagesPa
 	defer readCancel()
 	backgroundCtx := readCtx
 
+	// Snapshot the query params BEFORE any goroutine is spawned. echo
+	// pools and reuses echo.Context values between requests, so a pull
+	// goroutine calling PropertiesFromQueryParams(ctx) after this handler
+	// returned would be ranging over whatever request now owns that
+	// recycled context — a cross-user data race on QueryParams' map, and
+	// wrong app names on the events it publishes.
+	props := PropertiesFromQueryParams(ctx)
+
 	if params.ContainerIds != nil {
 		containerIDs := strings.Split(*params.ContainerIds, ",")
 		// Wave 32: bound the fan-out so an attacker (or a buggy client
@@ -70,7 +78,13 @@ func (a *AppManagement) PullImages(ctx echo.Context, params codegen.PullImagesPa
 				continue
 			}
 
-			go func(containerID, imageName string) {
+			// Pass everything the goroutine needs by value. `container` is a
+			// docker SDK struct read from the request-scoped inspect above;
+			// resolving its name/icon here keeps the goroutine free of any
+			// request-scoped state.
+			appName, appIcon := v1.AppName(container), v1.AppIcon(container)
+
+			go func(containerID, imageName, appName, appIcon string) {
 				// Wave 32: recover so a panic inside PullLatestImage
 				// (broken docker SDK response, network race) does not
 				// take the entire AppManagement daemon down. The HTTP
@@ -92,17 +106,17 @@ func (a *AppManagement) PullImages(ctx echo.Context, params codegen.PullImagesPa
 				// guarantees it dies if the registry hangs.
 				pullCtx, pullCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				defer pullCancel()
-				pullCtx = common.WithProperties(pullCtx, PropertiesFromQueryParams(ctx))
+				pullCtx = common.WithProperties(pullCtx, props)
 
 				eventProperties := common.PropertiesFromContext(pullCtx)
-				eventProperties[common.PropertyTypeAppName.Name] = v1.AppName(container)
-				eventProperties[common.PropertyTypeAppIcon.Name] = v1.AppIcon(container)
+				eventProperties[common.PropertyTypeAppName.Name] = appName
+				eventProperties[common.PropertyTypeAppIcon.Name] = appIcon
 
 				_, err := service.MyService.Docker().PullLatestImage(pullCtx, imageName)
 				if err != nil {
 					logger.Error("pull new image failed", zap.Error(err), zap.String("image", imageName))
 				}
-			}(containerID, imageName)
+			}(containerID, imageName, appName, appIcon)
 		}
 	}
 

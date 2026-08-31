@@ -91,6 +91,15 @@ func updateGlobalEnv(ctx echo.Context, key string, value string) error {
 		return err
 	}
 
+	// Snapshot the query params BEFORE spawning. echo pools and reuses
+	// echo.Context values across requests, so reading `ctx` from the
+	// goroutine (which starts running after the handler has returned)
+	// races with the next request being served on that same recycled
+	// context — the event properties published for this change could be
+	// another user's query string, or a torn map read. Copy out what we
+	// need while we still own the context.
+	props := PropertiesFromQueryParams(ctx)
+
 	// re up all containers to apply the new env var
 	go func() {
 		// Wave 32: recover so a panic in UpWithCheckRequire (broken
@@ -115,17 +124,27 @@ func updateGlobalEnv(ctx echo.Context, key string, value string) error {
 		// stack pull + recreate; anything longer is a real failure.
 		baseCtx, baseCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer baseCancel()
-		backgroundCtx := common.WithProperties(baseCtx, PropertiesFromQueryParams(ctx))
+		backgroundCtx := common.WithProperties(baseCtx, props)
 		composeAppsWithStoreInfo, err := service.MyService.Compose().List(backgroundCtx)
 		if err != nil {
 			logger.Error("Failed to get composeAppsWithStoreInfo", zap.Any("error", err))
 		}
 		for _, project := range composeAppsWithStoreInfo {
-			if service, _, err := service.ApiService(); err == nil {
-				project.UpWithCheckRequire(backgroundCtx, service)
-			} else {
+			// ApiService() opens a NEW docker connection every call and it
+			// was never closed — one leaked socket per app per global-env
+			// change, which on a box with a couple dozen stacks walks the
+			// daemon into its fd limit. Close it at the end of each
+			// iteration (a plain `defer` here would pile every client up
+			// until the whole loop finished).
+			composeService, dockerClient, err := service.ApiService()
+			if err != nil {
 				logger.Error("Failed to get Api Service", zap.Any("error", err))
+				continue
 			}
+			func() {
+				defer dockerClient.Close()
+				project.UpWithCheckRequire(backgroundCtx, composeService)
+			}()
 		}
 	}()
 
@@ -137,6 +156,10 @@ func deleteGlobalEnv(ctx echo.Context, key string) error {
 	if err := service.MyService.AppStoreManagement().DeleteGlobal(key); err != nil {
 		return err
 	}
+
+	// Snapshot before spawning — see updateGlobalEnv for why touching the
+	// pooled echo.Context from the goroutine is a cross-user data race.
+	props := PropertiesFromQueryParams(ctx)
 
 	// re up all containers to apply the new env var
 	go func() {
@@ -154,17 +177,27 @@ func deleteGlobalEnv(ctx echo.Context, key string) error {
 		// Wave 35-X: bounded ctx — see updateGlobalEnv rationale.
 		baseCtx, baseCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer baseCancel()
-		backgroundCtx := common.WithProperties(baseCtx, PropertiesFromQueryParams(ctx))
+		backgroundCtx := common.WithProperties(baseCtx, props)
 		composeAppsWithStoreInfo, err := service.MyService.Compose().List(backgroundCtx)
 		if err != nil {
 			logger.Error("Failed to get composeAppsWithStoreInfo", zap.Any("error", err))
 		}
 		for _, project := range composeAppsWithStoreInfo {
-			if service, _, err := service.ApiService(); err == nil {
-				project.UpWithCheckRequire(backgroundCtx, service)
-			} else {
+			// ApiService() opens a NEW docker connection every call and it
+			// was never closed — one leaked socket per app per global-env
+			// change, which on a box with a couple dozen stacks walks the
+			// daemon into its fd limit. Close it at the end of each
+			// iteration (a plain `defer` here would pile every client up
+			// until the whole loop finished).
+			composeService, dockerClient, err := service.ApiService()
+			if err != nil {
 				logger.Error("Failed to get Api Service", zap.Any("error", err))
+				continue
 			}
+			func() {
+				defer dockerClient.Close()
+				project.UpWithCheckRequire(backgroundCtx, composeService)
+			}()
 		}
 	}()
 

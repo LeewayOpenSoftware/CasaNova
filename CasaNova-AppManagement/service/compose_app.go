@@ -1251,14 +1251,49 @@ func (a *ComposeApp) SetStatus(ctx context.Context, status codegen.RequestCompos
 	if err != nil {
 		return err
 	}
-	defer dockerClient.Close()
+	// Ownership of dockerClient is per-branch. Stop and Restart run
+	// synchronously and are done with the client when this function
+	// returns, so they close it here. Start hands `service` (which wraps
+	// this very client) to a goroutine that OUTLIVES SetStatus — closing
+	// here yanked the docker connection out from under that goroutine
+	// while it was still calling Ps/Start on it. In that case the
+	// goroutine owns the client and closes it itself.
+	closeClientOnReturn := true
+	defer func() {
+		if closeClientOnReturn {
+			dockerClient.Close()
+		}
+	}()
 
 	eventProperties := common.PropertiesFromContext(ctx)
 	eventProperties[common.PropertyTypeAppName.Name] = a.Name
 
 	switch status {
 	case codegen.RequestComposeAppStatusStart:
+		closeClientOnReturn = false
 		go func(ctx context.Context) {
+			defer dockerClient.Close()
+			// Detach from the HTTP handler's context, exactly as Update()
+			// and Apply() already do. The handler builds a 2-min ctx and
+			// `defer baseCancel()`s it, so this ctx was canceled the moment
+			// the handler returned 200 — every Ps() below then failed
+			// instantly with "context canceled", burning the whole 20s
+			// stop-wait loop on 10 useless retries before a Start that was
+			// doomed too. Keep the caller's values (event properties for the
+			// message bus); own a bounded deadline here instead. 10 min
+			// covers the 20s settle loop + 120s start, and the self-heal
+			// branch below whose Up() may have to pull images.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+			defer cancel()
+			// Same protection as the Update/Apply goroutines: this work is
+			// detached, so a panic in Ps/Up/Start would tear down the whole
+			// daemon long after the handler reported success.
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("panic in async app start",
+						zap.Any("panic", r), zap.String("name", a.Name))
+				}
+			}()
 			go PublishEventWrapper(ctx, common.EventTypeAppStartBegin, nil)
 
 			defer PublishEventWrapper(ctx, common.EventTypeAppStartEnd, nil)
