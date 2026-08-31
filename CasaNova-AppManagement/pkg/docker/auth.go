@@ -192,7 +192,10 @@ func GetScopeFromImageName(img, svc string) string {
 
 // GetChallengeURL creates a URL object based on the image info
 func GetChallengeURL(img string) (url.URL, error) {
-	normalizedNamed, _ := reference.ParseNormalizedNamed(img)
+	normalizedNamed, err := reference.ParseNormalizedNamed(img)
+	if err != nil {
+		return url.URL{}, err
+	}
 	host, err := NormalizeRegistry(normalizedNamed.String())
 	if err != nil {
 		return url.URL{}, err

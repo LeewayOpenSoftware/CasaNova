@@ -1,6 +1,8 @@
 package pkg
 
 import (
+	"fmt"
+
 	"github.com/LeewayOpenSoftware/CasaNova-AppManagement/codegen"
 	"github.com/LeewayOpenSoftware/CasaNova-AppManagement/common"
 	"github.com/LeewayOpenSoftware/CasaNova-AppManagement/service"
@@ -12,7 +14,11 @@ func VaildDockerCompose(yaml []byte) (err error) {
 	// recover
 	defer func() {
 		if r := recover(); r != nil {
-			err = r.(error)
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("%v", r)
+			}
 		}
 	}()
 	docker, err := service.NewComposeAppFromYAML(yaml, false, false)
