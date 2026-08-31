@@ -622,7 +622,9 @@ func checkJobStatePersistence() Check {
 			"or a power cut would leave a disk in an undiagnosable state. Make " + dir + " writable."
 		return c
 	}
-	if _, err := f.Write(payload); err == nil {
+	// Plain assignment, not :=. A shadowed err here made the check below always
+	// see nil, so a failed Write or Sync still graded the probe healthy.
+	if _, err = f.Write(payload); err == nil {
 		// fsync, because the whole point of this state is surviving the crash
 		// it describes. A buffered write that never reaches the platter is not
 		// persistence.

@@ -30,7 +30,12 @@ func NewReadLineFromEnd(name string) (rd *ReadLineFromEnd, err error) {
 		return nil, err
 	}
 	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
 	if info.IsDir() {
+		f.Close()
 		return nil, fmt.Errorf("not file")
 	}
 	fileSize := int(info.Size())
