@@ -244,15 +244,30 @@ export async function runSmartTest(
  * expects { path: "/dev/sdb", name: "label", format: false }. It
  * creates the mount point, mounts all partitions, and saves to the DB.
  */
+/** Both of these shell out through a helper that had no bound at all until
+ *  now — `umount` blocking on writeback, or a mount waiting on a wedged
+ *  device, held the handler with nothing able to end it. There was no server
+ *  deadline to size a client timeout against; there is now (90s for a single
+ *  umount, 2min for the shared shell ceiling), so these sit above it.
+ *
+ *  It matters most for unmount: told nothing for ten seconds and then
+ *  "unmount failed", a user pulls the drive while writeback is still
+ *  flushing. */
+const MOUNT_TIMEOUT_MS = 150_000
+
 export async function mountDisk(
   device: string,
   name?: string,
 ): Promise<void> {
-  await client.post('/v1/storage', {
-    path: device,
-    name: name || '',
-    format: false,
-  })
+  await client.post(
+    '/v1/storage',
+    {
+      path: device,
+      name: name || '',
+      format: false,
+    },
+    { timeout: MOUNT_TIMEOUT_MS },
+  )
 }
 
 /**
@@ -263,6 +278,7 @@ export async function mountDisk(
 export async function unmountDisk(device: string): Promise<void> {
   await client.delete('/v1/disks', {
     data: { path: device },
+    timeout: MOUNT_TIMEOUT_MS,
   })
 }
 

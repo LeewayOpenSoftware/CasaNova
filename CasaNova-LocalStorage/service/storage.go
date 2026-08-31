@@ -45,6 +45,11 @@ var (
 	mountMu    sync.Mutex
 )
 
+// umountCeiling bounds a single umount. Longer than any healthy unmount and
+// short enough that "still flushing" is reported as a wait rather than left
+// looking like a hang — a user who is told nothing decides to pull the drive.
+const umountCeiling = 90 * time.Second
+
 func (s *storageStruct) MountStorage(mountPoint, deviceName string) error {
 	file.IsNotExistMkDir(mountPoint)
 	mountMu.Lock()
@@ -175,7 +180,7 @@ func (s *storageStruct) CheckAndMountAll() error {
 
 	logger.Info("when CheckAndMountAll section", zap.Any("section", section))
 	for _, v := range section {
-		command2.OnlyExec("umount /mnt/" + shell.SanitizeArg(v))
+		command2.OnlyExecBounded(umountCeiling, "umount /mnt/"+shell.SanitizeArg(v))
 		mountPoint, found := rconfig.LoadedData().GetValue(v, "mount_point")
 
 		if !found && len(mountPoint) == 0 {
