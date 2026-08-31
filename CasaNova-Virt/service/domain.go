@@ -136,6 +136,12 @@ func (s *DomainService) Define(cfg *model.VirtualMachineConfiguration) (*model.D
 
 // Undefine removes a domain definition. The domain is destroyed first if it is
 // still running.
+// undefineFlags is what Undefine passes to libvirt. Package-level so the test
+// can state which leftovers are covered without needing a hypervisor.
+var undefineFlags = libvirt.DomainUndefineNvram |
+	libvirt.DomainUndefineManagedSave |
+	libvirt.DomainUndefineSnapshotsMetadata
+
 func (s *DomainService) Undefine(name string) error {
 	l, err := s.conn.Conn()
 	if err != nil {
@@ -149,7 +155,34 @@ func (s *DomainService) Undefine(name string) error {
 	if state, _, err := l.DomainGetState(d, 0); err == nil && libvirt.DomainState(state) == libvirt.DomainRunning {
 		_ = l.DomainDestroy(d)
 	}
-	return l.DomainUndefine(d)
+
+	// Plain DomainUndefine refuses a domain that owns state outside its XML,
+	// and gives back a message the UI shows verbatim:
+	//
+	//   Requested operation is not valid: cannot undefine domain with nvram
+	//
+	// A UEFI guest gets an NVRAM file the first time it STARTS — not when it
+	// is defined — so a VM created through this API deletes fine until it has
+	// been booted once, and is then undeletable forever. Reproduced on the
+	// test box: create + delete a UEFI domain succeeds; create, start, stop,
+	// delete returns 500 and leaves the domain defined.
+	//
+	// The three flags cover the three kinds of leftover libvirt refuses to
+	// orphan. NVRAM is firmware state, not user data, so removing it with the
+	// domain is right — and keeping it would leave a file nothing references.
+	// Managed-save and snapshot metadata are the same argument: they describe
+	// a domain that is about to stop existing.
+	//
+	// Disks are deliberately NOT touched, which is what the UI promises.
+	if err := l.DomainUndefineFlags(d, undefineFlags); err != nil {
+		// Older libvirt rejects unknown flags outright rather than ignoring
+		// them. Falling back keeps the common case working there instead of
+		// turning a partial capability into no capability.
+		if fallbackErr := l.DomainUndefine(d); fallbackErr != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Action applies a lifecycle transition to a domain.
