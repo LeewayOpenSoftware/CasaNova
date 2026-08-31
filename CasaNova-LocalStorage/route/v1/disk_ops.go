@@ -274,14 +274,23 @@ func PostBenchmarkDisk(ctx echo.Context) error {
 // 256 MiB scratch, "deep" uses 1 GiB. Always writes to the mount point
 // (NOT the device); raw-device benchmarking would clobber data.
 func runBenchmark(mountPoint, mode string) (BenchmarkResult, error) {
-	size := "256M"
+	// The scratch size is carried as a plain MiB count, not as a human string.
+	// It used to be a string ("256M" / "1G") shared by both engines, and the
+	// two engines do not read the same syntax: fio accepts the G suffix, while
+	// dd was handed strings.TrimSuffix(size, "M") as its count with bs=1M.
+	// "256M" trimmed to 256 and worked; "1G" had no "M" to trim, so deep mode
+	// ran `dd bs=1M count=1G` — GNU dd reads that suffix, making it 2^30
+	// blocks of 1 MiB, i.e. ~1 EiB. Deep mode therefore filled the filesystem
+	// until ENOSPC or ran until the 5-minute deadline killed it. A number has
+	// no syntax to disagree about; each engine formats it the way it wants.
+	sizeMiB := 256
 	if mode == "deep" {
-		size = "1G"
+		sizeMiB = 1024
 	}
 	if _, err := exec.LookPath("fio"); err == nil {
-		return runFio(mountPoint, mode, size)
+		return runFio(mountPoint, mode, sizeMiB)
 	}
-	return runDD(mountPoint, mode, size)
+	return runDD(mountPoint, mode, sizeMiB)
 }
 
 // fioPhase is one fio invocation's numbers. fio reports bandwidth and IOPS
@@ -363,7 +372,8 @@ var runPhase = runFioPhase
 // So: one pass with a large block size for streaming bandwidth, one with 4 KiB
 // at depth for random IOPS. Each field now comes from the workload that field
 // names.
-func runFio(mountPoint, mode, size string) (BenchmarkResult, error) {
+func runFio(mountPoint, mode string, sizeMiB int) (BenchmarkResult, error) {
+	size := strconv.Itoa(sizeMiB) + "M"
 	scratch := mountPoint + "/.cn-bench.tmp"
 	defer exec.Command("rm", "-f", scratch).Run()
 
@@ -410,10 +420,22 @@ func runFio(mountPoint, mode, size string) (BenchmarkResult, error) {
 	}, nil
 }
 
+// ddWriteArgs builds the write-phase argv. It exists as its own function so
+// the count can be asserted without running dd: count is a bare number of
+// 1 MiB blocks and must stay that way, because dd itself would happily read a
+// K/M/G/T suffix there and multiply by it.
+func ddWriteArgs(scratch string, sizeMiB int) []string {
+	return []string{
+		"if=/dev/zero", "of=" + scratch, "bs=1M",
+		"count=" + strconv.Itoa(sizeMiB),
+		"conv=fdatasync,notrunc", "status=progress",
+	}
+}
+
 // runDD is the fallback for hosts that don't ship fio. Sequential only —
 // no random IOPS — but a single dd write+read pair is enough to surface
 // "the disk feels slow today" without depending on a non-default tool.
-func runDD(mountPoint, mode, size string) (BenchmarkResult, error) {
+func runDD(mountPoint, mode string, sizeMiB int) (BenchmarkResult, error) {
 	scratch := mountPoint + "/.cn-bench.tmp"
 	defer exec.Command("rm", "-f", scratch).Run()
 
@@ -424,9 +446,7 @@ func runDD(mountPoint, mode, size string) (BenchmarkResult, error) {
 	defer cancel()
 
 	// Write phase
-	writeCmd := exec.CommandContext(ddCtx, "dd",
-		"if=/dev/zero", "of="+scratch, "bs=1M",
-		"count="+strings.TrimSuffix(size, "M"), "conv=fdatasync,notrunc", "status=progress")
+	writeCmd := exec.CommandContext(ddCtx, "dd", ddWriteArgs(scratch, sizeMiB)...)
 	wOut, err := writeCmd.CombinedOutput()
 	if err != nil {
 		return BenchmarkResult{Mode: mode, Engine: "dd"}, fmt.Errorf("dd write: %w", err)

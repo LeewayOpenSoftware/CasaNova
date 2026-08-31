@@ -144,7 +144,7 @@ func TestRunFio_MapsEachFieldToItsOwnWorkload(t *testing.T) {
 		return fioPhase{ReadBps: 100 * 1024 * 1024, WriteBps: 50 * 1024 * 1024, ReadIOPS: 1, WriteIOPS: 2}, nil
 	}
 
-	res, err := runFio("/tmp", "quick", "8M")
+	res, err := runFio("/tmp", "quick", 8)
 	if err != nil {
 		t.Fatalf("runFio: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestRunFio_SequentialPassUsesLargeBlocks(t *testing.T) {
 		}
 		return fioPhase{}, nil
 	}
-	if _, err := runFio("/tmp", "quick", "8M"); err != nil {
+	if _, err := runFio("/tmp", "quick", 8); err != nil {
 		t.Fatalf("runFio: %v", err)
 	}
 	if len(blockSizes) != 2 || blockSizes[0] == blockSizes[1] {
@@ -188,5 +188,58 @@ func TestRunFio_SequentialPassUsesLargeBlocks(t *testing.T) {
 	}
 	if blockSizes[1] != "--bs=4k" {
 		t.Errorf("random IOPS needs 4k blocks, got %s", blockSizes[1])
+	}
+}
+
+// dd's count is a COUNT OF BLOCKS, and bs=1M makes each block a MiB. The size
+// used to travel as a human string shared with fio and be turned into a count
+// by trimming a trailing "M" — which silently did nothing to deep mode's "1G",
+// handing dd `count=1G`. dd reads that suffix: 2^30 blocks of 1 MiB is ~1 EiB,
+// so deep mode wrote until the filesystem was full or the deadline killed it.
+// These pin the count to a bare number for both modes.
+
+func TestDDWriteArgs_CountIsAPlainMiBBlockCount(t *testing.T) {
+	for _, tc := range []struct {
+		mode string
+		want string
+	}{
+		{"quick", "count=256"},
+		{"deep", "count=1024"},
+	} {
+		sizeMiB := 256
+		if tc.mode == "deep" {
+			sizeMiB = 1024
+		}
+		args := ddWriteArgs("/mnt/UNIT5/.cn-bench.tmp", sizeMiB)
+
+		var count, bs string
+		for _, a := range args {
+			if strings.HasPrefix(a, "count=") {
+				count = a
+			}
+			if strings.HasPrefix(a, "bs=") {
+				bs = a
+			}
+		}
+		if bs != "bs=1M" {
+			t.Fatalf("%s: the count is only a MiB count while bs is 1M, got %q", tc.mode, bs)
+		}
+		if count != tc.want {
+			t.Errorf("%s: want %q, got %q", tc.mode, tc.want, count)
+		}
+		// The specific way this broke: a suffix dd would multiply by.
+		if strings.ContainsAny(strings.TrimPrefix(count, "count="), "kKmMgGtT") {
+			t.Errorf("%s: count must carry no unit suffix — dd multiplies by it — got %q", tc.mode, count)
+		}
+	}
+}
+
+func TestRunBenchmark_DeepIsFourTimesQuickNotAMillionTimes(t *testing.T) {
+	// Guards the intent behind the number: deep is a bigger scratch file, not
+	// a different order of magnitude. 1024 MiB vs 256 MiB.
+	quick := ddWriteArgs("/x", 256)
+	deep := ddWriteArgs("/x", 1024)
+	if len(quick) != len(deep) {
+		t.Fatalf("both modes must build the same argv shape, got %v vs %v", quick, deep)
 	}
 }
