@@ -137,6 +137,10 @@ func InitV2Router() http.Handler {
 	// ---- ISO images (for the create-VM wizard) ----
 	g.GET("/iso", h.ListISOs)
 	g.POST("/iso/download", h.DownloadISO)
+	// Registered before "/iso/:name" so "downloads" is not swallowed as a
+	// filename by the parameterised route.
+	g.GET("/iso/downloads", h.ListISODownloads)
+	g.DELETE("/iso/downloads/:name", h.CancelISODownload)
 	g.DELETE("/iso/:name", h.DeleteISO)
 
 	// ---- storage ----

@@ -407,14 +407,17 @@
       "iso_add": "Add ISO from URL",
       "iso_add_named": "Download {name}",
       "iso_url_placeholder": "https://…/installer.iso",
-      "iso_queued": "Download started — it will appear here when it finishes.",
       "iso_delete_confirm": "Delete the ISO «{name}»?",
       "disks": "Disk images",
       "no_disks": "No disks in this pool",
       "disk_add": "Create",
       "disk_name_placeholder": "Disk name",
       "disk_delete_confirm": "Delete the disk «{name}»? Its contents are lost.",
-      "delete": "Delete"
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "dl_cancelled": "Cancelled",
+      "dl_done": "Downloaded",
+      "dl_transferred": "{n} transferred"
     }
   },
   "apps": {

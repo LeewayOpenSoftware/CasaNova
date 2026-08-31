@@ -240,3 +240,20 @@ type HostInfo struct {
 	ActiveDomains  int    `json:"active_domains"`
 	TotalDomains   int    `json:"total_domains"`
 }
+
+// ISODownload is one installer image being fetched, as the UI shows it.
+//
+// DoneBytes without TotalBytes is a legitimate state, not a missing field: a
+// mirror that sends no Content-Length gives no way to compute a percentage,
+// and reporting bytes transferred is honest where a progress bar would be
+// guessing.
+type ISODownload struct {
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	TotalBytes int64  `json:"total_bytes"`
+	DoneBytes  int64  `json:"done_bytes"`
+	StartedAt  int64  `json:"started_at"`
+	Error      string `json:"error,omitempty"`
+	Cancelled  bool   `json:"cancelled,omitempty"`
+	Done       bool   `json:"done"`
+}

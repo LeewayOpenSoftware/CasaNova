@@ -10,7 +10,7 @@
 // They live in a sidebar rather than a page because they are a library you
 // consult while looking at the VMs, not a destination of their own.
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import Button from 'primevue/button'
@@ -21,6 +21,7 @@ import * as virtApi from '@/api/virt'
 const { t } = useI18n()
 
 const isos = ref<virtApi.IsoEntry[]>([])
+const downloads = ref<virtApi.IsoDownload[]>([])
 const pools = ref<virtApi.StoragePool[]>([])
 const volumes = ref<virtApi.StorageVolume[]>([])
 const pool = ref('')
@@ -57,6 +58,44 @@ async function loadISOs() {
   if (r.data) isos.value = r.data
 }
 
+// Polling, not a socket: a transfer that takes an hour would hold a websocket
+// open for an hour to deliver a number that changes usefully once a second,
+// and this panel is only mounted while someone is looking at it.
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadDownloads() {
+  const r = await safeCall(() => virtApi.listISODownloads())
+  const before = downloads.value.some((d) => !d.done)
+  downloads.value = r.data ?? []
+  // A transfer that just finished put a new file in the directory.
+  if (before && !downloads.value.some((d) => !d.done)) loadISOs()
+  schedulePoll()
+}
+
+function schedulePoll() {
+  const active = downloads.value.some((d) => !d.done)
+  // Terminal entries linger 30s server-side, so keep a slow poll going while
+  // any entry is on screen — otherwise the outcome of the last transfer would
+  // sit there stale until something else refreshed it.
+  const wanted = active ? 1500 : downloads.value.length ? 5000 : 0
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (wanted) pollTimer = setInterval(loadDownloads, wanted)
+}
+
+async function cancelDownload(name: string) {
+  const r = await safeCall(() => virtApi.cancelISODownload(name))
+  if (r.error) error.value = r.error
+  await loadDownloads()
+}
+
+function pct(d: virtApi.IsoDownload): number {
+  if (!d.total_bytes) return 0
+  return Math.min(100, Math.round((d.done_bytes / d.total_bytes) * 100))
+}
+
 async function loadPools() {
   const r = await safeCall(() => virtApi.listPools())
   if (!r.data) return
@@ -91,11 +130,10 @@ async function addISO() {
     return
   }
   isoUrl.value = ''
-  // The download runs in the background server-side, so the new entry does not
-  // exist yet. Say so instead of refreshing into an unchanged list, which
-  // reads as "nothing happened".
-  error.value = t('vms.library.iso_queued')
-  setTimeout(loadISOs, 4000)
+  // The transfer now shows up in the panel below with its own progress, so
+  // there is nothing to announce — the answer to "did anything happen" is
+  // visible.
+  await loadDownloads()
 }
 
 async function removeISO(name: string) {
@@ -142,6 +180,11 @@ async function removeDisk(name: string) {
 onMounted(() => {
   loadISOs()
   loadPools()
+  loadDownloads()
+})
+
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
 })
 
 defineExpose({ reload: () => { loadISOs(); loadVolumes() } })
@@ -178,6 +221,42 @@ defineExpose({ reload: () => { loadISOs(); loadVolumes() } })
         </li>
       </ul>
       <p v-else class="text-xs text-[var(--cn-text-muted)]">{{ t('vms.library.no_isos') }}</p>
+
+      <!-- Transfers. Present only while something is happening or just
+           happened, so the panel does not carry an empty region the rest of
+           the time. -->
+      <ul v-if="downloads.length" class="flex flex-col gap-2 border-t border-[var(--cn-border)] pt-3">
+        <li v-for="d in downloads" :key="d.name" class="flex flex-col gap-1">
+          <div class="flex items-center gap-2">
+            <span class="min-w-0 flex-1 truncate text-xs text-[var(--cn-text)]" :title="d.url">{{ d.name }}</span>
+            <button
+              v-if="!d.done"
+              class="shrink-0 rounded p-1 text-[var(--cn-text-muted)] hover:text-red-400"
+              :title="t('vms.library.cancel')"
+              @click="cancelDownload(d.name)"
+            >
+              <AppIcon name="X" :size="12" />
+            </button>
+          </div>
+
+          <!-- A bar only when the mirror told us the size. Without a total
+               there is no percentage to draw, and a bar that moves on a guess
+               is worse than a number that is true. -->
+          <div v-if="!d.done && d.total_bytes" class="h-1 w-full overflow-hidden rounded-full bg-[var(--cn-surface-hover)]">
+            <div class="h-full rounded-full bg-blue-500 transition-[width]" :style="{ width: pct(d) + '%' }" />
+          </div>
+
+          <div class="text-[10px] text-[var(--cn-text-muted)]">
+            <span v-if="d.cancelled">{{ t('vms.library.dl_cancelled') }}</span>
+            <span v-else-if="d.error" class="text-red-400">{{ d.error }}</span>
+            <span v-else-if="d.done">{{ t('vms.library.dl_done') }}</span>
+            <span v-else-if="d.total_bytes">
+              {{ fmtBytes(d.done_bytes) }} / {{ fmtBytes(d.total_bytes) }} · {{ pct(d) }}%
+            </span>
+            <span v-else>{{ t('vms.library.dl_transferred', { n: fmtBytes(d.done_bytes) }) }}</span>
+          </div>
+        </li>
+      </ul>
 
       <div class="flex flex-col gap-2 border-t border-[var(--cn-border)] pt-3">
         <InputText

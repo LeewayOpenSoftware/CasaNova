@@ -121,6 +121,30 @@ export async function downloadISO(url: string, name: string): Promise<void> {
   await client.post(`${BASE}/iso/download`, { url, name })
 }
 
+/** One transfer in flight, or one that finished/failed in the last 30s.
+ *
+ *  total_bytes is 0 when the mirror sends no Content-Length. That is a real
+ *  state, not a missing field: without it there is no percentage to compute,
+ *  and showing bytes transferred is honest where a bar would be guessing. */
+export interface IsoDownload {
+  name: string
+  url: string
+  total_bytes: number
+  done_bytes: number
+  started_at: number
+  error?: string
+  cancelled?: boolean
+  done: boolean
+}
+
+export async function listISODownloads(): Promise<IsoDownload[]> {
+  return (await client.get<IsoDownload[]>(`${BASE}/iso/downloads`)).data
+}
+
+export async function cancelISODownload(name: string): Promise<void> {
+  await client.delete(`${BASE}/iso/downloads/${encodeURIComponent(name)}`)
+}
+
 export async function deleteISO(name: string): Promise<void> {
   await client.delete(`${BASE}/iso/${encodeURIComponent(name)}`)
 }

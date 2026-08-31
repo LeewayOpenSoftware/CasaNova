@@ -407,14 +407,17 @@
       "iso_add": "Agregar ISO desde URL",
       "iso_add_named": "Descargar {name}",
       "iso_url_placeholder": "https://…/instalador.iso",
-      "iso_queued": "Descarga iniciada — aparecerá acá cuando termine.",
       "iso_delete_confirm": "¿Eliminar el ISO «{name}»?",
       "disks": "Discos",
       "no_disks": "No hay discos en este grupo",
       "disk_add": "Crear",
       "disk_name_placeholder": "Nombre del disco",
       "disk_delete_confirm": "¿Eliminar el disco «{name}»? Se pierde su contenido.",
-      "delete": "Eliminar"
+      "delete": "Eliminar",
+      "cancel": "Cancelar",
+      "dl_cancelled": "Cancelada",
+      "dl_done": "Descargada",
+      "dl_transferred": "{n} transferidos"
     }
   },
   "apps": {
