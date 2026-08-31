@@ -1,16 +1,15 @@
 package partition
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 	"unicode"
 
+	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/devid"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/utils/command"
 )
 
@@ -182,11 +181,11 @@ func FormatPartitionAs(partitionDevice, fsType string) error {
 		return err
 	}
 
-	rootDev, err := getRootDevice()
+	rootDev, err := devid.RootDevice()
 	if err != nil {
 		return fmt.Errorf("cannot verify root device safety: %w", err)
 	}
-	if rootDev != "" && (strings.HasPrefix(partitionDevice, rootDev) || partitionDevice == rootDev) {
+	if devid.IsSameOrChild(rootDev, partitionDevice) {
 		return ErrFormatRootDevice
 	}
 
@@ -279,28 +278,4 @@ func parsePairs(buf []byte) map[string]string {
 	}
 
 	return pairs
-}
-
-// getRootDevice reads /proc/mounts and returns the device mounted at "/",
-// stripped down to the whole-disk path (e.g. /dev/sda1 -> /dev/sda).
-func getRootDevice() (string, error) {
-	f, err := os.Open("/proc/mounts")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 2 && fields[1] == "/" {
-			dev := fields[0]
-			clean := strings.TrimRight(dev, "0123456789")
-			if strings.HasSuffix(clean, "p") && strings.Contains(dev, "nvme") {
-				clean = strings.TrimSuffix(clean, "p")
-			}
-			return clean, nil
-		}
-	}
-	return "", scanner.Err()
 }

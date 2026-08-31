@@ -10,9 +10,7 @@
 package v1
 
 import (
-	"bufio"
 	"net/http"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -27,6 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	model1 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/model"
+	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/devid"
 	model2 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service/model"
 
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service"
@@ -241,8 +240,8 @@ func PostAddStorage(ctx echo.Context) error {
 		// PutFormatStorage already has. Without it, POST /v1/storage
 		// {"path":"/dev/sda1","format":true} on a box booting from /dev/sda
 		// unmounts /boot/efi and rewrites the partition table → unbootable.
-		rootDev, _ := getRootDevice()
-		if rootDev != "" && (strings.HasPrefix(path, rootDev) || path == rootDev) {
+		rootDev, _ := devid.RootDevice()
+		if devid.IsSameOrChild(rootDev, path) {
 			return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format/partition the system disk"})
 		}
 
@@ -423,8 +422,8 @@ func PutFormatStorage(ctx echo.Context) error {
 	}
 
 	// Check if device is the system (boot) disk
-	rootDev, _ := getRootDevice()
-	if rootDev != "" && (strings.HasPrefix(path, rootDev) || path == rootDev) {
+	rootDev, _ := devid.RootDevice()
+	if devid.IsSameOrChild(rootDev, path) {
 		return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format system disk"})
 	}
 
@@ -537,30 +536,4 @@ func DeleteStorage(ctx echo.Context) error {
 	}()
 
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS)})
-}
-
-// getRootDevice reads /proc/mounts and returns the device mounted at "/".
-// For example, it might return "/dev/sda" (the whole-disk prefix).
-func getRootDevice() (string, error) {
-	f, err := os.Open("/proc/mounts")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 2 && fields[1] == "/" {
-			dev := fields[0]
-			// Strip trailing partition number to get the whole-disk device
-			// e.g. /dev/sda1 -> /dev/sda, /dev/nvme0n1p1 -> /dev/nvme0n1
-			clean := strings.TrimRight(dev, "0123456789")
-			if strings.HasSuffix(clean, "p") && strings.Contains(dev, "nvme") {
-				clean = strings.TrimSuffix(clean, "p")
-			}
-			return clean, nil
-		}
-	}
-	return "", scanner.Err()
 }
