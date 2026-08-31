@@ -60,7 +60,19 @@ async function onTabDrop(e: DragEvent, tabId: string) {
 
   const raw = e.dataTransfer.getData(MIME)
   if (!raw) return
-  const paths: string[] = JSON.parse(raw)
+  // The payload is whatever the drag source put on the clipboard, so it is
+  // untrusted input: a drag from another app (or our own MIME type carrying a
+  // half-written payload) throws out of this async handler as an unhandled
+  // rejection, and a non-array that happens to parse would sail straight into
+  // moveEntries and the batch-move API as `sources`.
+  let paths: string[]
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed) || !parsed.every((p): p is string => typeof p === 'string')) return
+    paths = parsed
+  } catch {
+    return
+  }
   if (paths.length === 0) return
 
   const targetTab = files.tabs.find((tab) => tab.id === tabId)
