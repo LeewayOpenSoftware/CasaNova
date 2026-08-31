@@ -22,8 +22,12 @@ const maxCapturedOutput = 64 * 1024 // 64 KiB
 // not found, etc.) become Status=StatusError records — the run still
 // appears in history so the user isn't left wondering why nothing
 // happened.
-func RunTask(ctx context.Context, t *Task) Run {
-	run := Run{
+// The return is NAMED so the deferred stamp below lands on the value the
+// caller actually receives. With an unnamed `Run`, `return run` copies the
+// struct out first and the defer then writes EndedAt into a local nobody
+// reads — every run was serialized with a zero EndedAt.
+func RunTask(ctx context.Context, t *Task) (run Run) {
+	run = Run{
 		ID:        newRunID(),
 		TaskID:    t.ID,
 		StartedAt: time.Now(),
