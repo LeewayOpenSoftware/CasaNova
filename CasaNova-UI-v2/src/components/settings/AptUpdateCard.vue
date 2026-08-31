@@ -28,7 +28,26 @@ const upgradeConfirm = ref(false)
 const upgrade = ref<AptUpgradeStatus | null>(null)
 const upgrading = ref(false)
 const aptAuto = ref<AptAutoStatus | null>(null)
+// ONE owner for this card's polling interval. It used to be assigned from four
+// places with nobody in charge: checkApt kept its handle in a LOCAL const that
+// onUnmounted could not reach, and startUpgrade / runSecurityNow / onMounted
+// each overwrote `aptPoll` without clearing whatever was already running, so
+// the displaced interval kept firing forever. Every start now goes through
+// setPoll (which clears first) and every stop through clearPoll.
+//
+// `unmounted` exists because onMounted starts its poll from inside a .then():
+// if the user navigates away before that promise resolves, onUnmounted has
+// already run and the late setInterval would never be cleared by anything.
 let aptPoll: ReturnType<typeof setInterval> | null = null
+let unmounted = false
+function clearPoll() {
+  if (aptPoll) { clearInterval(aptPoll); aptPoll = null }
+}
+function setPoll(fn: () => void, ms = 3000) {
+  clearPoll()
+  if (unmounted) return
+  aptPoll = setInterval(fn, ms)
+}
 
 async function loadApt() { const r = await safeCall(() => hostApi.getAptUpdates()); if (!r.error) { apt.value = r.data; aptChecking.value = r.data.checking } }
 async function loadAptAuto() { const r = await safeCall(() => hostApi.getAptAuto()); if (!r.error) aptAuto.value = r.data }
@@ -40,7 +59,7 @@ async function checkApt() {
   aptChecking.value = true
   const r = await safeCall(() => hostApi.runAptCheck())
   if (r.error) { aptChecking.value = false; return err(t('settings.host.apt_check_error'), r.error) }
-  const poll = setInterval(async () => { await loadApt(); if (!aptChecking.value) clearInterval(poll) }, 3000)
+  setPoll(async () => { await loadApt(); if (!aptChecking.value) clearPoll() })
 }
 const dockerInUpgrade = computed(() => !!apt.value && apt.value.packages.some((p) => /docker|containerd|linux-image|linux-headers/.test(p.name)))
 async function startUpgrade() {
@@ -48,13 +67,13 @@ async function startUpgrade() {
   const r = await safeCall(() => hostApi.runAptUpgrade())
   if (r.error) { upgrading.value = false; return err(t('settings.host.apt_upgrade_error'), r.error) }
   toast.add({ severity: 'info', summary: t('settings.host.apt_upgrade_started'), life: 3000 })
-  aptPoll = setInterval(pollUpgrade, 3000); pollUpgrade()
+  setPoll(pollUpgrade); pollUpgrade()
 }
 async function pollUpgrade() {
   const r = await safeCall(() => hostApi.getAptUpgradeStatus()); if (r.error) return
   upgrade.value = r.data
   if (r.data.state === 'success' || r.data.state === 'failed') {
-    if (aptPoll) { clearInterval(aptPoll); aptPoll = null }
+    clearPoll()
     if (upgrading.value) {
       upgrading.value = false
       if (r.data.state === 'success') { ok(t('settings.host.apt_upgrade_done')); loadApt() }
@@ -67,14 +86,14 @@ async function runSecurityNow() {
   const r = await safeCall(() => hostApi.runSecurityNow())
   if (r.error) { upgrading.value = false; return err(t('settings.host.apt_upgrade_error'), r.error) }
   toast.add({ severity: 'info', summary: t('settings.host.security_started'), life: 3000 })
-  aptPoll = setInterval(pollUpgrade, 3000); pollUpgrade()
+  setPoll(pollUpgrade); pollUpgrade()
 }
 
 onMounted(() => {
   loadApt(); loadAptAuto()
-  pollUpgrade().then(() => { if (upgrade.value?.state === 'running') { upgrading.value = true; aptPoll = setInterval(pollUpgrade, 3000) } })
+  pollUpgrade().then(() => { if (upgrade.value?.state === 'running') { upgrading.value = true; setPoll(pollUpgrade) } })
 })
-onUnmounted(() => { if (aptPoll) clearInterval(aptPoll) })
+onUnmounted(() => { unmounted = true; clearPoll() })
 // A repository URL is long and the interesting part is the tail (the PPA owner
 // and name), so show that and keep the full list in the tooltip.
 function shortRepo(url: string): string {
