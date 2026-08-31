@@ -1,6 +1,7 @@
 package v2
 
 import (
+	"github.com/LeewayOpenSoftware/CasaNova-Virt/model"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -33,4 +34,37 @@ func (h *VirtHandler) ListVolumes(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, err.Error())
 	}
 	return ok(c, vols)
+}
+
+type createVolumeRequest struct {
+	Name      string `json:"name"`
+	CapacityB uint64 `json:"capacity"` // bytes
+	Format    string `json:"format"`   // qcow2 | raw
+}
+
+// POST /pool/:name/volume — create a disk image in the pool.
+func (h *VirtHandler) CreateVolume(c echo.Context) error {
+	if err := requireConfig(c); err != nil {
+		return err
+	}
+	var req createVolumeRequest
+	if err := c.Bind(&req); err != nil {
+		return fail(c, http.StatusBadRequest, "invalid request body: "+err.Error())
+	}
+	v, err := h.svc.Storage().CreateVolume(c.Param("name"), req.Name, req.CapacityB, req.Format)
+	if err != nil {
+		return fail(c, http.StatusBadRequest, err.Error())
+	}
+	return created(c, v)
+}
+
+// DELETE /pool/:name/volume/:volume — remove a disk image.
+func (h *VirtHandler) DeleteVolume(c echo.Context) error {
+	if err := requireConfig(c); err != nil {
+		return err
+	}
+	if err := h.svc.Storage().DeleteVolume(c.Param("name"), c.Param("volume")); err != nil {
+		return fail(c, http.StatusBadRequest, err.Error())
+	}
+	return ok(c, model.BaseResponse{Message: "volume deleted"})
 }

@@ -18,6 +18,7 @@ import type { DomainSummary, DomainAction } from '@/api/virt'
 import { getConsole } from '@/api/virt'
 import VncConsole from '@/components/vms/VncConsole.vue'
 import CreateVmWizard from '@/components/vms/CreateVmWizard.vue'
+import VmLibrarySidebar from '@/components/vms/VmLibrarySidebar.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -104,7 +105,7 @@ const totalMemGiB = computed(() =>
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-full max-w-5xl flex-col p-6">
+  <div class="mx-auto flex min-h-full max-w-7xl flex-col p-6">
     <!-- Header -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-4">
@@ -138,6 +139,14 @@ const totalMemGiB = computed(() =>
 
     <!-- ═══ REAL UI (backend available) ═══ -->
     <template v-if="virt.available">
+      <!-- Two columns: the library of things VMs are built FROM on the left,
+           the VMs themselves on the right. Below lg the sidebar drops under
+           the list rather than squeezing both — a 72-unit column and a VM row
+           do not both fit on a phone. -->
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <VmLibrarySidebar class="order-2 lg:order-1" />
+
+        <div class="order-1 min-w-0 flex-1 lg:order-2">
       <!-- VM list -->
       <div v-if="virt.domains.length === 0" class="cn-widget flex flex-col items-center gap-3 p-10 text-center">
         <AppIcon name="Server" :size="36" class="text-[var(--cn-text-muted)]" />
@@ -250,6 +259,8 @@ const totalMemGiB = computed(() =>
               <span class="text-[var(--cn-text-muted)]">· {{ fmtBytes(p.available) }} {{ t('vms.free') }}</span>
             </div>
           </div>
+        </div>
+      </div>
         </div>
       </div>
     </template>

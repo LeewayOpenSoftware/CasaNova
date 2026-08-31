@@ -42,3 +42,14 @@ func (h *VirtHandler) DownloadISO(c echo.Context) error {
 	}
 	return ok(c, model.BaseResponse{Message: "download started"})
 }
+
+// DELETE /iso/:name — remove an installation image.
+func (h *VirtHandler) DeleteISO(c echo.Context) error {
+	if err := requireConfig(c); err != nil {
+		return err
+	}
+	if err := h.svc.Domain().DeleteISO(c.Param("name")); err != nil {
+		return fail(c, http.StatusBadRequest, err.Error())
+	}
+	return ok(c, model.BaseResponse{Message: "iso deleted"})
+}

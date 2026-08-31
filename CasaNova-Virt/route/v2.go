@@ -137,10 +137,13 @@ func InitV2Router() http.Handler {
 	// ---- ISO images (for the create-VM wizard) ----
 	g.GET("/iso", h.ListISOs)
 	g.POST("/iso/download", h.DownloadISO)
+	g.DELETE("/iso/:name", h.DeleteISO)
 
 	// ---- storage ----
 	g.GET("/pool", h.ListPools)
 	g.GET("/pool/:name/volume", h.ListVolumes)
+	g.POST("/pool/:name/volume", h.CreateVolume)
+	g.DELETE("/pool/:name/volume/:volume", h.DeleteVolume)
 
 	return e
 }

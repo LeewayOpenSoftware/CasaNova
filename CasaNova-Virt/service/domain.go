@@ -579,3 +579,71 @@ func uuidString(u libvirt.UUID) string {
 	}
 	return fmt.Sprintf("%s-%s-%s-%s-%s", h[0:8], h[8:12], h[12:16], h[16:20], h[20:32])
 }
+
+// DeleteISO removes an installation image from the ISO directory.
+//
+// The name is treated as a bare filename and nothing else. It arrives from an
+// HTTP path parameter, so "../../etc/shadow" and "/etc/shadow" are both things
+// a caller can send; filepath.Base strips a directory component and the checks
+// below refuse what Base cannot fix (an empty result, "." and ".."). The file
+// must also still be inside diskDir after the join, which catches anything the
+// name-level checks miss.
+//
+// An ISO that is currently attached to a domain is left alone: removing it
+// would leave a guest booting from a path that no longer exists, and the
+// operator would meet that as a failure to start rather than as this refusal.
+func (s *DomainService) DeleteISO(name string) error {
+	if s.diskDir == "" {
+		return fmt.Errorf("no disk dir configured")
+	}
+	base := filepath.Base(strings.TrimSpace(name))
+	if base == "" || base == "." || base == ".." || base != strings.TrimSpace(name) {
+		return fmt.Errorf("invalid ISO name")
+	}
+	if !strings.HasSuffix(strings.ToLower(base), ".iso") {
+		return fmt.Errorf("not an ISO")
+	}
+
+	full := filepath.Join(s.diskDir, base)
+	if rel, err := filepath.Rel(s.diskDir, full); err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("invalid ISO name")
+	}
+
+	if users, err := s.domainsUsingISO(full); err == nil && len(users) > 0 {
+		return fmt.Errorf("in use by %s", strings.Join(users, ", "))
+	}
+
+	if err := os.Remove(full); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no such ISO")
+		}
+		return err
+	}
+	return nil
+}
+
+// domainsUsingISO names the domains whose XML references this file. Best
+// effort: if libvirt cannot be reached the caller proceeds, because refusing
+// every delete when the hypervisor is unreachable would be worse than the risk
+// it guards against.
+func (s *DomainService) domainsUsingISO(path string) ([]string, error) {
+	l, err := s.conn.Conn()
+	if err != nil {
+		return nil, err
+	}
+	doms, _, err := l.ConnectListAllDomains(1, 0)
+	if err != nil {
+		return nil, err
+	}
+	var users []string
+	for _, d := range doms {
+		xml, err := l.DomainGetXMLDesc(d, 0)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(xml, path) {
+			users = append(users, d.Name)
+		}
+	}
+	return users, nil
+}

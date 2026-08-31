@@ -116,7 +116,53 @@ export async function listISOs(): Promise<IsoEntry[]> {
 }
 
 export async function downloadISO(url: string, name: string): Promise<void> {
+  // The download runs in the background server-side and the call returns as
+  // soon as it is queued, so this keeps the shared timeout.
   await client.post(`${BASE}/iso/download`, { url, name })
+}
+
+export async function deleteISO(name: string): Promise<void> {
+  await client.delete(`${BASE}/iso/${encodeURIComponent(name)}`)
+}
+
+// ── Disk images ───────────────────────────────────────────────────────
+//
+// The storage half of this API was read-only until now: pools and volumes
+// could be listed and nothing could create one. A VM could be defined with no
+// path from "I want a VM" to "it has a disk to install onto" that did not go
+// through a shell.
+
+export interface StorageVolume {
+  name: string
+  key: string
+  path: string
+  capacity: number
+  allocation: number
+}
+
+export async function listVolumes(pool: string): Promise<StorageVolume[]> {
+  return (await client.get<StorageVolume[]>(`${BASE}/pool/${encodeURIComponent(pool)}/volume`)).data
+}
+
+export async function createVolume(
+  pool: string,
+  name: string,
+  capacityBytes: number,
+  format: 'qcow2' | 'raw' = 'qcow2',
+): Promise<StorageVolume> {
+  return (
+    await client.post<StorageVolume>(`${BASE}/pool/${encodeURIComponent(pool)}/volume`, {
+      name,
+      capacity: capacityBytes,
+      format,
+    })
+  ).data
+}
+
+export async function deleteVolume(pool: string, name: string): Promise<void> {
+  await client.delete(
+    `${BASE}/pool/${encodeURIComponent(pool)}/volume/${encodeURIComponent(name)}`,
+  )
 }
 
 export async function createDomain(input: VmCreateInput): Promise<Record<string, unknown>> {

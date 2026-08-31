@@ -400,6 +400,21 @@
       "cloud_init": "cloud-init (opcional)",
       "cloud_init_hint": "user-data no formato #cloud-config. Requer uma imagem cloud (Ubuntu cloud, etc.) para ter efeito.",
       "submit": "Criar"
+    },
+    "library": {
+      "isos": "Mídias de instalação",
+      "no_isos": "Ainda não há ISOs",
+      "iso_add": "Adicionar ISO por URL",
+      "iso_add_named": "Baixar {name}",
+      "iso_url_placeholder": "https://…/instalador.iso",
+      "iso_queued": "Download iniciado — aparecerá aqui quando terminar.",
+      "iso_delete_confirm": "Excluir a ISO «{name}»?",
+      "disks": "Discos",
+      "no_disks": "Nenhum disco neste pool",
+      "disk_add": "Criar",
+      "disk_name_placeholder": "Nome do disco",
+      "disk_delete_confirm": "Excluir o disco «{name}»? O conteúdo será perdido.",
+      "delete": "Excluir"
     }
   },
   "apps": {
