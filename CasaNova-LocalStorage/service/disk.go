@@ -187,18 +187,18 @@ func (d *diskService) SmartCTL(path string) model.SmartctlA {
 	buf := command.ExecSmartCTLByPath(path)
 	if buf == nil {
 		if err := Cache.Add(key, m, time.Minute*10); err != nil {
-			// logger.Error("failed to add cache", zap.Error(err), zap.String("key", key))
+			logger.Error("failed to add cache", zap.Error(err), zap.String("key", key))
 		}
 		return m
 	}
 
 	err := json2.Unmarshal(buf, &m)
 	if err != nil {
-		// logger.Error("failed to unmarshal json", zap.Error(err), zap.String("json", string(buf)))
+		logger.Error("failed to unmarshal json", zap.Error(err), zap.String("json", string(buf)))
 	}
 	if !reflect.DeepEqual(m, model.SmartctlA{}) {
 		if err := Cache.Add(key, m, time.Hour*24); err != nil {
-			// logger.Error("failed to add cache", zap.Error(err), zap.String("key", key))
+			logger.Error("failed to add cache", zap.Error(err), zap.String("key", key))
 		}
 	}
 	return m

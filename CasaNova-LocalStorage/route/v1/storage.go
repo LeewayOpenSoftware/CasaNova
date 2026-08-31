@@ -12,7 +12,6 @@ package v1
 import (
 	"net/http"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -114,10 +113,10 @@ func GetStorageList(ctx echo.Context) error {
 		}
 
 		storageArr := []model1.Storage{}
-		temp := service.MyService.Disk().SmartCTL(currentDisk.Path)
-		if reflect.DeepEqual(temp, model1.SmartctlA{}) {
-			// SMART data unavailable — leave Passed as false (unknown) rather than faking healthy
-		}
+		// Warm the SMART cache for this disk. When SMART data is unavailable
+		// the result is zero — leave Passed as false (unknown) rather than
+		// faking healthy.
+		service.MyService.Disk().SmartCTL(currentDisk.Path)
 		if len(currentDisk.Children) == 0 && service.IsDiskSupported(currentDisk) {
 			currentDisk.Children = append(currentDisk.Children, currentDisk)
 		}

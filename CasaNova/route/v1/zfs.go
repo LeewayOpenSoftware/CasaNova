@@ -512,14 +512,10 @@ func parseZpoolStatus(name string) ([]ZFSVdev, ZFSScrubState) {
 		if strings.Contains(trimmed, "scanned at") || strings.Contains(trimmed, "issued at") {
 			// e.g. "12.3G scanned at 200M/s, 5.6G issued at 90M/s, 100G total"
 			// pull a percent if present
-			fields := strings.Fields(trimmed)
-			for i, f := range fields {
-				if f == "total" && i > 0 {
-					// Last two fields tend to be N total — compute a rough
-					// percent from scanned/total later. For now leave
-					// percentComplete blank; zpool ≥ 2.1 emits an explicit
-					// "scanned: X%" line we catch below.
-				}
+			// A rough percent could be computed from scanned/total, but
+			// zpool ≥ 2.1 emits an explicit "scanned: X%" line we catch
+			// below — only pull an explicit percent here.
+			for _, f := range strings.Fields(trimmed) {
 				if strings.HasSuffix(f, "%") {
 					scrub.PercentComplete = f
 				}

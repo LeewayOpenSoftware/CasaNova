@@ -1888,7 +1888,6 @@ func ConnectWebSocket(ctx echo.Context) error {
 	}
 	http.SetCookie(writer, &cookie)
 	if len(list) > 10 {
-		kickoutList := []Client{}
 		count := len(list) - 10
 		for i := len(list) - 1; count > 0 && i > -1; i-- {
 			handler.clientsMu.RLock()
@@ -1896,26 +1895,18 @@ func ConnectWebSocket(ctx echo.Context) error {
 			handler.clientsMu.RUnlock()
 			if !ok {
 				count--
-				kickoutList = append(kickoutList, Client{ID: list[i].ID, Name: service.GetNameByDB(list[i]), IP: list[i].IP})
 				service.MyService.Peer().DeletePeer(list[i].ID)
 			}
 		}
-		// if len(kickoutList) > 0 {
-		// 	other := make(map[string]interface{})
-		// 	other["type"] = "kickout"
-		// 	other["peers"] = kickoutList
-		// 	otherBy, err := json.Marshal(other)
-		// 	fmt.Println(err)
-		// 	client.handler.broadcast <- otherBy
-		// }
 	}
-	list = service.MyService.Peer().GetPeers()
 	currentPeer := PeerModel{ID: client.ID, Name: client.Name, RtcSupported: client.RtcSupported}
 	pmsg := make(map[string]interface{})
 	pmsg["type"] = "peer-joined"
 	pmsg["peer"] = currentPeer
 	pby, err := json.Marshal(pmsg)
-	fmt.Println(err)
+	if err != nil {
+		logger.Error("failed to marshal peer-joined message", zap.Error(err))
+	}
 	handler.clientsMu.RLock()
 	peerSnapshot := make([]*Client, 0, len(handler.clients))
 	for _, v := range handler.clients {
@@ -1932,10 +1923,12 @@ func ConnectWebSocket(ctx echo.Context) error {
 	// behind one slow consumer. Use the same non-blocking pattern the
 	// monitoring loop already uses; if a peer cannot keep up the
 	// monitoring loop will evict it.
-	for _, v := range peerSnapshot {
-		select {
-		case v.send <- pby:
-		default:
+	if err == nil {
+		for _, v := range peerSnapshot {
+			select {
+			case v.send <- pby:
+			default:
+			}
 		}
 	}
 	// client.handler.broadcast <- pby
@@ -1948,10 +1941,13 @@ func ConnectWebSocket(ctx echo.Context) error {
 	other["type"] = "peers"
 	other["peers"] = clients
 	otherBy, err := json.Marshal(other)
-	fmt.Println(err)
-	select {
-	case client.send <- otherBy:
-	default:
+	if err != nil {
+		logger.Error("failed to marshal peers message", zap.Error(err))
+	} else {
+		select {
+		case client.send <- otherBy:
+		default:
+		}
 	}
 
 	handler.register <- client
