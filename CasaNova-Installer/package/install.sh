@@ -32,6 +32,47 @@ PKG_DISPLAY="$(read_manifest display_version)"
 [ -z "$PKG_DISPLAY" ] && PKG_DISPLAY="$PKG_VERSION"
 RELEASE_LABEL="${PKG_DISPLAY} (${PKG_VERSION})"
 
+# Is this unit in a healthy post-start state?
+#
+# `systemctl is-active` is the wrong question to ask about a Type=oneshot init
+# unit. A oneshot that does its job and exits 0 reports `inactive`, which is
+# success — but every caller that just compares against the string "active"
+# reads it as "this service is down". That is how a successful
+# casanova-local-storage-first disk-init pass got painted RED in the update
+# verification and prompted the user to roll back a perfectly good deploy.
+#
+# casanova-local-storage-first now sets RemainAfterExit=yes, so it answers
+# "active" on its own. This helper is the second half: the check is generic
+# over SERVICES_START_ORDER, so the NEXT oneshot added to that list would walk
+# into the same trap.
+#
+# The oneshot allowance leans on START_OK, and that is load-bearing rather than
+# belt-and-braces. Once a oneshot goes inactive, systemd RESETS its runtime
+# state: a unit that ran and succeeded and a unit that was never started once
+# report byte-identical properties — Result=success, ExecMainStatus=0, and
+# every timestamp (ExecMainStartTimestamp, ActiveEnterTimestamp,
+# InactiveExitTimestamp) empty. Measured, not assumed. So there is NO way to
+# tell "finished successfully" from "never ran" after the fact, and a check
+# built only on `systemctl show` would hand a green tick to a unit that never
+# executed. What we do know is whether OUR `systemctl start` returned 0, and
+# for a oneshot that call blocks until the unit finishes — so that is the
+# authoritative signal, and we record it as we go.
+declare -A START_OK=()
+
+service_ok() {
+    local svc="$1" state
+    state="$(systemctl is-active "$svc" 2>/dev/null || true)"
+    [ "$state" = "active" ] && return 0
+
+    # Everything past here is the narrow "successful oneshot" allowance.
+    [ "$state" = "inactive" ] || return 1
+    [ "$(systemctl show -p Type --value "$svc" 2>/dev/null)" = "oneshot" ] || return 1
+    [ "$(systemctl show -p Result --value "$svc" 2>/dev/null)" = "success" ] || return 1
+    [ "${START_OK[$svc]:-}" = "1" ] || return 1
+    return 0
+}
+
+
 # --- Step 1: Root check ---
 if [ "$(id -u)" -ne 0 ]; then
     error "This script must be run as root. Use: sudo $0"
@@ -289,7 +330,11 @@ SERVICES_START_ORDER=(
 info "Enabling and starting services in dependency order..."
 for svc in "${SERVICES_START_ORDER[@]}"; do
     systemctl enable "$svc" 2>/dev/null || true
-    if ! systemctl start "$svc" 2>/dev/null; then
+    # For a oneshot this call blocks until the unit has finished, so its exit
+    # status is the only trustworthy record that the unit actually ran.
+    if systemctl start "$svc" 2>/dev/null; then
+        START_OK["$svc"]=1
+    else
         warn "Failed to start $svc — will retry after other services"
     fi
     sleep 2
@@ -297,9 +342,13 @@ done
 
 # Retry any failed services once (dependency timing)
 for svc in "${SERVICES_START_ORDER[@]}"; do
-    if [ "$(systemctl is-active "$svc" 2>/dev/null)" != "active" ]; then
+    if ! service_ok "$svc"; then
         info "Retrying $svc..."
-        systemctl restart "$svc" 2>/dev/null || warn "$svc still failed"
+        if systemctl restart "$svc" 2>/dev/null; then
+            START_OK["$svc"]=1
+        else
+            warn "$svc still failed"
+        fi
         sleep 2
     fi
 done
@@ -325,7 +374,10 @@ echo ""
 
 for svc in "${SERVICES_START_ORDER[@]}"; do
     STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
-    if [ "$STATUS" = "active" ]; then
+    if service_ok "$svc"; then
+        # Name why an inactive unit is nonetheless green, so the line does not
+        # read as the verifier being sloppy.
+        [ "$STATUS" = "active" ] || STATUS="$STATUS (oneshot completed successfully)"
         echo -e "  ${GREEN}●${NC} $svc: $STATUS"
     else
         echo -e "  ${RED}●${NC} $svc: $STATUS"

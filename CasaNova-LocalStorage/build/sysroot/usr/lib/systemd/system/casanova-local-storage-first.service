@@ -15,6 +15,18 @@ Before=casanova-local-storage.service
 [Service]
 ExecStart=/usr/bin/casanova-local-storage -init
 Type=oneshot
+# Without this, a oneshot drops back to `inactive` the moment it succeeds, and
+# `systemctl is-active` answers "inactive" — indistinguishable, to every caller
+# that only compares against "active", from a service that is down. The update
+# verifier read exactly that and painted a successful disk-init pass RED, which
+# prompted the user to roll back a good deploy; the installer's retry loop also
+# re-ran the init for the same reason. With RemainAfterExit the unit stays
+# `active (exited)` once its work is done, which is the honest answer and the
+# one systemd intends for init-style units.
+#
+# This does NOT mask a real failure: a non-zero exit still leaves the unit in
+# `failed`, so is-active reports "failed" and the verifier still goes red.
+RemainAfterExit=yes
 # The pool assembly waits for the volumes the database expects. This is the
 # hard bound on that wait: past it systemd kills the unit, docker starts anyway
 # and the pool stays fenced rather than being assembled with disks missing.
