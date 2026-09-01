@@ -174,6 +174,17 @@ async function onApplyDiskUpdate() {
                  Show it only while an update runs, where it carries the real
                  phase detail the status line can't. -->
             <div v-if="updates.status.message && updates.isActive" class="mt-0.5 text-xs text-[var(--cn-text-muted)]">{{ updates.status.message }}</div>
+            <!-- Both timestamps read as a subtitle of the status line they
+                 describe, so they live under it rather than in a rule-separated
+                 row of their own. flex-wrap, unlike the row they came from:
+                 two locale-formatted dates side by side are the widest thing
+                 in this column and on a narrow viewport they MUST be allowed
+                 to break, or they reintroduce the horizontal scroll the
+                 comment below this block was written about. -->
+            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-[var(--cn-text-muted)]">
+              <span>{{ t('settings.about.last_checked') }}: <span class="text-[var(--cn-text)]">{{ formatTimestamp(updates.status.lastCheckedAt) }}</span></span>
+              <span>{{ t('settings.about.last_applied') }}: <span class="text-[var(--cn-text)]">{{ formatTimestamp(updates.status.lastAppliedAt) }}</span></span>
+            </div>
             <div v-if="updates.status.updateAvailable && updates.status.latestVersion && !updates.isActive" class="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--cn-text-muted)]">
               <span>→ <span class="font-mono text-[var(--cn-text)]">{{ updates.status.latestVersion }}</span></span>
               <span v-if="updates.status.sizeBytes">{{ formatBytes(updates.status.sizeBytes) }}</span>
@@ -191,22 +202,33 @@ async function onApplyDiskUpdate() {
         <div class="flex min-w-0 flex-col items-end gap-1.5">
           <span class="font-mono text-[11px] text-[var(--cn-text-muted)]">{{ displayVersion }} · {{ buildVersion }} · {{ buildChannel }}</span>
           <div class="flex flex-wrap items-center justify-end gap-2">
-          <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="updates.loading" @click="onCheckNow">
-            <template #icon><AppIcon name="RefreshCw" :size="13" /></template>
-            <template #default>{{ t('settings.about.check_for_updates') }}</template>
-          </Button>
-          <Button v-if="!updates.isActive" size="small" severity="secondary" @click="openDiskUpdate">
-            <template #icon><AppIcon name="HardDrive" :size="13" /></template>
-            <template #default>{{ t('settings.about.load_from_disk') }}</template>
-          </Button>
-          <Button v-if="updates.canStart" size="small" @click="onInstall">
-            <template #icon><AppIcon name="Download" :size="13" /></template>
-            <template #default>{{ t('settings.about.install_now') }}</template>
-          </Button>
-          <Button v-if="updates.canCancel" size="small" severity="secondary" @click="onCancel">
-            <template #icon><AppIcon name="X" :size="13" /></template>
-            <template #default>{{ t('settings.about.cancel_update') }}</template>
-          </Button>
+            <!-- Repair leads the cluster deliberately. The group is end-aligned,
+                 so the RIGHTMOST slot is the prominent one and belongs to the
+                 primary action (Install, or Check when there is nothing to
+                 install); a rarely-wanted maintenance action sits furthest from
+                 it. It carries the same `!updates.isActive` guard it had in the
+                 maintenance row — reinstalling the running version on top of an
+                 update in flight is exactly the thing that guard prevents. -->
+            <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="repairing" @click="onRepair">
+              <template #icon><AppIcon name="ShieldCheck" :size="13" /></template>
+              <template #default>{{ t('settings.about.repair') }}</template>
+            </Button>
+            <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="updates.loading" @click="onCheckNow">
+              <template #icon><AppIcon name="RefreshCw" :size="13" /></template>
+              <template #default>{{ t('settings.about.check_for_updates') }}</template>
+            </Button>
+            <Button v-if="!updates.isActive" size="small" severity="secondary" @click="openDiskUpdate">
+              <template #icon><AppIcon name="HardDrive" :size="13" /></template>
+              <template #default>{{ t('settings.about.load_from_disk') }}</template>
+            </Button>
+            <Button v-if="updates.canStart" size="small" @click="onInstall">
+              <template #icon><AppIcon name="Download" :size="13" /></template>
+              <template #default>{{ t('settings.about.install_now') }}</template>
+            </Button>
+            <Button v-if="updates.canCancel" size="small" severity="secondary" @click="onCancel">
+              <template #icon><AppIcon name="X" :size="13" /></template>
+              <template #default>{{ t('settings.about.cancel_update') }}</template>
+            </Button>
           </div>
         </div>
       </div>
@@ -237,21 +259,21 @@ async function onApplyDiskUpdate() {
         <div v-if="updates.status.lastReport.services_failed?.length" class="text-red-500">{{ t('settings.about.failed_services') }}: <span class="font-mono">{{ updates.status.lastReport.services_failed.join(', ') }}</span></div>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--cn-border)] pt-3 text-xs">
+      <!-- Channel and auto-restart are one block: both answer "how should this
+           machine take updates", and they used to be two rules apart with the
+           timestamps wedged between them. ONE border-t for the pair, a tighter
+           gap-2 inside, and the channel on top because it is the setting people
+           come here to change. -->
+      <div class="flex flex-col gap-2 border-t border-[var(--cn-border)] pt-3 text-xs">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="font-medium text-[var(--cn-text)]">{{ t('settings.about.channel') }}</div>
+          <div class="inline-flex rounded-lg border border-[var(--cn-border)] bg-[var(--cn-surface-hover)] p-0.5">
+            <button v-for="c in channels" :key="c.value" type="button" :class="['rounded-md px-3 py-1 text-xs font-medium transition-colors', updates.status.channel === c.value ? 'bg-blue-500 text-white' : 'text-[var(--cn-text-muted)] hover:text-[var(--cn-text)]']" @click="onChannelChange(c.value)">
+              {{ t(`settings.about.${c.label}`) }}
+            </button>
+          </div>
+        </div>
         <label class="flex items-center gap-2 text-[var(--cn-text-muted)]"><ToggleSwitch v-model="allowReboot" /><span>{{ t('settings.about.allow_reboot') }}</span></label>
-        <div class="flex gap-4 text-[var(--cn-text-muted)]">
-          <span>{{ t('settings.about.last_checked') }}: <span class="text-[var(--cn-text)]">{{ formatTimestamp(updates.status.lastCheckedAt) }}</span></span>
-          <span>{{ t('settings.about.last_applied') }}: <span class="text-[var(--cn-text)]">{{ formatTimestamp(updates.status.lastAppliedAt) }}</span></span>
-        </div>
-      </div>
-
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="text-xs font-medium text-[var(--cn-text)]">{{ t('settings.about.channel') }}</div>
-        <div class="inline-flex rounded-lg border border-[var(--cn-border)] bg-[var(--cn-surface-hover)] p-0.5">
-          <button v-for="c in channels" :key="c.value" type="button" :class="['rounded-md px-3 py-1 text-xs font-medium transition-colors', updates.status.channel === c.value ? 'bg-blue-500 text-white' : 'text-[var(--cn-text-muted)] hover:text-[var(--cn-text)]']" @click="onChannelChange(c.value)">
-            {{ t(`settings.about.${c.label}`) }}
-          </button>
-        </div>
       </div>
 
       <div v-if="updates.changelog.length > 0 && updates.status.updateAvailable" class="rounded-lg border border-[var(--cn-border)] bg-[var(--cn-surface-hover)] p-3">
@@ -259,21 +281,21 @@ async function onApplyDiskUpdate() {
         <pre class="whitespace-pre-wrap text-xs text-[var(--cn-text-muted)]">{{ updates.changelog[0].body }}</pre>
       </div>
 
-      <!-- Maintenance: repair (reinstall current version's files) + clear cache -->
-      <!-- Stack on narrow, single row on wide. This is the shape that cannot
+      <!-- Maintenance: clear cache. Repair moved up to the header's action
+           cluster, so the only control left here is conditional — hence
+           `hasCachedPackage` on the ROW as well. Without it the row rendered a
+           bordered "Mantenimiento" heading over nothing whenever no package was
+           cached, which is the common case and pure vertical noise.
+           Stack on narrow, single row on wide. This is the shape that cannot
            overflow: below sm the label sits above its buttons instead of
            squeezing them off the edge. -->
-      <div v-if="!updates.isActive" class="flex flex-col gap-2 border-t border-[var(--cn-border)] pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <div v-if="!updates.isActive && hasCachedPackage" class="flex flex-col gap-2 border-t border-[var(--cn-border)] pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div class="flex items-center gap-2 text-xs text-[var(--cn-text-muted)]">
           <AppIcon name="Wrench" :size="14" />
           <span>{{ t('settings.about.maintenance') }}</span>
         </div>
         <div class="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Button size="small" severity="secondary" :loading="repairing" @click="onRepair">
-            <template #icon><AppIcon name="ShieldCheck" :size="13" /></template>
-            <template #default>{{ t('settings.about.repair') }}</template>
-          </Button>
-          <Button v-if="hasCachedPackage" size="small" severity="secondary" :loading="clearingCache" @click="onClearCache">
+          <Button size="small" severity="secondary" :loading="clearingCache" @click="onClearCache">
             <template #icon><AppIcon name="Trash2" :size="13" /></template>
             <template #default>{{ t('settings.about.clear_cache') }}</template>
           </Button>
