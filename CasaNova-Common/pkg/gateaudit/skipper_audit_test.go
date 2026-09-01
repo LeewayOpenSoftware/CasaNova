@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -46,8 +45,8 @@ func TestNoModuleAuthenticatesByIPAddress(t *testing.T) {
 	}
 
 	for _, d := range all {
-		if why, ok := reviewedIPAuth[shortPath(d.File)+":"+itoa(d.Line)]; ok {
-			t.Logf("KNOWN, not fixed: %s:%d — %s", shortPath(d.File), d.Line, why)
+		if why, ok := reviewedIPAuth[shortPath(root, d.File)+":"+itoa(d.Line)]; ok {
+			t.Logf("KNOWN, not fixed: %s:%d — %s", shortPath(root, d.File), d.Line, why)
 			continue
 		}
 		t.Errorf("%s:%d: %s decides authentication from the request's peer "+
@@ -83,13 +82,26 @@ var reviewedIPAuth = map[string]string{
 		"management router; same listener, same reason, same fix.",
 }
 
-// shortPath trims the absolute prefix so entries above are readable and stable.
-func shortPath(p string) string {
-	i := strings.Index(p, "CasaNova-")
-	if i < 0 {
+// shortPath renders an absolute path in the module-relative form the entries
+// above are written in ("CasaNova-Gateway/route/management_route.go"), so that
+// they are readable and — the part that matters — STABLE.
+//
+// It derives that from root rather than searching the string for "CasaNova-".
+// The search took the FIRST occurrence, which is the CHECKOUT DIRECTORY as soon
+// as the checkout is itself named CasaNova-something. A release worktree at
+// ~/Documentos/CasaNova-2610 produced the key
+// "CasaNova-2610/CasaNova-Gateway/route/management_route.go:130", which matches
+// nothing above, so both reviewed-and-judged decisions re-opened as fresh
+// findings and the release gate failed on debt it had already been told about.
+// It only ever worked because the everyday checkout is named "CasaNova OS",
+// which has no hyphen. A key that depends on what someone called their
+// directory is not a key.
+func shortPath(root, p string) string {
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
 		return p
 	}
-	return p[i:]
+	return filepath.ToSlash(rel)
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
