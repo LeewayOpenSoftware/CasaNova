@@ -192,44 +192,59 @@ async function onApplyDiskUpdate() {
             </div>
           </div>
         </div>
-        <!-- Version stamp above the actions, and BOTH allowed to wrap.
-             An earlier revision pinned this column with shrink-0 + a
-             whitespace-nowrap stamp + flex-nowrap buttons. Together those made
-             the card's MINIMUM width larger than the viewport, so the whole
-             settings page scrolled sideways and the last button was cut off
-             the screen. A control the user cannot reach is worse than one that
-             wrapped onto a second line. Nothing here may refuse to shrink. -->
-        <div class="flex min-w-0 flex-col items-end gap-1.5">
-          <span class="font-mono text-[11px] text-[var(--cn-text-muted)]">{{ displayVersion }} · {{ buildVersion }} · {{ buildChannel }}</span>
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <!-- Repair leads the cluster deliberately. The group is end-aligned,
-                 so the RIGHTMOST slot is the prominent one and belongs to the
-                 primary action (Install, or Check when there is nothing to
-                 install); a rarely-wanted maintenance action sits furthest from
-                 it. It carries the same `!updates.isActive` guard it had in the
-                 maintenance row — reinstalling the running version on top of an
-                 update in flight is exactly the thing that guard prevents. -->
-            <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="repairing" @click="onRepair">
-              <template #icon><AppIcon name="ShieldCheck" :size="13" /></template>
-              <template #default>{{ t('settings.about.repair') }}</template>
-            </Button>
-            <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="updates.loading" @click="onCheckNow">
-              <template #icon><AppIcon name="RefreshCw" :size="13" /></template>
-              <template #default>{{ t('settings.about.check_for_updates') }}</template>
-            </Button>
-            <Button v-if="!updates.isActive" size="small" severity="secondary" @click="openDiskUpdate">
-              <template #icon><AppIcon name="HardDrive" :size="13" /></template>
-              <template #default>{{ t('settings.about.load_from_disk') }}</template>
-            </Button>
-            <Button v-if="updates.canStart" size="small" @click="onInstall">
-              <template #icon><AppIcon name="Download" :size="13" /></template>
-              <template #default>{{ t('settings.about.install_now') }}</template>
-            </Button>
-            <Button v-if="updates.canCancel" size="small" severity="secondary" @click="onCancel">
-              <template #icon><AppIcon name="X" :size="13" /></template>
-              <template #default>{{ t('settings.about.cancel_update') }}</template>
-            </Button>
-          </div>
+        <!-- Version stamp only. It shares the header line with the status
+             block and, like it, is allowed to shrink and wrap. -->
+        <span class="min-w-0 font-mono text-[11px] text-[var(--cn-text-muted)]">{{ displayVersion }} · {{ buildVersion }} · {{ buildChannel }}</span>
+        <!-- The actions get the card's FULL width, not a column beside the
+             status text. w-full makes this a flex item that cannot share a
+             line, so it wraps onto its own row inside this same header block —
+             one 8px gap-y below the stamp rather than a 16px stack row.
+             This is a fix, not a preference. When the actions lived in a
+             flex-col column next to the status text, the two competed for the
+             header's width; the status column grew (it now carries both
+             timestamps) and squeezed the button column down toward its
+             min-content width, at which point flex-wrap did exactly what it is
+             told to do and broke EVERY button onto its own line. Three buttons
+             stacked vertically at desktop width is the opposite of compaction.
+             Given the whole row, the same buttons sit side by side.
+             The wrapping itself stays, and is required. An earlier revision
+             pinned this area with shrink-0 + a whitespace-nowrap stamp +
+             flex-nowrap buttons; together those made the card's MINIMUM width
+             larger than the viewport, so the settings page scrolled sideways
+             and the last button was cut off the screen. A control the user
+             cannot reach is worse than one that wrapped onto a second line.
+             The distinction to hold on to: the ROW wrapping when it genuinely
+             runs out of room is correct; one button per line at desktop width
+             means something upstream is starving it of width. Nothing here may
+             refuse to shrink. -->
+        <div class="flex w-full flex-row flex-wrap items-center justify-end gap-2">
+          <!-- Repair leads the cluster deliberately. The group is end-aligned,
+               so the RIGHTMOST slot is the prominent one and belongs to the
+               primary action (Install, or Check when there is nothing to
+               install); a rarely-wanted maintenance action sits furthest from
+               it. It carries the same `!updates.isActive` guard it had in the
+               maintenance row — reinstalling the running version on top of an
+               update in flight is exactly the thing that guard prevents. -->
+          <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="repairing" @click="onRepair">
+            <template #icon><AppIcon name="ShieldCheck" :size="13" /></template>
+            <template #default>{{ t('settings.about.repair') }}</template>
+          </Button>
+          <Button v-if="!updates.isActive" size="small" severity="secondary" :loading="updates.loading" @click="onCheckNow">
+            <template #icon><AppIcon name="RefreshCw" :size="13" /></template>
+            <template #default>{{ t('settings.about.check_for_updates') }}</template>
+          </Button>
+          <Button v-if="!updates.isActive" size="small" severity="secondary" @click="openDiskUpdate">
+            <template #icon><AppIcon name="HardDrive" :size="13" /></template>
+            <template #default>{{ t('settings.about.load_from_disk') }}</template>
+          </Button>
+          <Button v-if="updates.canStart" size="small" @click="onInstall">
+            <template #icon><AppIcon name="Download" :size="13" /></template>
+            <template #default>{{ t('settings.about.install_now') }}</template>
+          </Button>
+          <Button v-if="updates.canCancel" size="small" severity="secondary" @click="onCancel">
+            <template #icon><AppIcon name="X" :size="13" /></template>
+            <template #default>{{ t('settings.about.cancel_update') }}</template>
+          </Button>
         </div>
       </div>
 
