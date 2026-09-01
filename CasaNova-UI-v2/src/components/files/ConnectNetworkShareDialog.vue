@@ -62,7 +62,7 @@ const password = ref('')
 const connecting = ref(false)
 
 // Wave 33: reset every credential field whenever the dialog closes
-// (X button, Cancel, dismissable-mask click, ESC). The previous code
+// (X button, Cancel, ESC). The previous code
 // only reset inside `onConnect()`'s success path, which left the form
 // state intact when the user closed without connecting. On a shared
 // workstation, that meant: user A typed `smb://nas/private` + user
@@ -132,7 +132,6 @@ async function onConnect() {
     v-model:visible="dialogVisible"
     modal
     :style="{ width: '34rem' }"
-    :dismissable-mask="true"
     :header="t('files.network.title')"
   >
     <div class="flex flex-col gap-4">

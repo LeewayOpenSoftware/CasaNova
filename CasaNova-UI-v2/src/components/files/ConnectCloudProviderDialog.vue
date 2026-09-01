@@ -56,7 +56,6 @@ function onConnect() {
     v-model:visible="dialogVisible"
     modal
     :style="{ width: '28rem' }"
-    :dismissable-mask="true"
     :header="t('files.cloud.connect_title', { provider: meta.name })"
   >
     <div class="flex flex-col items-center gap-4 py-2 text-center">

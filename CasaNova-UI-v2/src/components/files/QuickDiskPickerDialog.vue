@@ -116,7 +116,6 @@ function openSettings() {
     v-model:visible="dialogVisible"
     modal
     :style="{ width: '26rem' }"
-    :dismissable-mask="true"
     :header="t('files.disk_picker.title')"
   >
     <p class="mb-4 text-xs text-[var(--cn-text-muted)]">
