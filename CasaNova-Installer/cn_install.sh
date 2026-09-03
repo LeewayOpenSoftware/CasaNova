@@ -551,6 +551,19 @@ DownloadAndInstallCasaOS() {
     fi
     ${sudo_cmd} chmod +x $CASA_UNINSTALL_PATH
     
+    # /DATA -- the user-data root. SIX unit files name it in ReadWritePaths=
+    # (casanova, rclone, app-management, job-management, local-storage, virt),
+    # and systemd REFUSES to start a unit whose ReadWritePaths= does not exist:
+    # the service dies with 226/NAMESPACE ("Failed to set up mount namespacing")
+    # before its binary ever runs. On an upgraded box /DATA already exists from
+    # an earlier CasaOS install, which is why nobody hit this; on a CLEAN
+    # install by script every one of those six failed to start, and journalctl
+    # showed only "Failed with result exit-code" unless you read past the
+    # restart loop. package/install.sh already does this (its step 6); these
+    # curl|bash paths never did, so they installed a box with dead services.
+    ${sudo_cmd} mkdir -p /DATA
+    ${sudo_cmd} chmod 0755 /DATA
+
     for SERVICE in "${CASA_SERVICES[@]}"; do
         Show 2 "Starting ${SERVICE}..."
         GreyStart
