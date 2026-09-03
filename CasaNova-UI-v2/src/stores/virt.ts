@@ -109,16 +109,65 @@ export const useVirtStore = defineStore('virt', () => {
 
   // Polling — slow (10s) since VM state changes are user-driven, not chatty.
   // ponytail: fixed 10s interval; make adaptive only if it ever feels laggy.
+  //
+  // Refcounted like system.ts / updates.ts: this store has two independent
+  // consumers (the VMs route and the dashboard VMs widget). With a plain
+  // boolean timer the first of them to unmount stopped polling for the one
+  // still on screen, which shows stale VM state with no error anywhere.
   let timer: ReturnType<typeof setInterval> | null = null
+  let pollRefs = 0
+
+  // Skip the tick while the tab is hidden — nobody can see the result and on
+  // a NAS every poll is real work on the box. Catch up on the way back.
+  function tick() {
+    if (typeof document !== 'undefined' && document.hidden) return
+    void refresh()
+  }
+
+  function onVisibilityChange() {
+    if (!document.hidden && timer !== null) void refresh()
+  }
+
   function startPolling() {
+    pollRefs++
     if (timer) return
-    timer = setInterval(refresh, 10000)
+    timer = setInterval(tick, 10000)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
   }
   function stopPolling() {
+    if (pollRefs > 0) pollRefs--
+    if (pollRefs > 0) return
     if (timer) {
       clearInterval(timer)
       timer = null
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
     }
+  }
+
+  // Stop polling AND drop every session-bound ref when the user logs out.
+  // logout() in stores/auth.ts does not reload the page, so anything left
+  // here stays on screen for whoever logs in next: this store held the
+  // previous user's VM names, storage pool names and hypervisor info until
+  // the new user's first fetch resolved. Same contract the other ten
+  // auth-logout listeners already honour.
+  function _onAuthLogout() {
+    pollRefs = 0
+    stopPolling()
+    info.value = null
+    domains.value = []
+    pools.value = []
+    loading.value = false
+    available.value = null
+    error.value = null
+    busy.value = new Set()
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('auth-logout', _onAuthLogout)
   }
 
   return {

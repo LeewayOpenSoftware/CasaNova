@@ -8,6 +8,7 @@
 // Cloud backup syncs selected paths to remote cloud storage using
 // rclone (Google Drive, Dropbox, S3, OneDrive, SFTP, etc.).
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -297,7 +298,7 @@ async function fetchSyncStatus() {
 
 function startSyncPolling() {
   if (syncPollTimer) return
-  syncPollTimer = setInterval(fetchSyncStatus, 2000)
+  syncPollTimer = setInterval(skipWhenHidden(fetchSyncStatus), 2000)
 }
 
 function openAddRemoteDialog() {

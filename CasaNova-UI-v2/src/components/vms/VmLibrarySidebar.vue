@@ -10,6 +10,7 @@
 // They live in a sidebar rather than a page because they are a library you
 // consult while looking at the VMs, not a destination of their own.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -82,7 +83,7 @@ function schedulePoll() {
     clearInterval(pollTimer)
     pollTimer = null
   }
-  if (wanted) pollTimer = setInterval(loadDownloads, wanted)
+  if (wanted) pollTimer = setInterval(skipWhenHidden(loadDownloads), wanted)
 }
 
 async function cancelDownload(name: string) {
