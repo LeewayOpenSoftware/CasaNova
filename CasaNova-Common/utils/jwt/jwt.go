@@ -23,9 +23,16 @@ func NewJTI() (string, error) {
 }
 
 // Claims is the CasaNova JWT payload. Role is included so every service
-// can authorize without a DB round-trip to UserService. An empty Role on
-// a valid token is treated as "admin" by the rbac package for backward
-// compatibility with tokens issued before RBAC existed.
+// can authorize without a DB round-trip to UserService.
+//
+// An empty Role FAILS CLOSED: rbac.Normalize("") returns RoleGuest, the
+// least-privileged role, and so does any role string it does not
+// recognise. This comment used to say an empty Role was treated as
+// "admin" for backward compatibility with pre-RBAC tokens. That is not
+// what the code does and must not become what it does -- a token whose
+// role claim is missing, misspelled or stripped would become an
+// administrator. The comment is corrected rather than the behaviour:
+// nobody should ever "restore" the described rule from a stale comment.
 type Claims struct {
 	Username string `json:"username"`
 	ID       int    `json:"id"`

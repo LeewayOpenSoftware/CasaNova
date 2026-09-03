@@ -12,9 +12,9 @@ import (
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/authskip"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
-	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/loopback"
 	"github.com/LeewayOpenSoftware/CasaNova-Gateway/service"
 	"github.com/labstack/echo/v4"
 	echo_middleware "github.com/labstack/echo/v4/middleware"
@@ -126,9 +126,26 @@ func (m *ManagementRoute) buildV1Group(e *echo.Echo) {
 // Authorization header.
 func (m *ManagementRoute) managementJWTConfig() echo_middleware.JWTConfig {
 	return echo_middleware.JWTConfig{
-		Skipper: func(c echo.Context) bool {
-			return loopback.IsLoopback(c)
-		},
+		// AN IP ADDRESS IS NOT A CREDENTIAL. This used to be
+		// `return loopback.IsLoopback(c)`, which skipped JWT for every
+		// loopback caller. The management server binds loopback only, so
+		// that waiver applied to EVERY request it can ever receive: the
+		// JWT middleware below and the per-route RBAC checks were dead
+		// code. And loopback is not "internal" here — the gateway
+		// reverse-proxies the LAN and the Cloudflare tunnel over
+		// 127.0.0.1, so anything that reached this port was already
+		// exempt, from anywhere.
+		//
+		// authskip.For(nil) is the shared decision used by every other
+		// CasaNova router: answer without a user token only for a caller
+		// that proves it is a peer service with the per-boot internal
+		// secret (a 0600 file in a 0700 root-owned directory), and for
+		// nothing else. nil because no management route has a
+		// pre-session contract — /ping is registered outside this group.
+		// The peer clients in CasaNova-Common/external/gateway.go send
+		// that header; they already read management.url from the same
+		// root-only directory the secret lives in.
+		Skipper: authskip.For(nil),
 		ParseTokenFunc: func(token string, c echo.Context) (interface{}, error) {
 			valid, claims, err := jwt.Validate(token, func() (*ecdsa.PublicKey, error) {
 				return external.GetPublicKey(m.management.State.GetRuntimePath())
@@ -226,16 +243,18 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 			})
 		})
 		v1GatewayGroup.PUT("/tls", func(ctx echo.Context) error {
-			// In-handler role check: loopback bypasses, otherwise require
-			// PermSystemConfig (admin). The TLS config controls the entire
-			// inbound surface, so only admins may touch it.
-			if !loopback.IsLoopback(ctx) {
-				if !rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
-					return ctx.JSON(http.StatusForbidden, model.Result{
-						Success: common_err.CLIENT_ERROR,
-						Message: "admin role required",
-					})
-				}
+			// In-handler role check. The `if !loopback.IsLoopback(ctx)`
+			// that used to wrap this waived the admin requirement for
+			// every loopback caller — and since this server only ever
+			// receives loopback traffic, that meant the check never ran.
+			// TLS config controls the entire inbound surface, so it is
+			// admin-only with no exemption. A genuine peer service is
+			// already let through by the group's authskip skipper.
+			if !rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
 			}
 			var settings service.TLSSettings
 			if err := ctx.Bind(&settings); err != nil {

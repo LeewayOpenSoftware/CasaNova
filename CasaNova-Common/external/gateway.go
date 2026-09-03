@@ -14,6 +14,7 @@ import (
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	http2 "github.com/LeewayOpenSoftware/CasaNova-Common/utils/http"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 )
 
 const (
@@ -46,7 +47,18 @@ func (m *managementService) CreateRoute(route *model.Route) error {
 		return err
 	}
 
-	response, err := http2.Post(url, body, 30*time.Second)
+	// Prove this is a peer service. The management server used to skip JWT
+	// for any loopback caller, and since the gateway proxies the LAN and the
+	// Cloudflare tunnel over loopback, that waiver was the whole internet.
+	// The secret is a 0600 file in a 0700 root-owned directory, next to the
+	// management.url this client already reads, so every legitimate caller
+	// can present it and nobody else can.
+	hdr, err := internalauth.Header()
+	if err != nil {
+		return err
+	}
+
+	response, err := http2.PostWithHeader(url, body, 30*time.Second, hdr)
 	if err != nil {
 		m.clearAddress(address)
 		return err
@@ -71,7 +83,12 @@ func (m *managementService) ChangePort(request *model.ChangePortRequest) error {
 		return err
 	}
 
-	response, err := http2.Put(url, body, 30*time.Second)
+	hdr, err := internalauth.Header()
+	if err != nil {
+		return err
+	}
+
+	response, err := http2.PutWithHeader(url, body, 30*time.Second, hdr)
 	if err != nil {
 		m.clearAddress(address)
 		return err
@@ -92,7 +109,12 @@ func (m *managementService) GetPort() (error, string) {
 	}
 	url := strings.TrimSuffix(address, "/") + "/" + strings.TrimPrefix(APIGatewayPort, "/")
 
-	response, err := http2.Get(url, 30*time.Second)
+	hdr, err := internalauth.Header()
+	if err != nil {
+		return err, ""
+	}
+
+	response, err := http2.GetWithHeader(url, 30*time.Second, hdr)
 	if err != nil {
 		m.clearAddress(address)
 		return err, ""

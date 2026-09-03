@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
 	"github.com/labstack/echo/v4"
 
@@ -26,8 +27,22 @@ func init() {
 	logger.LogInitConsoleOnly()
 }
 
+// _internalHdr is the header a peer service presents to prove it is one.
+// These tests used to reach the management API on the strength of
+// `req.RemoteAddr = "127.0.0.1:0"` alone, which is exactly the waiver that
+// made the whole API reachable without a credential. They now authenticate
+// the way CasaNova-Common/external/gateway.go does.
+var _internalHdr map[string]string
+
 func setup(t *testing.T) func(t *testing.T) {
 	tmpdir, _ := os.MkdirTemp("", "casaos-gateway-route-test")
+
+	internalauth.SetPathsForTest(t.TempDir())
+	hdr, err := internalauth.Header()
+	if err != nil {
+		t.Fatalf("the internal secret could not be provisioned: %v", err)
+	}
+	_internalHdr = hdr
 
 	_state = service.NewState()
 	if err := _state.SetRuntimePath(tmpdir); err != nil {
@@ -70,6 +85,9 @@ func TestCreateRoute(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, "/v1/gateway/routes", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:0"
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
 	w := httptest.NewRecorder()
@@ -77,6 +95,9 @@ func TestCreateRoute(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 
 	req, _ = http.NewRequest(http.MethodGet, "/v1/gateway/routes", nil)
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 	w = httptest.NewRecorder()
 	_router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -114,6 +135,9 @@ func TestChangePort(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPut, "/v1/gateway/port", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:0"
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
 	w := httptest.NewRecorder()
@@ -124,6 +148,9 @@ func TestChangePort(t *testing.T) {
 
 	// get
 	req, _ = http.NewRequest(http.MethodGet, "/v1/gateway/port", nil)
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 
 	w = httptest.NewRecorder()
 	_router.ServeHTTP(w, req)
@@ -153,6 +180,9 @@ func TestChangePortNegative(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPut, "/v1/gateway/port", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:0"
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
 	w := httptest.NewRecorder()
@@ -163,6 +193,9 @@ func TestChangePortNegative(t *testing.T) {
 
 	// get
 	req, _ = http.NewRequest(http.MethodGet, "/v1/gateway/port", nil)
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
 	w = httptest.NewRecorder()
@@ -190,6 +223,9 @@ func TestChangePortNegative(t *testing.T) {
 
 	req, _ = http.NewRequest(http.MethodPut, "/v1/gateway/port", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:0"
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 
 	w = httptest.NewRecorder()
@@ -200,6 +236,9 @@ func TestChangePortNegative(t *testing.T) {
 
 	// get
 	req, _ = http.NewRequest(http.MethodGet, "/v1/gateway/port", nil)
+	for k, v := range _internalHdr {
+		req.Header.Set(k, v)
+	}
 
 	w = httptest.NewRecorder()
 	_router.ServeHTTP(w, req)

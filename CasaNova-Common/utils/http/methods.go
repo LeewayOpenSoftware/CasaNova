@@ -147,6 +147,11 @@ func PostWithHeader(url string, body []byte, timeout time.Duration, header map[s
 
 // default header "Content-Type: application/json" is included.
 func Put(url string, body []byte, timeout time.Duration) (*http.Response, error) {
+	return PutWithHeader(url, body, timeout, nil)
+}
+
+// default header "Content-Type: application/json" is included.
+func PutWithHeader(url string, body []byte, timeout time.Duration, header map[string]string) (*http.Response, error) {
 	return Do(func(ctx context.Context) (*http.Request, error) {
 		request, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewBuffer(body))
 		if err != nil {
@@ -154,6 +159,10 @@ func Put(url string, body []byte, timeout time.Duration) (*http.Response, error)
 		}
 		request.Header.Set("accept", "application/json")
 		request.Header.Set("Content-Type", "application/json")
+
+		for k, v := range header {
+			request.Header.Set(k, v)
+		}
 
 		return request, nil
 	}, timeout)

@@ -32,10 +32,25 @@ func actorUserID(c echo.Context) int {
 // validTaskID matches the format produced by task.go: "task_" + hex digits, max 50 chars.
 var validTaskID = regexp.MustCompile(`^task_[0-9a-f]{1,16}$`)
 
+// DENY WITH echo.NewHTTPError, NEVER WITH c.JSON — the same rule the permission
+// gates below carry, and for the same reason.
+//
+// This returned `"", c.JSON(...)`. c.JSON returns the SERIALIZER's error, which
+// is nil once the bytes are written, so every caller's
+// `id, err := validateTaskID(c); if err != nil { return err }` received nil and
+// CARRIED ON with id == "" after a 400 had already been committed to the
+// response. DeleteScheduledTask then reached store.Delete("") and rewrote
+// tasks.json for a request it had already rejected; the other three attempted a
+// second write on a committed response.
+//
+// The gates were fixed and a test was added for them, but that test only looked
+// at permission gates, so this sibling helper in the same file kept the bug.
+// The rule is about any error-returning helper, not about permissions.
 func validateTaskID(c echo.Context) (string, error) {
 	id := c.Param("id")
 	if !validTaskID.MatchString(id) {
-		return "", c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid task ID format"})
+		return "", echo.NewHTTPError(http.StatusBadRequest,
+			map[string]string{"message": "invalid task ID format"})
 	}
 	return id, nil
 }

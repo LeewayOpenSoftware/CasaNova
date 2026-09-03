@@ -345,12 +345,24 @@ func (ts *TaskStore) Put(t *Task, actorUserID int) (*Task, error) {
 	return t, nil
 }
 
-// Get returns a task by ID.
+// Get returns a COPY of a task by ID.
+//
+// A copy, not the stored pointer: the RLock is released when this returns, so
+// handing back a pointer into ts.tasks lets the caller read (and the JSON
+// encoder walk) a struct that the store no longer protects. History() already
+// copied its slice for exactly this reason; tasks did not, which left the
+// safety of the whole store resting on the unwritten rule that nothing ever
+// mutates a Task after it is inserted. Copying here makes that rule
+// unnecessary instead of merely undocumented.
 func (ts *TaskStore) Get(id string) (*Task, bool) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	t, ok := ts.tasks[id]
-	return t, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *t
+	return &cp, true
 }
 
 // Delete removes a task and wipes its run history.
@@ -375,9 +387,13 @@ func (ts *TaskStore) Delete(id string) error {
 func (ts *TaskStore) All() []*Task {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
+	// Copies, for the reason spelled out on Get: callers keep these after the
+	// RLock is gone -- ListScheduledTasks hands the slice straight to c.JSON,
+	// which serialises it outside the lock.
 	out := make([]*Task, 0, len(ts.tasks))
 	for _, t := range ts.tasks {
-		out = append(out, t)
+		cp := *t
+		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Name != out[j].Name {

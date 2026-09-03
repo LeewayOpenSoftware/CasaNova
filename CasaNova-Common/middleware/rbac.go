@@ -37,8 +37,13 @@ const (
 
 // SetRoleInContext is called by each service's JWT parse callback once
 // it has verified the token. Passes the role string from Claims.Role
-// through rbac.Normalize so downstream checks see a clean enum value
-// (including the empty-string → admin backward-compat rule).
+// through rbac.Normalize so downstream checks see a clean enum value.
+//
+// Normalize FAILS CLOSED: an empty or unrecognised role string becomes
+// RoleGuest, the least-privileged role. This comment used to describe an
+// "empty-string → admin backward-compat rule"; no such rule exists in
+// the code, and it would turn a token with a missing role claim into an
+// administrator.
 func SetRoleInContext(c echo.Context, role string, userID int) {
 	c.Set(ContextKeyRole, rbac.Normalize(role))
 	c.Set(ContextKeyUserID, userID)
