@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/devid"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	"github.com/labstack/echo/v4"
@@ -897,7 +898,7 @@ func PostZFSCreatePool(ctx echo.Context) error {
 	// partitions (/dev/sdX1, /dev/sdXp1).
 	if rootDev := zfsGetRootDevice(); rootDev != "" {
 		for _, d := range body.Devices {
-			if d == rootDev || strings.HasPrefix(d, rootDev) {
+			if zfsIsSystemDisk(rootDev, d) {
 				return ctx.JSON(http.StatusForbidden, model.Result{
 					Success: common_err.SERVICE_ERROR,
 					Message: "refusing to create a pool on the system disk: " + d,
@@ -1044,7 +1045,7 @@ func PostZFSReplace(ctx echo.Context) error {
 		})
 	}
 	if rootDev := zfsGetRootDevice(); rootDev != "" {
-		if strings.HasPrefix(body.NewDevice, rootDev) {
+		if zfsIsSystemDisk(rootDev, body.NewDevice) {
 			return ctx.JSON(http.StatusForbidden, model.Result{
 				Success: common_err.SERVICE_ERROR,
 				Message: "refusing to use the system disk as a replacement vdev",
@@ -1068,6 +1069,23 @@ func PostZFSReplace(ctx echo.Context) error {
 	})
 }
 
+// zfsIsSystemDisk reports whether dev is the disk carrying the root
+// filesystem, or one of its partitions. Both ZFS guards ask this one
+// question, so it is one function and a test can exercise the decision the
+// handlers actually make.
+// It used to be `dev == rootDev || strings.HasPrefix(dev, rootDev)`, and a
+// prefix match is not a device-identity match. It was wrong in both
+// directions: /dev/mmcblk0 is not a prefix of the mangled "/dev/mmcblk0p"
+// this function was handed, so a pool on the boot card was ALLOWED; and
+// /dev/sda is a string prefix of /dev/sdaa, the 27th disk a NAS with an
+// expander really can have, so an unrelated disk was refused. devid encodes
+// the two rules the kernel actually uses to build a partition node from a
+// disk node. Same fix, same package, as the format guards in
+// CasaNova-LocalStorage.
+func zfsIsSystemDisk(rootDev, dev string) bool {
+	return devid.IsSameOrChild(rootDev, dev)
+}
+
 // zfsGetRootDevice reads /proc/self/mountinfo for the device that backs
 // `/`, then strips any partition suffix so the returned string matches
 // "/dev/sdX" rather than "/dev/sdX2". Returns "" when discovery fails —
@@ -1079,7 +1097,15 @@ func zfsGetRootDevice() string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	return zfsRootDeviceFrom(string(data))
+}
+
+// zfsRootDeviceFrom is the parsing half of zfsGetRootDevice, split out so the
+// device layouts this build machine will never boot -- eMMC, SD card, NVMe --
+// can be tested rather than assumed. Same seam, same reason, as
+// devid.RootDeviceFrom.
+func zfsRootDeviceFrom(data string) string {
+	for _, line := range strings.Split(data, "\n") {
 		// Each mountinfo line has the mount point in the 5th field.
 		fields := strings.Fields(line)
 		if len(fields) < 10 {
@@ -1092,16 +1118,14 @@ func zfsGetRootDevice() string {
 		for i, f := range fields {
 			if f == "-" && i+2 < len(fields) {
 				dev := fields[i+2]
-				// Strip trailing partition digits ("/dev/sda3" → "/dev/sda";
-				// "/dev/nvme0n1p2" → "/dev/nvme0n1"). NVMe paths have a
-				// "p" before the partition number, SATA paths don't.
-				if strings.HasPrefix(dev, "/dev/nvme") {
-					if idx := strings.LastIndex(dev, "p"); idx > 0 {
-						return dev[:idx]
-					}
-					return dev
-				}
-				return strings.TrimRightFunc(dev, func(r rune) bool { return r >= '0' && r <= '9' })
+				// Reduce to the whole disk. This was a third hand-rolled
+				// copy of that rule -- trim trailing digits, with an nvme
+				// special case -- and it mangled every family whose disk
+				// name already ends in a digit: /dev/mmcblk0p2 became
+				// "/dev/mmcblk0p". devid knows the families and the two
+				// naming rules, and returns "" for a root that is not a
+				// device node, which callers already read as "cannot tell".
+				return devid.WholeDisk(dev)
 			}
 		}
 	}

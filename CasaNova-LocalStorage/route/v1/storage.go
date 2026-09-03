@@ -24,7 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	model1 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/model"
-	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/devid"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/devid"
 	model2 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service/model"
 
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service"

@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/devid"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/devid"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/utils/command"
 )
 
