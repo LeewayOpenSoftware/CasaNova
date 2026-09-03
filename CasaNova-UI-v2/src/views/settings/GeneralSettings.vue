@@ -134,17 +134,19 @@ function onLocaleChange(option: { code: string; label: string } | string) {
          language. Stored to localStorage so the choice survives a
          page reload. -->
     <SettingsCard :title="t('settings.general.language')" :description="t('settings.general.language_desc')">
-      <div class="flex items-center gap-3">
-        <AppIcon name="Globe" :size="18" class="text-[var(--cn-text-muted)]" />
-        <Select
-          :model-value="locale"
-          :options="localeOptions"
-          option-label="label"
-          option-value="code"
-          class="w-60"
-          @update:model-value="onLocaleChange"
-        />
-      </div>
+      <template #actions>
+        <div class="flex items-center gap-2.5">
+          <AppIcon name="Globe" :size="16" class="text-[var(--cn-text-muted)]" />
+          <Select
+            :model-value="locale"
+            :options="localeOptions"
+            option-label="label"
+            option-value="code"
+            class="w-48 sm:w-60"
+            @update:model-value="onLocaleChange"
+          />
+        </div>
+      </template>
     </SettingsCard>
 
     <!-- Search engine — feeds the dashboard search bar. Adding a new
@@ -154,16 +156,18 @@ function onLocaleChange(option: { code: string; label: string } | string) {
       :title="t('settings.general.search_engine')"
       :description="t('settings.general.search_engine_desc')"
     >
-      <div class="flex items-center gap-3">
-        <AppIcon name="Search" :size="18" class="text-[var(--cn-text-muted)]" />
-        <Select
-          v-model="searchEngine"
-          :options="searchEngineOptions"
-          option-label="label"
-          option-value="code"
-          class="w-60"
-        />
-      </div>
+      <template #actions>
+        <div class="flex items-center gap-2.5">
+          <AppIcon name="Search" :size="16" class="text-[var(--cn-text-muted)]" />
+          <Select
+            v-model="searchEngine"
+            :options="searchEngineOptions"
+            option-label="label"
+            option-value="code"
+            class="w-48 sm:w-60"
+          />
+        </div>
+      </template>
     </SettingsCard>
 
     <!-- Dashboard tips — opt-out for users who've seen all the hints.
