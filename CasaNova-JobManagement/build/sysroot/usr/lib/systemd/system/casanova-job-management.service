@@ -30,7 +30,10 @@ ProtectHome=no
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
-ReadWritePaths=/var/lib/casanova /var/lib/casaos /var/log/casanova /var/log/casaos /var/run/casanova /var/run/casaos /var/run/docker.sock /DATA
+# docker.sock is prefixed with "-" (ignore-if-absent) following the t-039
+# convention: ReadWritePaths= is a hard precondition in systemd, so an un-prefixed
+# socket path that does not exist at service start fails with 226/NAMESPACE.
+ReadWritePaths=/var/lib/casanova /var/lib/casaos /var/log/casanova /var/log/casaos /var/run/casanova /var/run/casaos -/var/run/docker.sock -/run/docker.sock /DATA
 
 [Install]
 WantedBy=multi-user.target
