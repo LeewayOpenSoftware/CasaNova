@@ -1103,11 +1103,28 @@ func (d *diskService) InitCheck() {
 			}
 		}
 	}
-	data, err := json.Marshal(diskMapNew)
-	if err != nil {
-		return
+	if err := persistDiskInventorySnapshot(diskMapNew, config.AppInfo.DBPath, fileName); err != nil {
+		logger.Error("failed to persist disk inventory snapshot", zap.Error(err), zap.String("path", diskTempFilePath))
 	}
-	file.WriteToPath(data, config.AppInfo.DBPath, fileName)
+}
+
+// persistDiskInventorySnapshot marshals and writes the disk-added/removed
+// tracking cache InitCheck compares against on its next run. Split out of
+// InitCheck so the write failure is a value a test can observe directly,
+// rather than only a side effect buried in a 5-second-sleeping method with
+// live LSBLK/MessageBus dependencies.
+//
+// This used to be `file.WriteToPath(data, ...)` with the returned error
+// discarded outright — a disk-full or permission failure here left the
+// on-disk snapshot stale forever with no trace in the logs, so the next
+// InitCheck run kept comparing against outdated state and could re-fire (or
+// miss) disk-added/removed events silently.
+func persistDiskInventorySnapshot(snapshot map[string]model.LSBLKModel, dbPath, fileName string) error {
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	return file.WriteToPath(data, dbPath, fileName)
 }
 
 // systemUsageProbe is the seam GetSystemDf measures the root filesystem

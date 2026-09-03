@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Driver/model"
@@ -91,27 +92,108 @@ func (m *moduleService) List() ([]model.KernelModule, error) {
 		if len(fields) >= 6 {
 			km.Address = fields[5]
 		}
-		km.OutOfTree = moduleIsOutOfTree(fields[0])
 		mods = append(mods, km)
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
 
+	// Wave 26.10: this used to call moduleIsOutOfTree(fields[0]) right here,
+	// one modinfo subprocess (up to 15s each) per loaded module, one at a
+	// time. /proc/modules routinely holds 150-300+ entries on a NAS box, so a
+	// single GET /modules could cost seconds of pure spawn overhead even when
+	// every module answers instantly, and minutes when a few are slow. The
+	// classification is now cached (a module's on-disk location does not
+	// change while it stays loaded) and, on a cache miss, fanned out over a
+	// bounded worker pool instead of one call at a time — see
+	// classifyOutOfTree below. Output shape and sort order are unchanged:
+	// this only fills in OutOfTree before the final sort.
+	classifyOutOfTree(mods)
+
 	sort.Slice(mods, func(i, j int) bool { return mods[i].Name < mods[j].Name })
 	return mods, nil
+}
+
+// moduleOutOfTreeCacheTTL bounds how long a module's out-of-tree
+// classification is trusted. The answer is effectively immutable while a
+// given instance of the module stays loaded (it is the module's own on-disk
+// path), so this is generous — it exists only to eventually self-correct if
+// a module is unloaded and a differently-located one with the same name is
+// loaded in its place, not because the answer is expected to change on any
+// normal timescale. Variable rather than const so tests can compress it.
+var moduleOutOfTreeCacheTTL = 5 * time.Minute
+
+// moduleOutOfTreeMaxConcurrency bounds how many modinfo subprocesses run at
+// once during a cache-miss-heavy List(). High enough that a cold cache still
+// finishes in a small multiple of one modinfo call rather than N of them;
+// low enough not to fork-bomb a box that just booted with 300 modules and
+// nothing warm yet. Variable rather than const so tests can shrink it to
+// something they can actually observe.
+var moduleOutOfTreeMaxConcurrency = 8
+
+// runModinfoFilename is the seam moduleIsOutOfTree calls through, so tests can
+// substitute a fake modinfo without a real kernel/module database and can
+// count/observe concurrent calls.
+var runModinfoFilename = func(name string) ([]byte, error) {
+	return runBounded(15*time.Second, "modinfo", "-F", "filename", name)
+}
+
+type outOfTreeCacheEntry struct {
+	value     bool
+	expiresAt time.Time
+}
+
+var (
+	outOfTreeCacheMu sync.Mutex
+	outOfTreeCache   = map[string]outOfTreeCacheEntry{}
+)
+
+// classifyOutOfTree fills in OutOfTree for every module, running the
+// cache-miss modinfo calls concurrently (bounded) rather than one at a time.
+// Each goroutine only ever touches its own index of mods, so there is no
+// shared mutable state between them beyond the cache (which has its own
+// lock).
+func classifyOutOfTree(mods []model.KernelModule) {
+	sem := make(chan struct{}, moduleOutOfTreeMaxConcurrency)
+	var wg sync.WaitGroup
+	for i := range mods {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			mods[i].OutOfTree = moduleIsOutOfTree(mods[i].Name)
+		}(i)
+	}
+	wg.Wait()
 }
 
 // moduleIsOutOfTree consults modinfo (when present) to flag modules living
 // under updates/ or extra/ — i.e. installed via a driver package rather than
 // shipped in-tree. Best-effort: returns false when modinfo is unavailable.
+// Cached per name with moduleOutOfTreeCacheTTL — see the cache's own comment.
 func moduleIsOutOfTree(name string) bool {
-	out, err := runBounded(15*time.Second, "modinfo", "-F", "filename", name)
-	if err != nil {
-		return false
+	now := time.Now()
+
+	outOfTreeCacheMu.Lock()
+	if entry, ok := outOfTreeCache[name]; ok && now.Before(entry.expiresAt) {
+		outOfTreeCacheMu.Unlock()
+		return entry.value
 	}
-	path := strings.TrimSpace(string(out))
-	return strings.Contains(path, "/updates/") || strings.Contains(path, "/extra/")
+	outOfTreeCacheMu.Unlock()
+
+	out, err := runModinfoFilename(name)
+	value := false
+	if err == nil {
+		path := strings.TrimSpace(string(out))
+		value = strings.Contains(path, "/updates/") || strings.Contains(path, "/extra/")
+	}
+
+	outOfTreeCacheMu.Lock()
+	outOfTreeCache[name] = outOfTreeCacheEntry{value: value, expiresAt: now.Add(moduleOutOfTreeCacheTTL)}
+	outOfTreeCacheMu.Unlock()
+
+	return value
 }
 
 func normalizeModuleName(name string) string {
