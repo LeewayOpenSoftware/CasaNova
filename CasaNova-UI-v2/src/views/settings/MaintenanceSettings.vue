@@ -20,6 +20,7 @@
 // 2 s while something is moving. Responses are PLAIN objects (no {success,data}
 // envelope) — see src/api/maintenance.ts.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import dayjs from 'dayjs'
@@ -455,7 +456,7 @@ function onRunFinished(r: MaintenanceRun) {
 
 function startScanPolling() {
   if (scanTimer) return
-  scanTimer = setInterval(() => void loadScan(), 2000)
+  scanTimer = setInterval(skipWhenHidden(() => void loadScan()), 2000)
 }
 function stopScanPolling() {
   if (scanTimer) {
@@ -465,7 +466,7 @@ function stopScanPolling() {
 }
 function startRunPolling() {
   if (runTimer) return
-  runTimer = setInterval(() => void loadRun(), 2000)
+  runTimer = setInterval(skipWhenHidden(() => void loadRun()), 2000)
 }
 function stopRunPolling() {
   if (runTimer) {

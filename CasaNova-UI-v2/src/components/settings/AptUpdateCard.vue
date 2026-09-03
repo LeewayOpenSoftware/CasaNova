@@ -4,6 +4,7 @@
 // self-updater. Check → simulate, upgrade-all / security-only (transient
 // service), and the unattended-upgrades toggle.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -46,7 +47,7 @@ function clearPoll() {
 function setPoll(fn: () => void, ms = 3000) {
   clearPoll()
   if (unmounted) return
-  aptPoll = setInterval(fn, ms)
+  aptPoll = setInterval(skipWhenHidden(fn), ms)
 }
 
 async function loadApt() { const r = await safeCall(() => hostApi.getAptUpdates()); if (!r.error) { apt.value = r.data; aptChecking.value = r.data.checking } }

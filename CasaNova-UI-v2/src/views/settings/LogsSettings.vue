@@ -2,6 +2,7 @@
 // System Logs settings page — journalctl viewer with filters, search,
 // auto-refresh, and color-coded priority levels.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -168,7 +169,7 @@ function scrollToBottom() {
 
 watch(autoRefresh, (on) => {
   if (on) {
-    refreshInterval = setInterval(fetchLogs, 5000)
+    refreshInterval = setInterval(skipWhenHidden(fetchLogs), 5000)
   } else if (refreshInterval) {
     clearInterval(refreshInterval)
     refreshInterval = null

@@ -810,6 +810,9 @@ export function containerLogsWsUrl(containerId: string, tail = 500): string {
  * the token is appended as a query parameter. The backend must
  * accept `?token=<jwt>` on SSE endpoints.
  */
+/** Consecutive SSE transport errors tolerated before we stop reconnecting. */
+const MAX_SSE_RETRIES = 5
+
 export function subscribeProgress(
   installId: string,
   onMessage: (msg: { progress: number; status: string; log_line?: string }) => void,
@@ -822,7 +825,12 @@ export function subscribeProgress(
   const url = token ? `${base}?token=${encodeURIComponent(token)}` : base
 
   const es = new EventSource(url)
+  // Consecutive transport errors with no frame in between. Reset by any
+  // successful message, so a single blip mid-install costs nothing.
+  let consecutiveErrors = 0
+
   es.onmessage = (e) => {
+    consecutiveErrors = 0
     try {
       const msg = JSON.parse(e.data) as { progress: number; status: string; log_line?: string }
       onMessage(msg)
@@ -835,9 +843,18 @@ export function subscribeProgress(
     }
   }
   es.onerror = (err) => {
-    // If the server closed the stream, readyState becomes CLOSED.
-    // Don't let EventSource's auto-reconnect loop hammer a dead endpoint.
-    if (es.readyState === EventSource.CLOSED) {
+    // Give up after a few failed attempts in a row.
+    //
+    // This used to read `if (es.readyState === EventSource.CLOSED) es.close()`,
+    // which is the opposite of what the comment promised: CLOSED is the state
+    // the browser reaches when it has ALREADY decided not to reconnect (an
+    // HTTP error such as 401/404), so closing there is redundant. The case
+    // worth defending against — the backend going away mid-install — leaves
+    // readyState at CONNECTING while the browser retries roughly every 3s
+    // forever, with the JWT in the query string on every attempt. The old
+    // condition was false in exactly that case, so nothing ever stopped it.
+    consecutiveErrors++
+    if (es.readyState === EventSource.CLOSED || consecutiveErrors >= MAX_SSE_RETRIES) {
       es.close()
     }
     onError?.(err)

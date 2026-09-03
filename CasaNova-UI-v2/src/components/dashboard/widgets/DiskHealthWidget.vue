@@ -8,6 +8,7 @@
 // only add noise) and cleans up the timer on unmount so navigating
 // away from the dashboard doesn't leak intervals.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -35,9 +36,9 @@ async function loadDisks() {
 
 onMounted(() => {
   void loadDisks()
-  timer = window.setInterval(() => {
+  timer = window.setInterval(skipWhenHidden(() => {
     void loadDisks()
-  }, 60_000)
+  }), 60_000)
 })
 
 onBeforeUnmount(() => {

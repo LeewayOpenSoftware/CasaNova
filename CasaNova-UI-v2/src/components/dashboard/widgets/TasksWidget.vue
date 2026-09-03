@@ -11,6 +11,7 @@
 // A light ~60s poll keeps the list fresh; the timer is cleaned up on
 // unmount so navigation away doesn't leak it.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -33,9 +34,9 @@ async function load(): Promise<void> {
 
 onMounted(() => {
   void load()
-  timer = window.setInterval(() => {
+  timer = window.setInterval(skipWhenHidden(() => {
     void load()
-  }, 60_000)
+  }), 60_000)
 })
 
 onBeforeUnmount(() => {

@@ -5,6 +5,7 @@
 // /v1/sys/hardware and /v1/sys/utilization, and power actions
 // (reboot / shutdown) with confirmation dialogs.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -143,7 +144,7 @@ const system = useSystemStore()
 onMounted(async () => {
   await loadHardware()
   await pollUtilization()
-  pollTimer = setInterval(pollUtilization, 3000)
+  pollTimer = setInterval(skipWhenHidden(pollUtilization), 3000)
   system.startPolling()
 })
 

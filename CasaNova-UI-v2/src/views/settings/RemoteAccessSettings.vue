@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import AppIcon from '@/components/ui/AppIcon.vue'
 // RemoteAccessSettings — inventory page for the three remote-access
 // connectors CasaNova knows how to detect: Tailscale, Cloudflare
@@ -75,7 +76,7 @@ function openInstall(c: ConnectorStatus): void {
 
 onMounted(() => {
   reload()
-  pollTimer = setInterval(reload, POLL_MS)
+  pollTimer = setInterval(skipWhenHidden(reload), POLL_MS)
 })
 
 onBeforeUnmount(() => {

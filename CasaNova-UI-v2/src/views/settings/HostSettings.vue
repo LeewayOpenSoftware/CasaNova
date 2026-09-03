@@ -7,6 +7,7 @@
 // validated server-side against what the kernel/system exposes.
 // Dangerous actions (apt upgrade, service disable) confirm first.
 
+import { skipWhenHidden } from '@/composables/skipWhenHidden'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -225,7 +226,7 @@ async function saveUpsConfig() {
 onMounted(() => {
   loadGov(); loadSwap(); loadMem(); loadZram(); loadDisks(); loadSysctls()
   loadServices(); loadMon(); loadUpsConfig(); loadPowerConfig()
-  monPoll = setInterval(loadMon, 5000)
+  monPoll = setInterval(skipWhenHidden(loadMon), 5000)
 })
 onUnmounted(() => { if (monPoll) clearInterval(monPoll) })
 </script>

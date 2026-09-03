@@ -97,6 +97,23 @@ export const useYskStore = defineStore('ysk', () => {
     }
   }
 
+  // Stop polling AND drop session-bound state on logout. logout() in
+  // stores/auth.ts does not reload the page, so the cards fetched for the
+  // previous user stayed visible to the next one until their first fetch
+  // landed. YSK cards are per-user hints, not public content.
+  function _onAuthLogout(): void {
+    stopPolling()
+    cards.value = []
+    pendingDismiss.value = new Set()
+    lastError.value = null
+    lastFetchedAt.value = 0
+    loading.value = false
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('auth-logout', _onAuthLogout)
+  }
+
   // Bus pushes (ysk:card:*) fire fetchCards() immediately — that
   // covers the cross-tab / out-of-band update case. The polling
   // interval above is the safety net for when the bus is down.
