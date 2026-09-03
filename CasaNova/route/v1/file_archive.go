@@ -117,6 +117,11 @@ func PostFileCompress(ctx echo.Context) error {
 	}
 
 	var arch archiver.Archiver
+	// archiveExt is the extension archiver REQUIRES the output filename to
+	// carry. It validates the destination's extension before writing a byte
+	// ("checking extension: filename must have a .zip extension"), so the
+	// private temp path below has to end in it too -- see the note there.
+	var archiveExt string
 	switch strings.ToLower(req.Format) {
 	case "", "zip":
 		z := archiver.NewZip()
@@ -124,6 +129,7 @@ func PostFileCompress(ctx echo.Context) error {
 		// so archiver has to be allowed to write over that (empty) file.
 		z.OverwriteExisting = true
 		arch = z
+		archiveExt = ".zip"
 		if !strings.HasSuffix(dest, ".zip") {
 			dest += ".zip"
 		}
@@ -131,6 +137,7 @@ func PostFileCompress(ctx echo.Context) error {
 		tg := archiver.NewTarGz()
 		tg.OverwriteExisting = true
 		arch = tg
+		archiveExt = ".tar.gz"
 		if !strings.HasSuffix(dest, ".tar.gz") {
 			dest += ".tar.gz"
 		}
@@ -151,7 +158,17 @@ func PostFileCompress(ctx echo.Context) error {
 	// only ever touch the temp path, which a detached reaper removes once the
 	// worker actually stops, and `dest` never appears unless the archive is
 	// whole.
-	tmpFile, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".part-*")
+	//
+	// THE EXTENSION HAS TO SURVIVE THE TEMP NAME. archiver validates the
+	// output filename's extension before writing anything, and the first
+	// version of this named the temp file ".<dest>.part-XXXX" -- so a
+	// destination of "note.zip" became ".note.zip.part-1234", which does not
+	// END in ".zip", and EVERY compress failed with "checking extension:
+	// filename must have a .zip extension". The random part goes BEFORE the
+	// extension instead: ".note.part-1234.zip". os.CreateTemp substitutes the
+	// last "*", so anything after it is preserved verbatim.
+	base := strings.TrimSuffix(filepath.Base(dest), archiveExt)
+	tmpFile, err := os.CreateTemp(filepath.Dir(dest), "."+base+".part-*"+archiveExt)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{
 			Success: common_err.SERVICE_ERROR,

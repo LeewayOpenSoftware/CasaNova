@@ -444,9 +444,12 @@ func GetDownloadFile(ctx echo.Context) error {
 		}
 		list = append(list, clean)
 	}
-	ctx.Request().Header.Add("Content-Type", "application/octet-stream")
-	ctx.Request().Header.Add("Content-Transfer-Encoding", "binary")
-	ctx.Request().Header.Add("Cache-Control", "no-cache")
+	// On the RESPONSE. These three were being added to ctx.Request().Header,
+	// which is the headers we RECEIVED: the client never saw them, so the
+	// archive arrived untyped and cacheable.
+	ctx.Response().Header().Add("Content-Type", "application/octet-stream")
+	ctx.Response().Header().Add("Content-Transfer-Encoding", "binary")
+	ctx.Response().Header().Add("Cache-Control", "no-cache")
 	// handles only single files not folders and multiple files
 	if len(list) == 1 {
 
@@ -516,7 +519,10 @@ func GetDownloadFile(ctx echo.Context) error {
 
 	name := "_" + currentPath
 	name += extension
-	ctx.Request().Header.Add("Content-Disposition", "attachment; filename*=utf-8''"+url.PathEscape(name))
+	// Same defect, and this one is the visible half: set on the request, the
+	// browser had no filename to use and saved every multi-file archive as
+	// "download".
+	ctx.Response().Header().Add("Content-Disposition", "attachment; filename*=utf-8''"+url.PathEscape(name))
 	for _, fname := range list {
 		err = file.AddFile(ar, fname, commonDir)
 		if err != nil {

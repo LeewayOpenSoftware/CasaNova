@@ -526,7 +526,17 @@ func InitV1Router() http.Handler {
 			// v1FileGroup.POST("/upload", v1.PostFileUpload)
 			v1FileGroup.POST("/upload", v1.PostFileUpload)
 			v1FileGroup.GET("/upload", v1.GetFileUpload)
-			// v1FileGroup.GET("/download", v1.UserFileDownloadCommonService)
+			// The Files UI downloads a multi-selection with
+			// GET /v1/file/download?format=zip&files=a,b,c
+			// (CasaNova-UI-v2/src/api/files.ts::downloadAsArchive). This line
+			// was commented out and named a handler that no longer exists
+			// (UserFileDownloadCommonService), so every multi-file download
+			// answered 404 -- the symptom the user reported. The handler that
+			// serves exactly that contract is GetDownloadFile: it gates on
+			// PermFileRead, validates every path through the same traversal
+			// guard as the rest of this file, streams a single plain file
+			// directly and archives anything else.
+			v1FileGroup.GET("/download", v1.GetDownloadFile)
 			v1FileGroup.GET("/ws", v1.ConnectWebSocket)
 			v1FileGroup.GET("/peers", v1.GetPeers)
 		}

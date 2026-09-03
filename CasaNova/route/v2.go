@@ -2,6 +2,7 @@ package route
 
 import (
 	"crypto/ecdsa"
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/url"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/external"
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
 	v2Route "github.com/LeewayOpenSoftware/CasaNova/route/v2"
 	"github.com/deepmap/oapi-codegen/pkg/middleware"
@@ -283,6 +286,20 @@ func InitFile() http.Handler {
 	})
 }
 
+// writeJSONError answers a raw http.Handler with the same envelope the echo
+// handlers use.
+//
+// Every error path in InitDir below used to be a bare `return` with the
+// refusal COMMENTED OUT: no status, no body, and the octet-stream headers
+// already set. The client got 200 and zero bytes, so a rejected request was
+// indistinguishable from an empty archive -- which is how a bad request
+// surfaced to the user as a silently broken download.
+func writeJSONError(w http.ResponseWriter, status, code int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(model.Result{Success: code, Message: message})
+}
+
 func InitDir() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
@@ -304,10 +321,8 @@ func InitDir() http.Handler {
 		files := r.URL.Query().Get("files")
 
 		if len(files) == 0 {
-			// w.JSON(common_err.CLIENT_ERROR, model.Result{
-			// 	Success: common_err.INVALID_PARAMS,
-			// 	Message: common_err.GetMsg(common_err.INVALID_PARAMS),
-			// })
+			writeJSONError(w, http.StatusBadRequest, common_err.INVALID_PARAMS,
+				common_err.GetMsg(common_err.INVALID_PARAMS))
 			return
 		}
 		list := strings.Split(files, ",")
@@ -325,43 +340,25 @@ func InitDir() http.Handler {
 			}
 			list[i] = cleaned
 			if !file.Exists(cleaned) {
+				writeJSONError(w, http.StatusNotFound, common_err.FILE_DOES_NOT_EXIST,
+					common_err.GetMsg(common_err.FILE_DOES_NOT_EXIST))
 				return
 			}
 		}
 		w.Header().Add("Content-Type", "application/octet-stream")
 		w.Header().Add("Content-Transfer-Encoding", "binary")
 		w.Header().Add("Cache-Control", "no-cache")
-		// handles only single files not folders and multiple files
-		//		if len(list) == 1 {
-
-		// filePath := list[0]
-		//			info, err := os.Stat(filePath)
-		//			if err != nil {
-
-		// w.JSON(http.StatusOK, model.Result{
-		// 	Success: common_err.FILE_DOES_NOT_EXIST,
-		// 	Message: common_err.GetMsg(common_err.FILE_DOES_NOT_EXIST),
-		// })
-		//return
-		//			}
-		//}
-
 		extension, ar, err := file.GetCompressionAlgorithm(t)
 		if err != nil {
-			// w.JSON(common_err.CLIENT_ERROR, model.Result{
-			// 	Success: common_err.INVALID_PARAMS,
-			// 	Message: common_err.GetMsg(common_err.INVALID_PARAMS),
-			// })
+			writeJSONError(w, http.StatusBadRequest, common_err.INVALID_PARAMS,
+				common_err.GetMsg(common_err.INVALID_PARAMS))
 			return
 		}
 
 		err = ar.Create(w)
 		if err != nil {
-			//  return ctx.JSON(common_err.SERVICE_ERROR, model.Result{
-			// 	Success: common_err.SERVICE_ERROR,
-			// 	Message: common_err.GetMsg(common_err.SERVICE_ERROR),
-			// 	Data:    err.Error(),
-			// })
+			writeJSONError(w, http.StatusInternalServerError, common_err.SERVICE_ERROR,
+				common_err.GetMsg(common_err.SERVICE_ERROR))
 			return
 		}
 		defer ar.Close()
