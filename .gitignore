@@ -4,7 +4,27 @@
 # ── Build outputs ────────────────────────────────────────────────────
 # `make package` materialises ~10 GB of staged trees and update tarballs
 # here; all of it regenerates from source.
-/build/
+/build/*
+
+# ...MENOS los scripts de build/tools/. Estos NO se regeneran de nada: son fuente
+# escrita a mano, y son EL MECANISMO DE ACTUALIZACION -- el Makefile lo dice sin
+# rodeos, "the updater that applies release N is the one installed by release N-1".
+# Estuvieron sin versionar en ninguna rama hasta 2026-09-03: una unica copia sin
+# seguimiento, sin revision y sin historia, con lo que `make package` no corria
+# desde un clon limpio y el release no era reproducible.
+#
+# Se re-incluyen por PATRON (*.sh) y no por nombre a proposito: el propio Makefile
+# ya se quemo una vez porque se anadio un script a una lista y se olvido en otra
+# ("a fourth script cannot be added to one place and forgotten in the other").
+# Con el patron, un script nuevo en build/tools/ entra en git solo.
+#
+# Los tres pasos intermedios hacen falta y no son adorno: git NO desciende a un
+# directorio excluido, asi que `!/build/tools/*.sh` bajo un `/build/` a secas no
+# re-incluye nada. Hay que abrir el camino nivel a nivel. (Comprobado con
+# `git check-ignore -v`, no supuesto.)
+!/build/tools/
+/build/tools/*
+!/build/tools/*.sh
 
 # Compiled service binaries dropped at module roots by `go build`.
 /CasaNova/CasaNova
