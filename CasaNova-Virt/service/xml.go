@@ -59,9 +59,10 @@ func buildDomainXML(cfg *model.VirtualMachineConfiguration) (string, error) {
 		b.WriteString(`<os>`)
 	}
 	fmt.Fprintf(&b, `<type arch='%s' machine='%s'>%s</type>`, esc(os.Arch), esc(os.Machine), esc(os.Type))
-	// Boot from disk first, then cdrom, so an installed guest boots itself but
-	// a fresh one falls through to the install media.
-	b.WriteString(`<boot dev='hd'/><boot dev='cdrom'/><bootmenu enable='yes'/>`)
+	// Boot order lives on the devices themselves (see bootOrder), not here: the
+	// class-level `<boot dev='hd'/>` form is what OVMF ignores, and libvirt
+	// rejects mixing the two. Only the boot menu stays.
+	b.WriteString(`<bootmenu enable='yes'/>`)
 	b.WriteString(`</os>`)
 
 	b.WriteString(`<features><acpi/><apic/></features>`)
@@ -73,8 +74,9 @@ func buildDomainXML(cfg *model.VirtualMachineConfiguration) (string, error) {
 	b.WriteString(`<emulator>/usr/bin/qemu-system-x86_64</emulator>`)
 
 	// Disks. Auto-assign target dev letters per bus when not supplied.
+	boot := bootOrder(cfg.Disks)
 	vd, sd := 'a', 'a'
-	for _, d := range cfg.Disks {
+	for i, d := range cfg.Disks {
 		driver := d.Driver
 		if driver == "" {
 			if d.Device == model.DiskDeviceCDROM {
@@ -107,6 +109,9 @@ func buildDomainXML(cfg *model.VirtualMachineConfiguration) (string, error) {
 		fmt.Fprintf(&b, `<target dev='%s' bus='%s'/>`, esc(target), esc(string(bus)))
 		if d.ReadOnly || d.Device == model.DiskDeviceCDROM {
 			b.WriteString(`<readonly/>`)
+		}
+		if n, ok := boot[i]; ok {
+			fmt.Fprintf(&b, `<boot order='%d'/>`, n)
 		}
 		b.WriteString(`</disk>`)
 	}
@@ -189,6 +194,46 @@ func buildDomainXML(cfg *model.VirtualMachineConfiguration) (string, error) {
 	b.WriteString(`</devices>`)
 	b.WriteString(`</domain>`)
 	return b.String(), nil
+}
+
+// bootOrder assigns the per-device `<boot order='N'/>` values, keyed by index
+// into disks. An absent key means the device gets no <boot> element at all.
+//
+// Why per-device and not `<boot dev='hd'/>` at the <os> level: the class form
+// only reaches qemu as the legacy `-boot order=`, which SeaBIOS honours and
+// OVMF does not read. EDK2 reorders its boot attempts from the fw_cfg
+// `bootorder` file, qemu writes that file solely from per-device `bootindex`
+// properties, and libvirt only emits bootindex for `<boot order='N'/>` inside a
+// device. So a UEFI guest defined from {empty disk + install ISO} never saw our
+// order: OVMF enumerated on its own, found no ESP on the blank disk and dropped
+// into the internal UEFI shell instead of the DVD — the reported "new VM does
+// not boot the installer". libvirt treats the two forms as mutually exclusive,
+// which is why the os-level pair is gone rather than kept alongside.
+//
+// Order: the first non-cdrom disk, then the cdroms in declaration order. An
+// installed guest still boots itself, and a fresh one falls through to the
+// install media because BDS tries each entry in turn and moves to the next when
+// one fails. A cdrom-only domain starts its numbering at 1. Extra data disks
+// are deliberately left unnumbered: without a bootindex they are not boot
+// candidates, so a blank second disk can never shadow the install media.
+// SeaBIOS reads bootindex too, so both firmwares end up with one semantics.
+func bootOrder(disks []model.DomainDisk) map[int]int {
+	order := make(map[int]int, len(disks))
+	n := 1
+	for i, d := range disks {
+		if d.Device != model.DiskDeviceCDROM {
+			order[i] = n
+			n++
+			break
+		}
+	}
+	for i, d := range disks {
+		if d.Device == model.DiskDeviceCDROM {
+			order[i] = n
+			n++
+		}
+	}
+	return order
 }
 
 // esc XML-escapes a value for use inside an attribute or element.
