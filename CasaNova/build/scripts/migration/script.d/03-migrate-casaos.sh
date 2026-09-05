@@ -143,8 +143,25 @@ while read -r VERSION_PAIR; do
     # obtain "v0.3.5" from "v0.3.5 v0.3.6-alpha2"
     VER1=$(echo "${VERSION_PAIR}" | cut -d' ' -f1)
 
-    # obtain "<url>" from "v0.3.5 <url>"
-    URL=$(eval echo "${VERSION_PAIR}" | cut -d' ' -f2)
+    # obtain "<url>" from "v0.3.5 <url>" with plain word-splitting, never a
+    # shell. MIGRATION_LIST_FILE ships inside the update package -- a
+    # tampered copy of it used to run as ROOT here: `eval echo
+    # "${VERSION_PAIR}"` interpreted backticks, $(...), and ";" in the line
+    # as commands, not text. `read` only ever splits on whitespace.
+    read -r _ URL_TEMPLATE _ <<< "${VERSION_PAIR}"
+
+    # The template's only two placeholders are substituted literally (no
+    # subshell, no eval) -- anything else in the line stays inert text, and
+    # the scheme/host check below refuses it before it is ever downloaded.
+    URL="${URL_TEMPLATE//\$\{DOWNLOAD_DOMAIN\}/${DOWNLOAD_DOMAIN}}"
+    URL="${URL//\$\{ARCH\}/${ARCH}}"
+
+    case "${URL}" in
+        https://github.com/*|https://casaos.oss-cn-shanghai.aliyuncs.com/*) ;;
+        *)
+            __error "Migration tool URL failed its scheme/host check: ${URL}"
+            ;;
+    esac
 
     if [ "${CURRENT_VERSION}" = "${VER1// /}" ] || [ "${CURRENT_VERSION}" = "LEGACY_WITHOUT_VERSION" ]; then
         CURRENT_VERSION_FOUND="true"
