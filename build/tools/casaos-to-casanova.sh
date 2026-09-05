@@ -352,17 +352,39 @@ rollback_upgrade() {
         systemctl daemon-reload
     fi
 
-    # Restore frontend
+    # Restore frontend. Stage the backup's content into a sibling dir first and
+    # swap it in with `mv` (a single rename on the same filesystem): the old
+    # `rm -rf .../www/*` then `cp -r` left a window — a power cut or ENOSPC
+    # between them handed back an empty or half-populated UI, and neither
+    # command's glob matched dotfiles, so hidden files were never cleared out
+    # of the old tree or brought in from the new one.
     if [ -d "${backup}/www" ]; then
         info "Restoring frontend..."
-        rm -rf /var/lib/casanova/www/*
-        cp -r "${backup}"/www/* /var/lib/casanova/www/
+        local www_dir="/var/lib/casanova/www"
+        local www_staging="${www_dir}.cn-new"
+        local www_old="${www_dir}.cn-old"
+        rm -rf "$www_staging" "$www_old"
+        mkdir -p "$www_staging"
+        if ! cp -a "${backup}/www/." "$www_staging/"; then
+            err "Frontend restore failed while staging — leaving the live frontend untouched."
+            rm -rf "$www_staging"
+            return 1  # services are stopped and the ERR trap above is still
+                      # armed — `return`, not `exit`, is what lets it fire and
+                      # restart them instead of leaving the box offline.
+        fi
+        sync "$www_staging" 2>/dev/null || sync
+        [ -d "$www_dir" ] && mv "$www_dir" "$www_old"
+        mv "$www_staging" "$www_dir"
+        rm -rf "$www_old"
     fi
 
     # Restore configs if they were force-overwritten
     if [ -d "${backup}/etc-casanova" ]; then
         info "Restoring configs..."
-        cp -r "${backup}"/etc-casanova/* /etc/casanova/ 2>/dev/null || true
+        if ! cp -a "${backup}/etc-casanova/." /etc/casanova/; then
+            err "Config restore failed — /etc/casanova may be incomplete."
+            return 1  # same trap-safety reasoning as the frontend restore above
+        fi
         # Also sync back to legacy path
         for conf in /etc/casanova/*; do
             [ -f "$conf" ] || continue
@@ -1092,6 +1114,88 @@ ENDJSON
     echo "$gw_port" > "${BACKUP_DIR}/.gateway-port"
 }
 
+# Snapshot every *.db under $1 into $2 (a .tar.gz), consistently, while CasaOS
+# keeps running and writing to them.
+#
+# Each database is copied through `sqlite3 .backup`, which uses SQLite's
+# online backup API: it takes its own read lock and copies page-by-page
+# behind CasaOS's writes, so the result is the database as of some single
+# instant, never a mix of pre- and post-commit pages the way a raw file copy
+# of a live .db/-wal pair could be. If the sqlite3 CLI isn't on the box, we
+# fall back to a plain file copy (still better than nothing) but say so
+# loudly, since that fallback carries the torn-snapshot risk this function
+# exists to avoid.
+#
+# The archive is only written from a checksummed, already-consistent staging
+# copy, and is verified readable right after — a failure anywhere here (a
+# capture, the tar, the verification) returns non-blank/non-zero so the
+# caller can abort the migration before CasaOS has been touched at all.
+backup_databases_consistent() {
+    local src_dir="$1"
+    local dest_tar="$2"
+    local staging
+    staging=$(mktemp -d "${BACKUP_DIR}/.db-staging.XXXXXX") || return 1
+
+    local have_sqlite3=false
+    command -v sqlite3 &>/dev/null && have_sqlite3=true
+    [ "$have_sqlite3" = true ] || warn "sqlite3 not found — falling back to a plain file copy (no consistency guarantee against concurrent writes)."
+
+    local db captured=0
+    while IFS= read -r -d '' db; do
+        local rel dest
+        rel="${db#"${src_dir}"/}"
+        dest="${staging}/${rel}"
+        mkdir -p "$(dirname "$dest")" || { rm -rf "$staging"; return 1; }
+
+        if [ "$have_sqlite3" = true ]; then
+            if ! sqlite3 "$db" ".backup '${dest}'" 2>/dev/null; then
+                err "SQLite backup failed on ${rel}"
+                rm -rf "$staging"
+                return 1
+            fi
+        else
+            # No sqlite3: fall back to the previous raw-copy behavior,
+            # bringing -wal/-shm along so SQLite can still replay them on
+            # next open (same torn-snapshot risk as before, not worse).
+            local aux
+            if ! cp -p "$db" "$dest"; then
+                err "Copy failed on ${rel}"
+                rm -rf "$staging"
+                return 1
+            fi
+            for aux in "${db}-wal" "${db}-shm"; do
+                [ -f "$aux" ] && cp -p "$aux" "${dest}${aux#"$db"}"
+            done
+        fi
+        captured=$((captured + 1))
+    done < <(find "$src_dir" -type f -name '*.db' -print0)
+
+    if [ "$captured" -eq 0 ]; then
+        rm -rf "$staging"
+        info "No databases found under ${src_dir}"
+        return 0
+    fi
+
+    if ! tar -czf "$dest_tar" -C "$staging" .; then
+        rm -rf "$staging"
+        rm -f "$dest_tar"
+        return 1
+    fi
+    rm -rf "$staging"
+
+    # Validate before trusting it: unreadable/truncated archives fail the
+    # listing, and the checksum alongside it is what the rollback path (and
+    # any future audit) checks the tarball against.
+    if ! tar -tzf "$dest_tar" >/dev/null 2>&1; then
+        rm -f "$dest_tar"
+        return 1
+    fi
+    sha256sum "$dest_tar" > "${dest_tar}.sha256" || { rm -f "$dest_tar" "${dest_tar}.sha256"; return 1; }
+
+    info "Database snapshot: ${captured} file(s), verified"
+    return 0
+}
+
 ###############################################################################
 # Phase 3: Backup CasaOS state
 ###############################################################################
@@ -1116,13 +1220,19 @@ backup_casaos() {
     fi
 
     # Databases. We back up BEFORE stopping CasaOS (so a failed backup leaves
-    # CasaOS untouched), which means a hot snapshot — flush page cache first to
-    # cut the torn-WAL risk. SQLite's WAL replays on next open, so a hot tar
-    # restores cleanly in practice.
+    # CasaOS untouched) — which means CasaOS is still writing to these files
+    # while we copy them. A raw tar of a live .db/-wal pair is not a snapshot:
+    # nothing stops a commit landing between the two reads, so `sync` (which
+    # only flushes what's already been written) cannot make it consistent.
+    # backup_databases_consistent() uses SQLite's own online backup API
+    # instead, which is safe against concurrent writers, and refuses to
+    # produce a tarball unless every capture and the archive itself check out.
     if [ -d /var/lib/casaos/db ]; then
         info "Backing up databases..."
-        sync
-        tar -czf "${BACKUP_DIR}/db.tar.gz" -C / var/lib/casaos/db 2>/dev/null
+        if ! backup_databases_consistent /var/lib/casaos/db "${BACKUP_DIR}/db.tar.gz"; then
+            err "Database backup failed or produced an unverifiable archive — aborting before CasaOS is touched."
+            exit 1
+        fi
     fi
 
     # User config

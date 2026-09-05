@@ -1669,11 +1669,13 @@ info "All services stopped"
 # Snapshot the databases now, and only now: nothing holds them open, so .db and
 # its -wal are a matched pair. This is the artifact the rollback paths restore —
 # the update's first start migrates the schema (and drops legacy tables), which
-# is not something old binaries can undo by themselves.
-# A failed snapshot does not abort the update: it costs data reversibility, not
-# integrity, and the loud warning plus the missing manifest are what keep the
-# rollback paths from restoring something they cannot vouch for.
-snapshot_databases || warn "No database snapshot was taken — a rollback will not restore the databases."
+# is not something old binaries can undo by themselves. That makes every
+# release effectively schema-changing from the rollback path's point of view,
+# so a failed snapshot is treated as fatal rather than downgraded to a warning:
+# left as a bare statement, `set -e` and the ERR trap above take it through the
+# same rollback_to_backup() path as any other apply-phase failure, before the
+# new files are ever deployed.
+snapshot_databases
 
 report_status "applying" 55 "Services stopped"
 
