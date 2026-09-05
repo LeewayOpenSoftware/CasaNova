@@ -23,8 +23,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 
-	model1 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/devid"
+	model1 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/model"
 	model2 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service/model"
 
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service"
