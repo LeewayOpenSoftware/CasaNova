@@ -28,8 +28,8 @@ const (
 
 // Defines values for ModuleUiFormalityType.
 const (
-	ModuleFormalityModal  ModuleUiFormalityType = "modal"
-	ModuleFormalityNewTab ModuleUiFormalityType = "newtab"
+	Modal  ModuleUiFormalityType = "modal"
+	Newtab ModuleUiFormalityType = "newtab"
 )
 
 // Defines values for ModuleStartStopJSONBodyAction.
@@ -44,67 +44,7 @@ type BaseResponse struct {
 	Message *string `json:"message,omitempty"`
 }
 
-// Module defines model for module.
-type Module struct {
-	Name *string `json:"name,omitempty"`
-
-	// Services a module can have one or more backend services
-	Services *[]ModuleService `json:"services,omitempty"`
-	UI       *ModuleUI        `json:"ui,omitempty"`
-}
-
-// ModuleId defines model for module_id.
-type ModuleId struct {
-	Name string `json:"name"`
-}
-
-// ModuleService defines model for module_service.
-type ModuleService struct {
-	Name *string `json:"name,omitempty"`
-}
-
-// ModuleStatus defines model for module_status.
-type ModuleStatus string
-
-// ModuleUI defines model for module_ui.
-type ModuleUI struct {
-	Description *string            `json:"description,omitempty"`
-	Entry       *string            `json:"entry,omitempty"`
-	Formality   *ModuleUIFormality `json:"formality,omitempty"`
-	Icon        *string            `json:"icon,omitempty"`
-	Prefetch    *bool              `json:"prefetch,omitempty"`
-	Show        *bool              `json:"show,omitempty"`
-	Title       *map[string]string `json:"title,omitempty"`
-}
-
-// ModuleUIFormality defines model for module_ui_formality.
-type ModuleUIFormality struct {
-	Props *ModuleUIFormalityProperties `json:"props,omitempty"`
-	Type  *ModuleUiFormalityType       `json:"type,omitempty"`
-}
-
-// ModuleUiFormalityType defines model for ModuleUiFormality.Type.
-type ModuleUiFormalityType string
-
-// ModuleUIFormalityProperties defines model for module_ui_formality_properties.
-type ModuleUIFormalityProperties struct {
-	Animation    *string `json:"animation,omitempty"`
-	HasModalCard *bool   `json:"hasModalCard,omitempty" yaml:"hasModalCard,omitempty"`
-	Height       *string `json:"height,omitempty"`
-	Width        *string `json:"width,omitempty"`
-}
-
-// RemoteModule repo and url must have at least one
-type RemoteModule struct {
-	Name  string  `json:"name"`
-	Repo  *string `json:"repo,omitempty"`
-	Title string  `json:"title"`
-}
-
-// Name defines model for name.
-type Name = string
-
-// InstallableModuleListOK defines model for installable_module_list_ok.
+// InstallableModuleListOK defines model for installable_module_list_OK.
 type InstallableModuleListOK struct {
 	Data *[]RemoteModule `json:"data,omitempty"`
 
@@ -112,10 +52,24 @@ type InstallableModuleListOK struct {
 	Message *string `json:"message,omitempty"`
 }
 
+// Module defines model for module.
+type Module struct {
+	Name *string `json:"name,omitempty"`
+
+	// Services a module can have one or more backend services
+	Services *[]ModuleService `json:"services,omitempty"`
+	Ui       *ModuleUi        `json:"ui,omitempty"`
+}
+
+// ModuleId defines model for module_id.
+type ModuleId struct {
+	Name string `json:"name"`
+}
+
 // ModuleInstallOk defines model for module_install_ok.
 type ModuleInstallOk = BaseResponse
 
-// ModuleListOK defines model for module_list_ok.
+// ModuleListOK defines model for module_list_OK.
 type ModuleListOK struct {
 	Data *[]Module `json:"data,omitempty"`
 
@@ -123,8 +77,16 @@ type ModuleListOK struct {
 	Message *string `json:"message,omitempty"`
 }
 
+// ModuleService defines model for module_service.
+type ModuleService struct {
+	Name *string `json:"name,omitempty"`
+}
+
 // ModuleStartStopOk defines model for module_start_stop_ok.
 type ModuleStartStopOk = BaseResponse
+
+// ModuleStatus defines model for module_status.
+type ModuleStatus string
 
 // ModuleStatusOk defines model for module_status_ok.
 type ModuleStatusOk struct {
@@ -136,23 +98,55 @@ type ModuleStatusOk struct {
 	Message *string `json:"message,omitempty"`
 }
 
+// ModuleUi defines model for module_ui.
+type ModuleUi struct {
+	Description *string            `json:"description,omitempty"`
+	Entry       *string            `json:"entry,omitempty"`
+	Formality   *ModuleUiFormality `json:"formality,omitempty"`
+	Icon        *string            `json:"icon,omitempty"`
+	Prefetch    *bool              `json:"prefetch,omitempty"`
+	Show        *bool              `json:"show,omitempty"`
+	Title       *map[string]string `json:"title,omitempty"`
+}
+
+// ModuleUiFormality defines model for module_ui_formality.
+type ModuleUiFormality struct {
+	Props *ModuleUiFormalityProperties `json:"props,omitempty"`
+	Type  *ModuleUiFormalityType       `json:"type,omitempty"`
+}
+
+// ModuleUiFormalityProperties defines model for module_ui_formality_properties.
+type ModuleUiFormalityProperties struct {
+	Animation    *string `json:"animation,omitempty"`
+	HasModalCard *bool   `json:"hasModalCard,omitempty" yaml:"hasModalCard,omitempty"`
+	Height       *string `json:"height,omitempty"`
+	Width        *string `json:"width,omitempty"`
+}
+
+// ModuleUiFormalityType defines model for module_ui_formality_type.
+type ModuleUiFormalityType string
+
 // ModuleUninstallOk defines model for module_uninstall_ok.
 type ModuleUninstallOk = BaseResponse
+
+// Name defines model for name.
+type Name = string
+
+// RemoteModule repo and url must have at least one
+type RemoteModule struct {
+	Name  string  `json:"name"`
+	Repo  *string `json:"repo,omitempty"`
+	Title string  `json:"title"`
+}
+
+// ResponseOK defines model for response_OK.
+type ResponseOK = BaseResponse
 
 // ResponseBadRequest defines model for response_bad_request.
 type ResponseBadRequest = BaseResponse
 
 // ResponseInternalServerError defines model for response_internal_server_error.
 type ResponseInternalServerError = BaseResponse
-
-// ResponseOK defines model for response_ok.
-type ResponseOK = BaseResponse
-
-// RequestModuleInstall defines model for request_module_install.
-type RequestModuleInstall = ModuleId
-
-// RequestModuleUninstall defines model for request_module_uninstall.
-type RequestModuleUninstall = ModuleId
 
 // ModuleStartStopJSONBody defines parameters for ModuleStartStop.
 type ModuleStartStopJSONBody struct {
@@ -901,6 +895,7 @@ type ModuleStatusResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ModuleStatusOk
+	JSON500      *ResponseInternalServerError
 }
 
 // Status returns HTTPResponse.Status
@@ -1255,6 +1250,13 @@ func ParseModuleStatusResponse(rsp *http.Response) (*ModuleStatusResponse, error
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ResponseInternalServerError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
 
 	}
 

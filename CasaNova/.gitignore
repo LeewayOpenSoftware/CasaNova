@@ -37,7 +37,6 @@ github.com
 .all-contributorsrc
 dist
 CasaOS
-/codegen
 
 # System Files
 .DS_Store
