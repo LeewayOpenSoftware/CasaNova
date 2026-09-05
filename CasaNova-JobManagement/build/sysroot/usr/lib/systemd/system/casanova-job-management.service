@@ -6,6 +6,11 @@ After=casanova-app-management.service
 After=docker.service
 Wants=casanova-gateway.service
 Wants=casanova-message-bus.service
+# Wave 35-P / c-fix-jobmgmt-docker-dep: Docker is a hard dependency — job-management
+# shells out to docker exec; without Docker running every container job fails and the
+# service flaps forever. Requires= cascades restarts; if Docker dies, job-management
+# stops instead of looping.
+Requires=docker.service
 PartOf=casanova-gateway.service
 StartLimitBurst=5
 StartLimitIntervalSec=60

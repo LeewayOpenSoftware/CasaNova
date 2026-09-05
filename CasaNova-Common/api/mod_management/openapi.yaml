@@ -1,0 +1,329 @@
+openapi: 3.0.3
+info:
+  title: Mod Management API
+  version: 1.0.0
+security:
+  - access_token: []
+paths:
+  /management/modules:
+    get:
+      operationId: InstallableModuleList
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/installable_module_list_OK'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+    post:
+      operationId: ModuleInstall
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/module_id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/module_install_ok'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+    delete:
+      operationId: ModuleUninstall
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/module_id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/module_uninstall_ok'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+  /modules:
+    get:
+      operationId: ModuleList
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/module_list_OK'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+    post:
+      operationId: RefreshModule
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_OK'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+  /modules/{name}/status:
+    get:
+      operationId: ModuleStatus
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/name'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/module_status_ok'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+    put:
+      operationId: ModuleStartStop
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/name'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - start
+                    - stop
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/module_start_stop_ok'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_bad_request'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+  /web/management/modules:
+    post:
+      operationId: ModuleInstallAsync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/module_id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/module_install_ok'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/response_internal_server_error'
+components:
+  securitySchemes:
+    access_token:
+      type: apiKey
+      name: Authorization
+      in: header
+  schemas:
+    base_response:
+      type: object
+      properties:
+        message:
+          type: string
+          description: message returned by server side if there is any
+    module:
+      type: object
+      properties:
+        name:
+          type: string
+        services:
+          type: array
+          description: a module can have one or more backend services
+          items:
+            $ref: '#/components/schemas/module_service'
+        ui:
+          $ref: '#/components/schemas/module_ui'
+    module_id:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    module_service:
+      type: object
+      properties:
+        name:
+          type: string
+    module_status:
+      type: string
+      enum:
+        - running
+        - stopped
+    module_ui:
+      type: object
+      properties:
+        description:
+          type: string
+        entry:
+          type: string
+        formality:
+          $ref: '#/components/schemas/module_ui_formality'
+        icon:
+          type: string
+        prefetch:
+          type: boolean
+        show:
+          type: boolean
+        title:
+          type: object
+          additionalProperties:
+            type: string
+    module_ui_formality:
+      type: object
+      properties:
+        props:
+          $ref: '#/components/schemas/module_ui_formality_properties'
+        type:
+          $ref: '#/components/schemas/module_ui_formality_type'
+    module_ui_formality_type:
+      type: string
+      enum:
+        - modal
+        - newtab
+    module_ui_formality_properties:
+      type: object
+      properties:
+        animation:
+          type: string
+        hasModalCard:
+          type: boolean
+          x-oapi-codegen-extra-tags:
+            yaml: hasModalCard,omitempty
+        height:
+          type: string
+        width:
+          type: string
+    remote_module:
+      type: object
+      required:
+        - name
+        - title
+      description: repo and url must have at least one
+      properties:
+        name:
+          type: string
+        repo:
+          type: string
+        title:
+          type: string
+    name:
+      type: string
+    installable_module_list_OK:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/remote_module'
+        message:
+          type: string
+          description: message returned by server side if there is any
+    module_install_ok:
+      $ref: '#/components/schemas/base_response'
+    module_list_OK:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/module'
+        message:
+          type: string
+          description: message returned by server side if there is any
+    module_start_stop_ok:
+      $ref: '#/components/schemas/base_response'
+    module_status_ok:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status:
+              $ref: '#/components/schemas/module_status'
+        message:
+          type: string
+          description: message returned by server side if there is any
+    module_uninstall_ok:
+      $ref: '#/components/schemas/base_response'
+    response_bad_request:
+      $ref: '#/components/schemas/base_response'
+    response_internal_server_error:
+      $ref: '#/components/schemas/base_response'
+    response_OK:
+      $ref: '#/components/schemas/base_response'
+    request_module_install:
+      $ref: '#/components/schemas/module_id'
+    request_module_uninstall:
+      $ref: '#/components/schemas/module_id'
