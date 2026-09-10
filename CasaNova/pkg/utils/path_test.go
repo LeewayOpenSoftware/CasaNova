@@ -110,6 +110,47 @@ func TestSanitizeFilePathFollowsSymlinks(t *testing.T) {
 	}
 }
 
+// TestSanitizeFilePathBlocksChainedRelativeSymlink is audit-residue coverage
+// (2026-09-10 P1 review of SanitizeFilePath symlink traversal): a two-hop
+// chain of relative, initially-dangling symlinks (data/a -> b -> ../secret)
+// is a plausible shape for a planted escape that a single-hop test would not
+// catch, since each individual hop looks locally harmless. resolveSymlinks
+// already chases dangling links iteratively (see its doc comment), so this
+// pins that the chase also holds across multiple hops and a relative,
+// parent-relative target — not just the single-symlink case the other tests
+// already cover.
+func TestSanitizeFilePathBlocksChainedRelativeSymlink(t *testing.T) {
+	base := t.TempDir()
+	if blockedSystemPrefix(base) != "" {
+		t.Skipf("temp dir %q sits inside a blocked prefix; test cannot distinguish", base)
+	}
+
+	secret := filepath.Join(base, "secret")
+	oldBlocked := BlockedSystemPrefixes
+	BlockedSystemPrefixes = append(append([]string{}, oldBlocked...), secret)
+	t.Cleanup(func() { BlockedSystemPrefixes = oldBlocked })
+
+	if err := os.MkdirAll(secret, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(base, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// data/a -> b (relative) -> ../secret (relative, resolves out of data/)
+	if err := os.Symlink("b", filepath.Join(data, "a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../secret", filepath.Join(data, "b")); err != nil {
+		t.Fatal(err)
+	}
+
+	p := filepath.Join(data, "a", "shadow")
+	if _, err := SanitizeFilePath(p); err == nil {
+		t.Errorf("SanitizeFilePath(%q) = nil error, want blocked (chained relative symlink into a blocked prefix)", p)
+	}
+}
+
 // TestSanitizeFilePathDataRootUnderBlockedPrefix covers the installs where the
 // storage root does NOT resolve to itself: the documented fallback layout puts
 // /DATA's contents under /var/lib/casaos/files, so every file-manager path
