@@ -56,17 +56,42 @@ func validateTaskID(c echo.Context) (string, error) {
 }
 
 // Permission policy for scheduled task endpoints:
-//   - Read-only endpoints (list tasks, list run history) → PermSystemRead
-//     since tasks can expose sensitive command output
-//   - Write endpoints (CRUD, manual trigger) → PermSystemConfig
-//     because running arbitrary shell commands on the host is
-//     equivalent to a system configuration change — admin-only
+//   - Read-only endpoints (list tasks, list run history) → PermSystemConfig
+//   - Write endpoints (CRUD, manual trigger)             → PermSystemConfig
 //
-// No loopback bypass — the JWT skipper (route.go) now validates any token,
-// including gateway-proxied browser requests, so RoleFromContext is set and
-// the RBAC check below is authoritative. A tokenless loopback caller reaches
-// here with an empty role and is correctly denied (blocks the unauthenticated
-// root-RCE path via task create/run).
+// Reads sit at the SAME bit as writes, and that is not an oversight. A task is
+// a command line run with /bin/sh -c as root, and a run record carries its
+// stdout, so reading the list is reading the box's root command inventory and
+// its output. There is no permission bit between "guest" and "admin" that
+// expresses "may read root command output but may not schedule one", and
+// inventing one is a scheme change this line does not take.
+//
+// WHAT WAS WRONG BEFORE, because the shape survived review twice:
+// reads were gated on PermSystemRead, and guestPerms HOLDS PermSystemRead
+// (CasaNova-Common/pkg/rbac/rbac.go — deliberately, so tokenless internal reads
+// and the read-only dashboard widgets keep working). rbac.Normalize also fails
+// closed to RoleGuest, so "no role" is not "no permissions": it is guest, and
+// guest passed. The gate could not refuse anybody the JWT middleware admitted;
+// route/denial_convention_test.go said so in a comment rather than a case.
+//
+// AND requireSystemPrincipal WOULD NOT HAVE FIXED IT. That helper
+// (CasaNova/route/v1/system.go) demands UserIDFromContext != 0 before checking
+// the permission, which closes the TOKENLESS hole — the right tool where the
+// skipper still lets tokenless traffic through. It is the wrong tool here for
+// two reasons. First, this module's skipper is already authskip.For(nil): no
+// path answers without a credential, so the tokenless hole is shut upstream.
+// Second, and decisively, the callers that must be refused ARE authenticated
+// and DO have a non-zero user id: CasaNova-UserService mints OAuth2-delegated
+// tokens with role "guest" ON PURPOSE to de-privilege a relying party
+// (route/v1.go, route/v2.go — the DB re-read that would promote guest back is
+// explicitly skipped for issuer "oauth2-delegated"). An identity check admits
+// exactly those principals. Only a permission guest does not hold refuses them.
+//
+// So the fix is the bit, not the identity check, and no new helper is needed:
+// PermSystemConfig is outside guestPerms and outside userPerms, which is the
+// codebase's own documented rule for when plain requirePerm/rbac.Allows is
+// sufficient (see requireSystemPrincipal's comment: "use requirePerm when the
+// permission is already beyond guest").
 // DENY WITH echo.NewHTTPError, NEVER WITH ctx.JSON.
 //
 // ctx.JSON returns the SERIALIZER's error, which is nil once the bytes are
@@ -85,9 +110,9 @@ func validateTaskID(c echo.Context) (string, error) {
 // third time this convention has been wrong in this codebase; it is now
 // asserted by a test that fails on any gate whose denial path calls ctx.JSON.
 func requireTaskRead(c echo.Context) error {
-	if !rbac.Allows(commonmw.RoleFromContext(c), rbac.PermSystemRead) {
+	if !rbac.Allows(commonmw.RoleFromContext(c), rbac.PermSystemConfig) {
 		return echo.NewHTTPError(http.StatusForbidden,
-			map[string]string{"message": "permission denied"})
+			map[string]string{"message": "permission denied: admin role required"})
 	}
 	return nil
 }
