@@ -41,15 +41,22 @@ func TestEveryDenyingHelperReturnsAnErrorValueAndWritesNothing(t *testing.T) {
 				return err
 			},
 		},
-		// requireTaskRead is deliberately absent: under the current policy it
-		// cannot refuse anyone. A context with no role resolves to Guest
-		// (middleware.RoleFromContext), and guestPerms holds PermSystemRead,
-		// so the read gate admits every caller the JWT middleware lets past.
-		// There is no input that makes it take its deny path, so there is
-		// nothing here to assert about that path. Flagged to god separately:
-		// the comment above it says reads are gated "since tasks can expose
-		// sensitive command output", which is not what the permission set
-		// currently does.
+		// requireTaskRead used to be absent here, with a comment explaining
+		// that under the old policy it could not refuse anyone: a context with
+		// no role resolves to Guest (middleware.RoleFromContext), guestPerms
+		// holds PermSystemRead, and the read gate therefore admitted every
+		// caller the JWT middleware let past. There was no input that made it
+		// take its deny path, so there was nothing to assert.
+		//
+		// It is gated on PermSystemConfig now, which guest does not hold, so
+		// the deny path exists and is asserted. Keeping the case here also
+		// keeps the convention honest: a gate that cannot be driven to its
+		// denial is a gate this test cannot protect.
+		{
+			name:     "requireTaskRead without a role",
+			wantCode: http.StatusForbidden,
+			call:     func(c echo.Context) error { return requireTaskRead(c) },
+		},
 		{
 			name:     "requireTaskWrite without a role",
 			wantCode: http.StatusForbidden,
