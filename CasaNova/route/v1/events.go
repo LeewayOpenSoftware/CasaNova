@@ -19,7 +19,10 @@ import (
 //
 // GET /v1/sys/audit?category=auth&severity=warning&since=2026-01-01&limit=200
 func GetAuditEvents(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// This is the admin review endpoint described above: its actor, address and
+	// security-event history is operator-grade reconnaissance, not a general
+	// system-status read for guest accounts.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemConfig); err != nil {
 		return err
 	}
 
