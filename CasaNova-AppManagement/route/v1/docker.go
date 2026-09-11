@@ -881,6 +881,41 @@ func pullAndInstall(ctx context.Context, imageName string, m *model.Customizatio
 	return nil
 }
 
+// mountCleanupCandidate derives the directory the v1 uninstall sweep would
+// delete for one container mount: everything in the mount source up to the
+// FIRST occurrence of the container name, with the name joined back on.
+//
+// Split-on-first-occurrence is the load-bearing oddity. ctr.Name carries a
+// leading slash ("/navidrome"), and a short or common name matches early in an
+// unrelated path segment, so the derived directory can sit nowhere near the
+// mount it came from. That is why containment is checked afterwards rather than
+// trusted from the shape of the input.
+func mountCleanupCandidate(source, ctrName string) string {
+	return filepath.Clean(filepath.Join(strings.Split(source, ctrName)[0], ctrName))
+}
+
+// withinAppsDir reports whether candidate may be deleted: STRICTLY inside
+// appsPath, never appsPath itself.
+//
+// The "never appsPath itself" half is the whole point. This check used to
+// exempt the root with `candidate != appsPath &&`, which meant a candidate that
+// derived to exactly /var/lib/casaos/apps was accepted and recursively removed
+// — every installed app's working dir and compose file at once. The v2 sweep in
+// service/compose_app.go has always required a strict prefix; these were two
+// copies of one guard differing by one character, which is how one of them ends
+// up wrong.
+// BOTH sides are cleaned here rather than trusted from the caller. The one
+// caller already cleans, so this changes nothing in production — but a
+// containment helper that is only correct for pre-cleaned input is the same
+// fragility that produced this bug family in the first place. Without it
+// "/var/lib/casaos/apps/", "/var/lib/casaos/apps/." and
+// "/var/lib/casaos/../casaos/apps" all name the root and all slip through the
+// prefix test; the test file pins each one.
+func withinAppsDir(candidate, appsPath string) bool {
+	root := filepath.Clean(appsPath)
+	return strings.HasPrefix(filepath.Clean(candidate), root+string(filepath.Separator))
+}
+
 func uninstall(ctx context.Context, ctr *container.InspectResponse, isDelete bool) error {
 	// step
 	if err := func() error {
@@ -955,20 +990,21 @@ func uninstall(ctx context.Context, ctr *container.InspectResponse, isDelete boo
 		// it is 27.04 work — converting a silent no-op into a recursive delete
 		// of user data is not a frozen-line change.
 		//
-		// NOTE for whoever does that work: unlike the v2 sweep, the check below
-		// admits candidate == appsPath itself (the != is what lets it through),
-		// so a candidate that derives to exactly /var/lib/casaos/apps would take
-		// every installed app's working dir with it. Not reached today — landing
-		// on it needs a mount source containing the apps path, which compose
-		// security refuses to bind — but it should be a strict prefix like v2's.
+		// The containment below is now a STRICT PREFIX, matching the v2 sweep.
+		// It used to read `candidate != appsPath && !HasPrefix(...)`, and that
+		// `!=` ADMITTED appsPath itself: a candidate deriving to exactly
+		// /var/lib/casaos/apps was handed to RMDir, taking every installed app's
+		// working dir and compose file with it. A container named "apps" is
+		// enough to derive it, because ctr.Name carries a leading slash — the
+		// helpers below are where that arithmetic now lives, and
+		// docker_uninstall_guard_test.go pins it.
 		appsPath := filepath.Clean(config.AppInfo.AppsPath)
-		appsPathPrefix := appsPath + string(filepath.Separator)
 		for _, v := range ctr.Mounts {
 			if !strings.Contains(v.Source, ctr.Name) {
 				continue
 			}
-			candidate := filepath.Clean(filepath.Join(strings.Split(v.Source, ctr.Name)[0], ctr.Name))
-			if candidate != appsPath && !strings.HasPrefix(candidate, appsPathPrefix) {
+			candidate := mountCleanupCandidate(v.Source, ctr.Name)
+			if !withinAppsDir(candidate, appsPath) {
 				logger.Error("refusing to delete mount path outside apps directory",
 					zap.String("path", candidate),
 					zap.String("appsPath", appsPath),
