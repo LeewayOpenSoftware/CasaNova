@@ -571,6 +571,37 @@ func resolveEffectiveRole(storedRole string) string {
 	return string(normalized)
 }
 
+// countOtherAdmins answers "how many accounts, OTHER than excludeID, would
+// still hold PermUserManage after this operation" — the question DeleteUser
+// and PutUserRole both need answered before removing or demoting an admin.
+//
+// Counts by the RESOLVED role (resolveEffectiveRole), not the literal DB
+// string. A legacy row stored as "" or "administrator" resolves to admin at
+// token-mint time (see resolveEffectiveRole's own comment) even though its
+// Role column never says "admin" — counting by literal string both
+// under-protects (the box's only admin is such a row: it never matches
+// role=='admin', so a last-admin guard keyed on the literal string never
+// fires) and over-rejects (two real admins, one of them a legacy row, count
+// as one and a legitimate delete/demote gets refused).
+//
+// Fails closed by construction, not by a special-cased error branch: if the
+// underlying fetch errors or returns nothing (GetAllUserName does not
+// surface a DB error today), the count comes back 0 — indistinguishable from
+// "genuinely no other admins" — which is exactly the outcome a last-admin
+// guard should produce when it cannot prove otherwise.
+func countOtherAdmins(excludeID string) int {
+	count := 0
+	for _, u := range service.MyService.User().GetAllUserName() {
+		if strconv.Itoa(u.Id) == excludeID {
+			continue
+		}
+		if resolveEffectiveRole(u.Role) == string(rbac.RoleAdmin) {
+			count++
+		}
+	}
+	return count
+}
+
 // @Summary login
 // @Produce  application/json
 // @Accept application/json
@@ -1334,6 +1365,22 @@ func DeleteUser(ctx echo.Context) error {
 		return ctx.JSON(http.StatusForbidden, model.Result{
 			Success: common_err.CLIENT_ERROR,
 			Message: "only admins can delete other users",
+		})
+	}
+
+	// Refuse to delete the box's last admin account, whether the caller is
+	// deleting themselves or another admin. CasaNova-UI-v2's stores/users.ts
+	// refuses this client-side too, but that is a courtesy, not the
+	// guarantee — this is. Counts by the RESOLVED role (countOtherAdmins),
+	// not the literal DB string, so a legacy account (Role stored as ""
+	// or "administrator", which still mints an admin token — see
+	// resolveEffectiveRole) is protected exactly like one whose Role column
+	// literally says "admin".
+	target := service.MyService.User().GetUserAllInfoById(id)
+	if resolveEffectiveRole(target.Role) == string(rbac.RoleAdmin) && countOtherAdmins(id) == 0 {
+		return ctx.JSON(http.StatusForbidden, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: "cannot delete the last admin account",
 		})
 	}
 

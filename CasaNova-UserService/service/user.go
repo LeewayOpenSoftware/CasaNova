@@ -70,8 +70,13 @@ func (u *userService) DeleteUserById(id string) {
 	u.db.Where("id= ?", id).Delete(&model.UserDBModel{})
 }
 
+// GetAllUserName also carries id and role, despite its name — the last-admin
+// guard in route/v1 (DeleteUser, PutUserRole) needs both to count how many
+// accounts currently resolve to admin without adding a second bulk-fetch
+// method. Existing callers that only read .Username are unaffected: the
+// extra columns are simply additional populated fields on the same struct.
 func (u *userService) GetAllUserName() (list []model.UserDBModel) {
-	u.db.Select("username").Find(&list)
+	u.db.Select("id", "username", "role").Find(&list)
 	return
 }
 

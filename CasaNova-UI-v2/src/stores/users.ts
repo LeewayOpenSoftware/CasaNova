@@ -190,8 +190,13 @@ export const useUsersStore = defineStore('users', () => {
   async function deleteUser(id: string): Promise<boolean> {
     const user = entries.value.find((u) => u.id === id)
     if (!user) return false
-    // Prevent locking out the last admin from the client side too — the
-    // backend has the same check, but failing fast keeps the UI honest.
+    // OLA 3 — this used to claim "the backend has the same check"; it did
+    // not, until CasaNova-UserService's DeleteUser gained one (see
+    // route/v1/user.go, countOtherAdmins). The backend is now the actual
+    // guarantee — it also correctly handles legacy accounts whose stored
+    // role isn't literally "admin" (see resolveEffectiveRole), which this
+    // client-side check does not attempt to. This check stays only to fail
+    // fast and keep the UI honest; it is not what makes deletion safe.
     if (user.role === 'admin' && adminCount.value <= 1) return false
 
     const result = await safeCall(async () => {
