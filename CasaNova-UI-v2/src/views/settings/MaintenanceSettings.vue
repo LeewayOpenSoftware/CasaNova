@@ -34,7 +34,7 @@ import SettingsPage from '@/components/settings/SettingsPage.vue'
 import SettingsCard from '@/components/settings/SettingsCard.vue'
 import { safeCall } from '@/api/safeCall'
 import { maintenanceApi } from '@/api'
-import { REFUSAL_REASONS } from '@/api/maintenance'
+import { REFUSAL_REASONS, isModuleAbsent } from '@/api/maintenance'
 import { formatBytes } from '@/types/files'
 import type {
   MaintenanceScan,
@@ -386,7 +386,7 @@ async function loadScan() {
   if (res.error) {
     stopScanPolling()
     // 404/405 means this build has no maintenance module — a fact, not a fault.
-    if (res.status === 404 || res.status === 405) unavailable.value = true
+    if (isModuleAbsent(res.status)) unavailable.value = true
     else lastError.value = res.error
     return
   }
@@ -487,7 +487,7 @@ async function startScan() {
       startScanPolling()
       return
     }
-    if (res.status === 404 || res.status === 405) {
+    if (isModuleAbsent(res.status)) {
       unavailable.value = true
       return
     }

@@ -362,6 +362,16 @@ export async function startScan(): Promise<MaintenanceCallResult> {
 
 /** GET /scan — state plus the findings of the last scan. Throws on failure so
  *  callers can put it behind safeCall like every other read in this layer. */
+// A build can ship without the maintenance module at all: route/v1.go gates its
+// whole route group behind the compile-time `maintenanceRoutesEnabled`, which is
+// false, so echo never registers the paths and answers 404 (405 if some sibling
+// verb is registered). That is a FACT ABOUT THE BUILD, not a failure — and both
+// the page and the settings rail have to reach the same conclusion from it, so
+// the rule lives here once instead of as a matching pair of magic numbers.
+export function isModuleAbsent(status: number | null | undefined): boolean {
+  return status === 404 || status === 405
+}
+
 export async function getScan(): Promise<MaintenanceScan> {
   const res = await client.get<unknown>(`${BASE}/scan`, { timeout: 20_000 })
   return normalizeScan(res.data)

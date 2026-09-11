@@ -71,6 +71,13 @@ export function effectiveRole(accessToken: string, storedRole?: string | null): 
 //   scheduled — v1.GetCronJobs,     cron.go:252   requirePerm(PermSystemConfig)
 //   audit     — v1.GetAuditEvents,  events.go:25  requireSystemPrincipal(PermSystemConfig)
 //   logs      — v1.GetSystemLogs,   logs.go:63    requireSystemPrincipal(PermSystemConfig)
+//   maintenance — every handler in maintenance.go opens with the same two
+//                 lines: UserIDFromContext(ctx) == 0 -> 401, then
+//                 requirePerm(PermSystemConfig). Listed even though the module
+//                 is currently absent from the build entirely (route/v1.go
+//                 registers its group behind a compile-time false, so the rail
+//                 hides it on a 404 probe): absence and permission are separate
+//                 facts, and the day the constant flips this is already right.
 //
 // Pages that only *write* under PermSystemConfig are deliberately absent:
 // Backups, Alerts, Host, Network, Storage, General and Server all load their
@@ -81,6 +88,7 @@ export const ADMIN_ONLY_SETTINGS_PATHS: readonly string[] = [
   '/app/settings/scheduled',
   '/app/settings/audit',
   '/app/settings/logs',
+  '/app/settings/maintenance',
 ]
 
 // Where a non-admin is sent when they deep-link into one of the above.
