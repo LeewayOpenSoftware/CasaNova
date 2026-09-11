@@ -281,7 +281,21 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 		// Wave 4c: TLS settings (HTTPS + Let's Encrypt).
 		// Admin-only via the group JWT + an in-handler role check for
 		// defense-in-depth. Loopback callers bypass JWT and are trusted.
+		//
+		// That comment described PUT /tls below it, not this handler: this GET
+		// carried NO in-handler check at all until this fix — any authenticated
+		// role (including guest) could read the configured domains and the
+		// Let's Encrypt contact email. Mirrors PUT /tls's exact gate: admin
+		// only, no peer exemption — verified independently (repo-wide grep,
+		// NetworkSettings.vue is the only caller, same as PUT's), not assumed
+		// from the sibling.
 		v1GatewayGroup.GET("/tls", func(ctx echo.Context) error {
+			if !rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
+			}
 			return ctx.JSON(http.StatusOK, model.Result{
 				Success: common_err.SUCCESS,
 				Message: common_err.GetMsg(common_err.SUCCESS),
