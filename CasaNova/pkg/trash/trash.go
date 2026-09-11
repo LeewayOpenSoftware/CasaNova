@@ -293,45 +293,86 @@ func (m *Manager) Delete(entry *Entry) error {
 	return os.Remove(infoPath)
 }
 
+// FailedDelete names one trash entry that could not be removed, and why.
+//
+// It exists because a removal count on its own cannot tell the caller what
+// happened. Both Empty and Purge used to swallow every per-entry error and
+// return only a count, so "there was nothing old enough to remove" and "every
+// single removal was refused" were both reported as zero with a nil error —
+// the user was told the recycle bin had been emptied while every file was
+// still on disk. A count plus an explicit failure set makes those two
+// outcomes distinguishable.
+type FailedDelete struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// deleteAll removes every entry it is given, continuing past failures, and
+// reports what succeeded and what did not. One entry that cannot be removed
+// (a read-only mount, EBUSY, a permission fault) must not stop the rest.
+func (m *Manager) deleteAll(entries []Entry) (int, []FailedDelete) {
+	count := 0
+	var failed []FailedDelete
+	for i := range entries {
+		if err := m.Delete(&entries[i]); err != nil {
+			failed = append(failed, FailedDelete{
+				ID:     entries[i].ID,
+				Name:   entries[i].TrashedName,
+				Path:   entries[i].OriginalPath,
+				Reason: err.Error(),
+			})
+			continue
+		}
+		count++
+	}
+	return count, failed
+}
+
 // Empty permanently deletes everything in every trash on every filesystem.
-// Returns the total count of items removed.
-func (m *Manager) Empty(searchRoots []string) (int, error) {
+// Returns the count removed and the entries that could not be removed.
+func (m *Manager) Empty(searchRoots []string) (int, []FailedDelete, error) {
 	entries, err := m.List(searchRoots)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	count := 0
-	for i := range entries {
-		if err := m.Delete(&entries[i]); err == nil {
-			count++
-		}
-	}
-	return count, nil
+	count, failed := m.deleteAll(entries)
+	return count, failed, nil
 }
 
 // Purge auto-removes trash entries older than m.Retention.
 // Returns the count of items purged. Call periodically from a background
 // goroutine (typically once per day).
-func (m *Manager) Purge(searchRoots []string) (int, error) {
+func (m *Manager) Purge(searchRoots []string) (int, []FailedDelete, error) {
 	if m.Retention <= 0 {
-		return 0, nil // retention disabled
+		return 0, nil, nil // retention disabled
 	}
 
 	entries, err := m.List(searchRoots)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	cutoff := time.Now().Add(-m.Retention)
-	count := 0
+	var due []Entry
 	for i := range entries {
+		// An entry whose DeletionDate could not be read is NOT infinitely
+		// old. The parse above leaves the zero time on failure, and the zero
+		// time is Before any cutoff, so a single corrupt or truncated
+		// .trashinfo meant the file it described was destroyed on the very
+		// next janitor tick instead of being kept for its retention. Refuse
+		// to age out anything whose age is unknown; List already reports the
+		// entry, so it stays visible and manually removable.
+		if entries[i].DeletionDate.IsZero() {
+			continue
+		}
 		if entries[i].DeletionDate.Before(cutoff) {
-			if err := m.Delete(&entries[i]); err == nil {
-				count++
-			}
+			due = append(due, entries[i])
 		}
 	}
-	return count, nil
+	count, failed := m.deleteAll(due)
+	return count, failed, nil
 }
 
 // ---- internal helpers ----
@@ -525,7 +566,13 @@ func readEntry(trashRoot, infoFileName string) (*Entry, error) {
 		if strings.HasPrefix(line, "Path=") {
 			entry.OriginalPath = strings.TrimPrefix(line, "Path=")
 		} else if strings.HasPrefix(line, "DeletionDate=") {
-			t, err := time.Parse("2006-01-02T15:04:05", strings.TrimPrefix(line, "DeletionDate="))
+			// ParseInLocation, not Parse. The spec stores a LOCAL wall-clock
+			// time with no zone, and Trash writes exactly that — but Parse
+			// reads a zoneless layout as UTC, so west of Greenwich every
+			// entry read back as its own UTC offset OLDER than it really was
+			// and retention expired that much early (east of it, that much
+			// late). Same clock on both sides of the round trip.
+			t, err := time.ParseInLocation("2006-01-02T15:04:05", strings.TrimPrefix(line, "DeletionDate="), time.Local)
 			if err == nil {
 				entry.DeletionDate = t
 			}

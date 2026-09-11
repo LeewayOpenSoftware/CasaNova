@@ -13,9 +13,11 @@ import (
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	commonfile "github.com/LeewayOpenSoftware/CasaNova-Common/utils/file"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
 	"github.com/LeewayOpenSoftware/CasaNova/model"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/utils/common_err"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 // ---- SMB/Samba server management ----
@@ -25,8 +27,19 @@ import (
 // for other SMB servers. They are independent of the legacy samba.go
 // which handles client-side mount connections.
 
-const smbConfigPath = "/var/lib/casanova/smb_shares.json"
+// smbConfigPath is a var, not a const, solely so tests can point the share
+// store at a temp file. Nothing reassigns it at runtime.
+var smbConfigPath = "/var/lib/casanova/smb_shares.json"
+
 const smbConfPath = "/etc/samba/smb.conf"
+
+// smbdLookPath reports whether the Samba daemon is installed. It is a var so
+// a test can exercise the handler on a box without Samba — the same seam
+// pkg/trash uses for findMountpointFn. Nothing reassigns it at runtime.
+var smbdLookPath = func() error {
+	_, err := exec.LookPath("smbd")
+	return err
+}
 
 var smbMu sync.Mutex
 
@@ -496,7 +509,7 @@ func PostSmbToggle(ctx echo.Context) error {
 		})
 	}
 
-	if _, err := exec.LookPath("smbd"); err != nil {
+	if err := smbdLookPath(); err != nil {
 		return ctx.JSON(http.StatusServiceUnavailable, model.Result{
 			Success: common_err.SERVICE_ERROR,
 			Message: "smbd is not installed",
@@ -506,14 +519,60 @@ func PostSmbToggle(ctx echo.Context) error {
 	smbMu.Lock()
 	defer smbMu.Unlock()
 
-	cfg, _ := loadSmbConfig()
+	// The load error is fatal here rather than advisory. loadSmbConfig
+	// returns a DEFAULT config — Shares is an empty slice — ALONGSIDE its
+	// error, so saving that over a file that merely failed to parse wipes
+	// every share the user ever defined. A partial write from power loss is
+	// an ordinary way for a NAS to end up with a corrupt smb_shares.json,
+	// and the toggle is the one handler that reaches this path without
+	// looking at the shares first. Refuse the save instead.
+	cfg, err := loadSmbConfig()
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "failed to load config: " + err.Error(),
+		})
+	}
 	cfg.Enabled = body.Enabled
-	saveSmbConfig(cfg)
+
+	if err := saveSmbConfig(cfg); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "failed to save config: " + err.Error(),
+		})
+	}
+
+	// A failed unit action does not fail the request — the configuration is
+	// already persisted and the toggle did take effect — but it must not be
+	// silent either. An unchecked `stop` reports "SMB off" while smbd keeps
+	// serving the shares, and an unchecked `enable` loses them at the next
+	// reboot while everything looks right today.
+	warnings := []string{}
+	runUnit := func(action string) {
+		out, err := exec.Command("systemctl", action, "smbd").CombinedOutput()
+		if err == nil {
+			return
+		}
+		detail := strings.TrimSpace(string(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		logger.Error("smbd unit action failed",
+			zap.String("action", action),
+			zap.String("output", detail),
+		)
+		warnings = append(warnings, "systemctl "+action+" smbd: "+detail)
+	}
 
 	if body.Enabled {
 		// Regenerate smb.conf before starting.
-		writeSmbConfAndReload(cfg)
-		exec.Command("systemctl", "enable", "smbd").Run()
+		if err := writeSmbConfAndReload(cfg); err != nil {
+			return ctx.JSON(http.StatusInternalServerError, model.Result{
+				Success: common_err.SERVICE_ERROR,
+				Message: err.Error(),
+			})
+		}
+		runUnit("enable")
 		if out, err := exec.Command("systemctl", "start", "smbd").CombinedOutput(); err != nil {
 			return ctx.JSON(http.StatusInternalServerError, model.Result{
 				Success: common_err.SERVICE_ERROR,
@@ -521,15 +580,16 @@ func PostSmbToggle(ctx echo.Context) error {
 			})
 		}
 	} else {
-		exec.Command("systemctl", "stop", "smbd").Run()
-		exec.Command("systemctl", "disable", "smbd").Run()
+		runUnit("stop")
+		runUnit("disable")
 	}
 
 	return ctx.JSON(http.StatusOK, model.Result{
 		Success: common_err.SUCCESS,
 		Message: common_err.GetMsg(common_err.SUCCESS),
-		Data: map[string]bool{
-			"enabled": body.Enabled,
+		Data: map[string]any{
+			"enabled":  body.Enabled,
+			"warnings": warnings,
 		},
 	})
 }
