@@ -70,13 +70,32 @@ func StartTrashJanitor(ctx context.Context) {
 // has a visible record of the janitor's work in the notification center.
 func runPurge() {
 	mgr := trash.NewManager()
-	count, err := mgr.Purge(nil)
+	count, failed, err := mgr.Purge(nil)
 	if err != nil {
 		logger.Error("trash purge failed", zap.Error(err))
 		if ns := Notifications(); ns != nil {
 			_ = ns.Err(notifications.CategoryStorage,
 				"Recycle bin cleanup failed",
 				"Automatic purge encountered an error. Check the server logs.")
+		}
+		return
+	}
+	// A quiet tick used to mean two very different things: nothing was old
+	// enough to remove yet, or every single removal was refused. Only the
+	// first is routine. Because the notification fired solely on count > 0,
+	// a recycle bin that could never be purged — a read-only mount, a
+	// permission fault — looked exactly like one with nothing due, and grew
+	// without bound while the UI kept promising a 30-day retention.
+	if len(failed) > 0 {
+		logger.Error("trash purge could not remove every expired item",
+			zap.Int("items_removed", count),
+			zap.Int("items_failed", len(failed)),
+			zap.String("first_failure", failed[0].Reason),
+		)
+		if ns := Notifications(); ns != nil {
+			_ = ns.Err(notifications.CategoryStorage,
+				"Recycle bin cleanup incomplete",
+				formatPurgeFailureMessage(count, len(failed)))
 		}
 		return
 	}
@@ -88,6 +107,16 @@ func runPurge() {
 				formatPurgeMessage(count))
 		}
 	}
+}
+
+// formatPurgeFailureMessage describes a partial or total purge failure in the
+// same voice as formatPurgeMessage, so the notification centre reads
+// consistently whichever outcome the tick had.
+func formatPurgeFailureMessage(removed, failed int) string {
+	if removed == 0 {
+		return fmt.Sprintf("%d expired item(s) could not be removed. Check the server logs.", failed)
+	}
+	return fmt.Sprintf("%d item(s) were removed, but %d expired item(s) could not be. Check the server logs.", removed, failed)
 }
 
 // formatPurgeMessage pluralizes the purge summary line so the UI copy

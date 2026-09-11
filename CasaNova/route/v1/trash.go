@@ -2,9 +2,11 @@ package v1
 
 import (
 	"errors"
-	"github.com/LeewayOpenSoftware/CasaNova/pkg/storageauth"
+	"fmt"
 	"net/http"
 	"sync"
+
+	"github.com/LeewayOpenSoftware/CasaNova/pkg/storageauth"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova/model"
@@ -200,17 +202,27 @@ func DeleteTrashItem(ctx echo.Context) error {
 
 	// Empty everything if no specific IDs given.
 	if len(req.IDs) == 0 {
-		count, err := mgr.Empty(nil)
+		count, failed, err := mgr.Empty(nil)
 		if err != nil {
 			return ctx.JSON(http.StatusInternalServerError, model.Result{
 				Success: common_err.SERVICE_ERROR,
 				Message: err.Error(),
 			})
 		}
+		// "trash emptied" is only true if it was. Entries that could not be
+		// removed are named rather than dropped, so the user is never told
+		// their files are gone while they are still on disk.
+		message := "trash emptied"
+		if len(failed) > 0 {
+			message = fmt.Sprintf("removed %d item(s); %d could not be removed", count, len(failed))
+		}
 		return ctx.JSON(http.StatusOK, model.Result{
 			Success: common_err.SUCCESS,
-			Message: "trash emptied",
-			Data:    map[string]int{"deleted": count},
+			Message: message,
+			Data: map[string]any{
+				"deleted": count,
+				"failed":  failed,
+			},
 		})
 	}
 

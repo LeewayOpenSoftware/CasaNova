@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -81,9 +82,30 @@ func PutUPSConfig(ctx echo.Context) error {
 	if c.UPSName != "" && !upsNameRe.MatchString(c.UPSName) {
 		return ctx.JSON(http.StatusBadRequest, model.Result{Success: common_err.CLIENT_ERROR, Message: "invalid UPS name"})
 	}
-	if raw, err := json.MarshalIndent(c, "", "  "); err == nil {
-		os.MkdirAll("/var/lib/casanova", 0o755)
-		_ = os.WriteFile(upsConfigFile, raw, 0o644)
+	// Every step of the persist is reported. This handler answers by calling
+	// GetHostUPS, which re-reads upsConfigFile from disk — so a discarded
+	// write error returned the PREVIOUS configuration under a 200, and the
+	// user was told their UPS was configured while nothing had been stored.
+	// The consequence is not cosmetic: no configuration means no monitoring,
+	// and no monitoring means no clean shutdown when the power actually goes.
+	raw, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "failed to encode UPS config: " + err.Error(),
+		})
+	}
+	if err := os.MkdirAll(filepath.Dir(upsConfigFile), 0o755); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "failed to create config directory: " + err.Error(),
+		})
+	}
+	if err := os.WriteFile(upsConfigFile, raw, 0o644); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "failed to save UPS config: " + err.Error(),
+		})
 	}
 	return GetHostUPS(ctx)
 }
