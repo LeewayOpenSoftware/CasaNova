@@ -39,7 +39,10 @@ type HostMemoryInfo struct {
 
 // GET /v1/sys/host/memory — current Docker memory limits + usage.
 func GetHostMemory(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see route/v1/antivirus.go's GetAntivirusStatus
+	// comment — guest holds PermSystemRead, so a bare requirePerm never
+	// refused a tokenless caller.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	info := HostMemoryInfo{
