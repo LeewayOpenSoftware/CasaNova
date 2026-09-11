@@ -53,6 +53,23 @@ describe('the rule has exactly one definition, and both readers use it', () => {
     expect(src).toContain('if (showMaintenance.value) {')
   })
 
+  it('asks whether the principal may use it BEFORE asking whether it exists', () => {
+    // The probe can only report on the build. Sending it for someone who may
+    // not open the page buys nothing and costs a guaranteed 403 per settings
+    // mount — GetMaintenanceScan requires PermSystemConfig — logged against
+    // users with no connection to the feature. Today the module answers 404 to
+    // everyone so the 403 never happens; the day the constant flips it does,
+    // and the first sign would be noise in someone else's audit log.
+    const src = read('../components/settings/SettingsNav.vue')
+    const guard = src.indexOf('if (!canAccessSettingsPath(MAINTENANCE_PATH, role.value)) return')
+    const probe = src.indexOf('safeCall(() => getMaintenanceScan())')
+    expect(guard).toBeGreaterThan(-1)
+    expect(probe).toBeGreaterThan(-1)
+    // ORDER is the property, not mere presence: a permission check that runs
+    // after the request has already gone out prevents nothing.
+    expect(guard).toBeLessThan(probe)
+  })
+
   it('is applied by the page itself, from the same definition', () => {
     const src = read('../views/settings/MaintenanceSettings.vue')
     expect(src).toContain('isModuleAbsent(res.status)')

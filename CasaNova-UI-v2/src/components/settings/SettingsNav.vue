@@ -68,7 +68,25 @@ const showMigration = ref(false)
 // during a blip, and only 404/405 actually means "this build does not have it".
 const showMaintenance = ref(true)
 
+const MAINTENANCE_PATH = '/app/settings/maintenance'
+
 onMounted(async () => {
+  // PERMISSION BEFORE ABSENCE. The probe only answers "does this build have the
+  // module"; it cannot answer "may this person use it", and asking it of
+  // someone who may not is a request whose only possible outcome is a refusal.
+  // GetMaintenanceScan requires PermSystemConfig, so a non-admin gets a
+  // guaranteed 403 — one per settings mount, logged in the audit trail, from
+  // precisely the users who have nothing to do with this feature.
+  //
+  // Invisible today: the module answers 404 to everyone, so the 403 never
+  // happens. Which is exactly why it is worth fixing now — once the constant
+  // flips, this stops being free and the first sign of it is noise in someone
+  // else's logs.
+  //
+  // Asked through canAccessSettingsPath rather than `role.value === 'admin'`
+  // so the question stays "can this principal open the page", one definition,
+  // the same one the rail and the router guard already use.
+  if (!canAccessSettingsPath(MAINTENANCE_PATH, role.value)) return
   const result = await safeCall(() => getMaintenanceScan())
   if (isModuleAbsent(result.status)) showMaintenance.value = false
 })
@@ -99,7 +117,7 @@ const sections = computed<SettingsNavSection[]>(() => {
     // Kept in its original slot rather than appended, so a build that HAS the
     // module shows the same rail order it always did.
     advanced.splice(6, 0, {
-      to: '/app/settings/maintenance',
+      to: MAINTENANCE_PATH,
       labelKey: 'settings.nav.maintenance',
       icon: 'Sparkles',
     })
