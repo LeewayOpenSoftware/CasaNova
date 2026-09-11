@@ -7,7 +7,7 @@
 // This lets users copy in tab 1 and paste in tab 2 seamlessly.
 
 import { defineStore } from 'pinia'
-import { ref, shallowRef, computed, onScopeDispose, triggerRef } from 'vue'
+import { ref, shallowRef, computed, watch, onScopeDispose, triggerRef } from 'vue'
 import {
   type FileEntry,
   formatBytes as _fmt,
@@ -15,7 +15,7 @@ import {
 import { filesApi } from '@/api'
 import type { UploadFileResult } from '@/api/files'
 import { safeCall } from '@/api/safeCall'
-import { getPref, setPref } from '@/composables/syncedPrefs'
+import { getPref, setPref, prefsGeneration } from '@/composables/syncedPrefs'
 import { useInstallProgressStore } from './installProgress'
 
 export const formatBytes = _fmt
@@ -95,6 +95,19 @@ export const useFilesStore = defineStore('files', () => {
   const detailsPaneOpen = ref<boolean>(getPref(STORAGE_DETAILS_PANE) === 'true')
   const sortKey = ref<SortKey>((getPref(STORAGE_SORT_KEY) as SortKey) || 'name')
   const sortDir = ref<SortDir>((getPref(STORAGE_SORT_DIR) as SortDir) || 'asc')
+
+  // The five reads above happen once, at store creation, against a cache the
+  // backend hydrate has usually not filled yet on a fresh login. Re-read when
+  // it lands. These prefs are written from the setters below rather than from
+  // watchers, so adopting a hydrated value here cannot echo back. Same idiom
+  // as theme.ts / dashboardPrefs.ts / useAppOrder.ts / useUserPrefs.ts.
+  watch(prefsGeneration(), () => {
+    viewMode.value = (getPref(STORAGE_VIEW_MODE) as ViewMode) || 'grid'
+    showHidden.value = getPref(STORAGE_SHOW_HIDDEN) === 'true'
+    detailsPaneOpen.value = getPref(STORAGE_DETAILS_PANE) === 'true'
+    sortKey.value = (getPref(STORAGE_SORT_KEY) as SortKey) || 'name'
+    sortDir.value = (getPref(STORAGE_SORT_DIR) as SortDir) || 'asc'
+  })
   const activeOperationCount = ref(0)
   const fixtureMode = ref(false)
   const clipboard = ref<ClipboardState | null>(null)

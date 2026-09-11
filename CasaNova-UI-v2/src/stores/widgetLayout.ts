@@ -3,7 +3,7 @@
 // arrangement follows them across browsers (same idiom as app order / tips).
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { getPref, setPref } from '@/composables/syncedPrefs'
+import { getPref, setPref, prefsGeneration } from '@/composables/syncedPrefs'
 
 // Every widget the registry knows about. IDs must match registry keys.
 export const ALL_WIDGET_IDS = [
@@ -36,8 +36,22 @@ export const useWidgetLayoutStore = defineStore('widgetLayout', () => {
   const hidden = ref<WidgetId[]>(loadIds(HIDDEN_KEY, []))
   const editMode = ref(false)
 
-  watch(order, (v) => setPref(ORDER_KEY, JSON.stringify(v)), { deep: true })
-  watch(hidden, (v) => setPref(HIDDEN_KEY, JSON.stringify(v)), { deep: true })
+  // Never re-write a value the cache already holds: adopting a hydrated
+  // layout below fires these watchers, which would echo it straight back.
+  const persist = (key: string, v: WidgetId[]) => {
+    const json = JSON.stringify(v)
+    if (getPref(key) !== json) setPref(key, json)
+  }
+  watch(order, (v) => persist(ORDER_KEY, v), { deep: true })
+  watch(hidden, (v) => persist(HIDDEN_KEY, v), { deep: true })
+
+  // Re-read once the backend hydrate lands — see iconPack.ts for why the
+  // constructor's values cannot be the last word on a fresh login.
+  const gen = prefsGeneration()
+  watch(gen, () => {
+    order.value = loadIds(ORDER_KEY, DEFAULT_ORDER)
+    hidden.value = loadIds(HIDDEN_KEY, [])
+  })
 
   // Widgets to actually render, in order, minus hidden ones.
   const visible = computed<WidgetId[]>(() => order.value.filter((id) => !hidden.value.includes(id)))
