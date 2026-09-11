@@ -20,6 +20,15 @@ import (
 // the internal routing table (every user's traffic), drop the global IP
 // whitelist that is enforced on every inbound request, or move the public port.
 //
+// GET /tls carried a comment claiming "Admin-only via the group JWT + an
+// in-handler role check for defense-in-depth" and no check at all — the
+// comment described its neighbor PUT /tls, not itself. A comment naming a
+// control is not evidence the control exists; only the entry in the table
+// below, and the census in TestPeerAllowedRoutesStillCarryTheAdminBranch, are.
+// Its caller was verified independently of PUT's (repo-wide grep,
+// CasaNova-UI-v2/src/views/settings/NetworkSettings.vue is the only one) —
+// browser UI, admin, no peer, same as PUT, but checked rather than assumed.
+//
 // WHAT THESE TESTS CAN AND CANNOT REACH, stated plainly so nobody reads more
 // into a green run than it earns. The handlers are unexported closures behind
 // the group's JWT middleware, so a request can only reach them two ways: with a
@@ -76,6 +85,7 @@ var mutatingManagementRoutes = []struct {
 	{http.MethodPost, "/v1/gateway/whitelist", false}, // browser UI only
 	{http.MethodDelete, "/v1/gateway/whitelist", false},
 	{http.MethodPut, "/v1/gateway/tls", false}, // the pre-existing gate, pinned with the rest
+	{http.MethodGet, "/v1/gateway/tls", false}, // read counterpart: no gate at all until this fix
 }
 
 // The whitelist and TLS routes must refuse a non-admin EVEN WHEN the caller
@@ -184,7 +194,15 @@ func TestPeerAllowedRoutesStillCarryTheAdminBranch(t *testing.T) {
 		t.Errorf("found %d admin-only gates, want exactly 2 (POST and DELETE "+
 			"/whitelist)", n)
 	}
-	if !strings.Contains(text, "rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig)") {
-		t.Error("the PermSystemConfig check is gone from management_route.go entirely")
+	// Count, not Contains: a boolean check on the bare string stays true even
+	// if one of the two /tls gates is deleted, because managementAdmin's own
+	// body ("return rbac.Allows(...)") also contains it — a Contains check
+	// here would never go red. Anchored to the "if !...{" CALL-SITE form
+	// instead, which excludes the helper's definition and matches only an
+	// actual gate in a handler.
+	inlineAdminCheck := regexp.MustCompile(`if !rbac\.Allows\(commonmw\.RoleFromContext\(ctx\), rbac\.PermSystemConfig\) \{`)
+	if n := len(inlineAdminCheck.FindAllString(text, -1)); n != 2 {
+		t.Errorf("found %d inline PermSystemConfig call sites, want exactly 2 (GET /tls and "+
+			"PUT /tls). One of the pair lost its gate.", n)
 	}
 }
