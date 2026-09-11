@@ -25,6 +25,10 @@ import (
 var globalEnvMu sync.Mutex
 
 func (a *AppManagement) GetGlobalSettings(ctx echo.Context) error {
+	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+		return err
+	}
+
 	result := make([]codegen.GlobalSetting, 0)
 	config.GlobalMu.RLock()
 	for key, value := range config.Global {
@@ -42,6 +46,10 @@ func (a *AppManagement) GetGlobalSettings(ctx echo.Context) error {
 }
 
 func (a *AppManagement) GetGlobalSetting(ctx echo.Context, key codegen.GlobalSettingKey) error {
+	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+		return err
+	}
+
 	config.GlobalMu.RLock()
 	value, ok := config.Global[string(key)]
 	config.GlobalMu.RUnlock()
