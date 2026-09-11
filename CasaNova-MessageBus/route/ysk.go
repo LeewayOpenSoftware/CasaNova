@@ -10,6 +10,15 @@ import (
 )
 
 func (r *APIRoute) DeleteYskCard(ctx echo.Context, id string) error {
+	// A mutating bus endpoint, so it takes the bus's write gate like
+	// PublishEvent and TriggerAction do. The deletion is by id alone with no
+	// user scoping, and the cards are seeded server-wide — so one caller
+	// removing a card removes it for EVERY user, which is shared state, not
+	// a personal dismissal.
+	if err := requireBusMutator(ctx); err != nil {
+		return err
+	}
+
 	err := r.services.YSKService.DeleteYSKCard(ctx.Request().Context(), id)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, codegen.ResponseInternalServerError{

@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/filelock"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -237,7 +239,13 @@ func TestGetTOTPStatusDoesNotDependOnTheLock(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/v1/sys/2fa/status", nil)
 	rec := httptest.NewRecorder()
-	if err := GetTOTPStatus(e.NewContext(req, rec)); err != nil {
+	// This test pins LOCK behaviour, not authorization. GetTOTPStatus is now
+	// gated like the rest of the 2FA family, so the context needs a role
+	// that holds PermSystemConfig or the handler aborts before it ever
+	// reaches the read this test is about.
+	statusCtx := e.NewContext(req, rec)
+	commonmw.SetRoleInContext(statusCtx, string(rbac.RoleAdmin), 1)
+	if err := GetTOTPStatus(statusCtx); err != nil {
 		t.Fatalf("handler returned a transport error: %v", err)
 	}
 	if rec.Code != http.StatusOK {

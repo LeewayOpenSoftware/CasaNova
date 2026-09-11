@@ -392,6 +392,16 @@ func buildOTPAuthURI(secret, account string) string {
 
 // GET /v1/sys/2fa/status — Check if 2FA is enabled.
 func GetTOTPStatus(ctx echo.Context) error {
+	// Gated at PermSystemConfig, matching every other handler in this file.
+	// The 2FA config is server-GLOBAL (a single /var/lib/casanova/2fa.json),
+	// so this is not per-account state and leaks no account's existence —
+	// but "is 2FA on" plus "how many backup codes are left" is reconnaissance
+	// on the administrator's fallback credential, and nobody who cannot
+	// configure 2FA has anything to do with its status.
+	if err := requirePerm(ctx, rbac.PermSystemConfig); err != nil {
+		return err
+	}
+
 	totpMu.Lock()
 	defer totpMu.Unlock()
 
