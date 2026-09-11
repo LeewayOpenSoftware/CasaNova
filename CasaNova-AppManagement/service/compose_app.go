@@ -173,6 +173,26 @@ func (a *ComposeApp) SetTitle(title, lang string) {
 	}
 }
 
+
+type operationFinisher interface {
+	Complete(message string)
+	Fail(err error)
+}
+
+// updateOpOutcome finishes an update operation op according to the outcome of PullAndApply.
+// If err is nil, it completes op as successful.
+// If err is non-nil, it fails op with the error.
+func updateOpOutcome(op operationFinisher, err error) {
+	if op == nil {
+		return
+	}
+	if err != nil {
+		op.Fail(err)
+	} else {
+		op.Complete("app updated successfully")
+	}
+}
+
 func (a *ComposeApp) Update(ctx context.Context) (err error) {
 	// Advisory fast-fail, NOT the mutual exclusion. The update's real work runs
 	// in the detached goroutine at the bottom of this function, so a lock taken
@@ -187,14 +207,18 @@ func (a *ComposeApp) Update(ctx context.Context) (err error) {
 		return fmt.Errorf("app.update rejected: %w", ErrComposeAppBusy)
 	}
 
-	// Operation logging
+	// Operation logging: record update start. Ownership of completing or failing
+	// this operation passes to the detached goroutine below so that the oplog
+	// reflects the real outcome of PullAndApply rather than claiming success
+	// milliseconds after launch before an image is even pulled.
 	op := StartOp("app.update", a.Name)
+	goroutineStarted := false
 	defer func() {
-		if op != nil {
+		if !goroutineStarted && op != nil {
 			if err != nil {
 				op.Fail(err)
 			} else {
-				op.Complete("app updated successfully")
+				op.Fail(fmt.Errorf("update aborted before background execution"))
 			}
 		}
 	}()
@@ -289,7 +313,8 @@ func (a *ComposeApp) Update(ctx context.Context) (err error) {
 		logger.Info("failed to update event properties from store info", zap.Error(err), zap.String("name", a.Name))
 	}
 
-	go func(ctx context.Context) {
+	goroutineStarted = true
+	go func(ctx context.Context, op operationFinisher) {
 		// Detach from the HTTP handler's context: it 30-min-timeouts the ctx and
 		// `defer baseCancel()`s it, so it was canceled the moment the handler
 		// returned — cancelling this detached pull ("context canceled") and
@@ -301,11 +326,16 @@ func (a *ComposeApp) Update(ctx context.Context) (err error) {
 		// edge case, docker client crash, nil deref in a compose
 		// helper) would otherwise tear down the entire daemon and
 		// take every other in-flight app op down with it. recover()
-		// here keeps the failure scoped to this single update.
+		// here keeps the failure scoped to this single update and
+		// ensures the oplog record is terminated with an error rather
+		// than left in-progress forever.
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Error("panic in async app update",
 					zap.Any("panic", r), zap.String("name", a.Name))
+				if op != nil {
+					op.Fail(fmt.Errorf("panic in async app update: %v", r))
+				}
 			}
 		}()
 		go PublishEventWrapper(ctx, common.EventTypeAppUpdateBegin, nil)
@@ -315,14 +345,17 @@ func (a *ComposeApp) Update(ctx context.Context) (err error) {
 		MyService.AppStoreManagement().StartUpgrade(a.Name)
 		defer MyService.AppStoreManagement().FinishUpgrade(a.Name)
 
-		if err := a.PullAndApply(ctx, newComposeYAML); err != nil {
+		err := a.PullAndApply(ctx, newComposeYAML)
+		if err != nil {
 			go PublishEventWrapper(ctx, common.EventTypeAppUpdateError, map[string]string{
 				common.PropertyTypeMessage.Name: err.Error(),
 			})
 
 			logger.Error("failed to update compose app", zap.Error(err), zap.String("name", a.Name))
 		}
-	}(ctx)
+
+		updateOpOutcome(op, err)
+	}(ctx, op)
 
 	return nil
 }
