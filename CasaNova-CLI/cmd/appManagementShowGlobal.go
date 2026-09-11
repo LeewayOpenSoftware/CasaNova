@@ -30,14 +30,13 @@ var appManagementShowGlobalCmd = &cobra.Command{
 	Use:  "global <Key>",
 	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		rootURL, err := rootCmd.PersistentFlags().GetString(FlagRootURL)
-		if err != nil {
-			return err
-		}
-
-		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathAppManagement)
-
-		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
+		// This read presents the per-boot peer secret, so it goes STRAIGHT to
+		// the service's own published address and never through the gateway,
+		// whose Director strips that header at the public proxy boundary. See
+		// cmd/directchannel.go for why that strip is correct and must not be
+		// worked around. --root-url does not apply to this command: the
+		// credential is only meaningful on the local direct channel.
+		client, err := cliDirectAppManagementClient()
 		if err != nil {
 			return err
 		}

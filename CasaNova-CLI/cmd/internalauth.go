@@ -36,6 +36,6 @@ func (t cliAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return base.RoundTrip(req)
 }
 
-func cliHTTPClient() *http.Client {
+func cliDirectHTTPClient() *http.Client {
 	return &http.Client{Transport: cliAuthTransport{base: http.DefaultTransport}}
 }

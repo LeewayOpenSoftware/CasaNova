@@ -40,7 +40,7 @@ var messageBusListEventTypesCmd = &cobra.Command{
 
 		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathMessageBus)
 
-		client, err := message_bus.NewClientWithResponses(url, message_bus.WithHTTPClient(cliHTTPClient()))
+		client, err := message_bus.NewClientWithResponses(url, message_bus.WithHTTPClient(cliGatewayHTTPClient()))
 		if err != nil {
 			log.Fatalln(err.Error())
 		}
