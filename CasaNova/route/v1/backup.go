@@ -126,7 +126,7 @@ func PostBackupCreate(ctx echo.Context) error {
 		})
 	}
 	if len(created.Skipped) > 0 {
-		logger.Info("WARN backup omitted paths", zap.String("level", "warn"), zap.Int("skipped", len(created.Skipped)), zap.Any("paths", created.Skipped))
+		logger.Error("backup omitted paths", zap.Int("skipped", len(created.Skipped)), zap.Any("paths", created.Skipped))
 	}
 
 	info, err := os.Stat(backupPath)

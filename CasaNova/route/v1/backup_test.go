@@ -44,6 +44,6 @@ func TestCreateBackupTarballReportsUnreadableDirectory(t *testing.T) {
 		t.Fatalf("expected one skipped path, got %#v", result.Skipped)
 	}
 	if result.Skipped[0].Path != blocked || !strings.Contains(result.Skipped[0].Reason, "permission denied") {
-		t.Fatalf("unexpected skipped entry: %#v", result.Skipped[0])
+		t.Fatalf("unexpected skipped entry: %#v", result.Skipped)
 	}
 }
