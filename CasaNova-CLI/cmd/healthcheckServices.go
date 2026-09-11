@@ -39,7 +39,7 @@ var healthcheckServicesCmd = &cobra.Command{
 
 		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathCasaOS)
 
-		client, err := casaos.NewClientWithResponses(url, casaos.WithHTTPClient(cliHTTPClient()))
+		client, err := casaos.NewClientWithResponses(url, casaos.WithHTTPClient(cliGatewayHTTPClient()))
 		if err != nil {
 			return err
 		}

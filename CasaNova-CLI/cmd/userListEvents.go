@@ -36,7 +36,7 @@ var userListEventsCmd = &cobra.Command{
 
 		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathUsers)
 
-		client, err := user_service.NewClientWithResponses(url, user_service.WithHTTPClient(cliHTTPClient()))
+		client, err := user_service.NewClientWithResponses(url, user_service.WithHTTPClient(cliGatewayHTTPClient()))
 		if err != nil {
 			return err
 		}

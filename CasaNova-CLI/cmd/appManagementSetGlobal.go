@@ -63,7 +63,7 @@ OPENAI_API_KEY   sk-xxxxxxxxxx
 
 		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathAppManagement)
 
-		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
+		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliGatewayHTTPClient()))
 		if err != nil {
 			return err
 		}

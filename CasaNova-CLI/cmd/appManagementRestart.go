@@ -39,7 +39,7 @@ var appManagementRestartCmd = &cobra.Command{
 
 		appID := cmd.Flags().Arg(0)
 
-		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
+		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliGatewayHTTPClient()))
 		if err != nil {
 			return err
 		}

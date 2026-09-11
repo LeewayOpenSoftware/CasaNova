@@ -49,7 +49,7 @@ var appManagementInstallCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
+		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliGatewayHTTPClient()))
 		if err != nil {
 			return err
 		}
