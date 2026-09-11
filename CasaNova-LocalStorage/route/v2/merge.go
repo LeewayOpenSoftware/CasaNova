@@ -26,6 +26,12 @@ import (
 var MessageMergerFSNotEnabled = "mergerfs is not enabled - either it is not enabled in configuration file; merge point is not empty before mounting; or mergerfs is not installed"
 
 func (s *LocalStorage) GetMerges(ctx echo.Context, params codegen.GetMergesParams) error {
+	// See v1/disk.go GetDiskList for why this needs PermStorageRead: the
+	// Wave 26 hardening pass gated SetMerge/InitMerge below but never
+	// touched these reads of the mergerfs pool config.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	if strings.ToLower(config.ServerInfo.EnableMergerFS) != "true" {
 		return ctx.JSON(http.StatusServiceUnavailable, codegen.ResponseServiceUnavailable{Message: &MessageMergerFSNotEnabled})
 	}
@@ -168,6 +174,9 @@ func (s *LocalStorage) SetMerge(ctx echo.Context) error {
 	})
 }
 func (s *LocalStorage) GetMergeInitStatus(ctx echo.Context) error {
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	status := codegen.Uninitialized
 	mountPoint := common.DefaultMountPoint
 

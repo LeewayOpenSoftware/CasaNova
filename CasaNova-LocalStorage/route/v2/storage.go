@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service"
 	"github.com/labstack/echo/v4"
 )
@@ -32,6 +33,12 @@ type StorageRoot struct {
 // It queries LSBLK via the Disk service and builds a list of mounted volumes,
 // classifying each as internal, external (USB), cloud, or network.
 func (s *LocalStorage) GetStorageRoots(ctx echo.Context) error {
+	// See v1/disk.go GetDiskList for why this needs PermStorageRead: this
+	// module's write routes were gated during Wave 26 but its reads never
+	// were. This one enumerates every mounted storage root and its label.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	blkList := service.MyService.Disk().LSBLK(false)
 	roots := []StorageRoot{}
 	seen := map[string]bool{}

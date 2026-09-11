@@ -74,6 +74,12 @@ func PutSystemUSBAutoMount(ctx echo.Context) error {
 // @Success 200 {string} string "ok"
 // @Router /sys/usb [get]
 func GetSystemUSBAutoMount(ctx echo.Context) error {
+	// See GetDiskList (disk.go) for why this needs PermStorageRead: the
+	// Wave 26 hardening pass gated every write in this package but never
+	// touched the reads.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	state := "True"
 	if strings.ToLower(config.ServerInfo.USBAutoMount) != "true" {
 		state = "False"
@@ -98,6 +104,9 @@ func GetSystemUSBAutoMount(ctx echo.Context) error {
 }
 
 func GetDisksUSBList(ctx echo.Context) error {
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	list := service.MyService.Disk().LSBLK(false)
 	data := []model1.USBDriveStatus{}
 	for _, v := range list {

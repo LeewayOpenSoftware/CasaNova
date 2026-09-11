@@ -41,6 +41,12 @@ type standbyRequest struct {
 }
 
 func (s *LocalStorage) GetStandby(ctx echo.Context) error {
+	// See v1/disk.go GetDiskList for why this needs PermStorageRead: the
+	// Wave 32 hardening pass gated PutStandby below but never touched
+	// this read.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	return ctx.JSON(http.StatusOK, map[string]interface{}{
 		"success": 0,
 		"message": "ok",
