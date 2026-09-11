@@ -100,6 +100,25 @@ func PutUserRole(ctx echo.Context) error {
 			Success: common_err.CLIENT_ERROR, Message: "user not found",
 		})
 	}
+
+	// Refuse to demote the box's last admin account. The self-demotion check
+	// above already makes this unreachable today (a non-admin cannot call
+	// this handler at all — rbacAdminGuard — and an admin demoting THEMSELF
+	// is already refused unconditionally), but that safety is an emergent
+	// property of two separately-motivated checks, not something this
+	// decision examines on its own — exactly the shape this sweep exists to
+	// close. Counts by the RESOLVED role (countOtherAdmins), matching
+	// DeleteUser's identical guard, so a legacy admin row is protected the
+	// same way a literal "admin" row is.
+	if resolveEffectiveRole(target.Role) == string(rbac.RoleAdmin) &&
+		newRole != rbac.RoleAdmin &&
+		countOtherAdmins(id) == 0 {
+		return ctx.JSON(http.StatusForbidden, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: "cannot demote the last admin account",
+		})
+	}
+
 	target.Role = string(newRole)
 	service.MyService.User().UpdateUser(target)
 
