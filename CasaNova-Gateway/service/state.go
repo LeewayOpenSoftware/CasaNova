@@ -138,12 +138,39 @@ func (c *State) OnTLSChange(f func(TLSSettings) error) {
 	c.onTLSChange = append(c.onTLSChange, f)
 }
 
+// SetGatewayPort notifies every registered listener of the new port and
+// only commits it to State once all of them have confirmed it — the same
+// held-until-confirmed shape SetTLS above already uses for the identical
+// problem (Wave 32).
+//
+// The previous version assigned c.gatewayPort = port BEFORE running the
+// listeners: if one returned an error, SetGatewayPort still returned that
+// error, but the port had already been mutated in memory. In production
+// the two real listeners are reloadGateway (rebinds the actual TCP
+// listener; registered first, so the reverse-order loop below runs it
+// FIRST) and a config.json persist (registered second, run second) — so a
+// failed rebind used to leave GetGatewayPort() reporting a port the
+// gateway was never actually listening on. Delaying the write until every
+// listener has succeeded means a failure leaves gatewayPort exactly where
+// it was: nothing to roll back, because nothing was written early.
+//
+// This does not attempt to re-notify listeners that already ran with a
+// "rollback" value if a LATER listener fails — that would assume a
+// listener is safe to invoke in reverse ("undo to the old port"), which
+// isn't part of its contract (it is told "apply this port", never "undo
+// to that one"). One known, accepted asymmetry survives as a result: if
+// reloadGateway succeeds but the config persist that runs after it then
+// fails, the live gateway really has moved to the new port, but
+// GetGatewayPort() will report the old one until the next successful
+// call. That mirrors the config file itself being behind live reality in
+// exactly that case — an existing limitation of having two listeners
+// with different reversibility, not something this fix introduces or
+// silently leaves undocumented.
 func (c *State) SetGatewayPort(port string) error {
-	c.portMu.Lock()
-	c.gatewayPort = port
+	c.portMu.RLock()
 	listeners := make([]func(string) error, len(c.onGatewayPortChange))
 	copy(listeners, c.onGatewayPortChange)
-	c.portMu.Unlock()
+	c.portMu.RUnlock()
 
 	// Notify listeners outside the lock to avoid deadlocks if a listener
 	// calls back into State.
@@ -152,6 +179,10 @@ func (c *State) SetGatewayPort(port string) error {
 			return err
 		}
 	}
+
+	c.portMu.Lock()
+	c.gatewayPort = port
+	c.portMu.Unlock()
 
 	return nil
 }
