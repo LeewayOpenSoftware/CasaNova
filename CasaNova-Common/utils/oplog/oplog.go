@@ -9,11 +9,26 @@
 package oplog
 
 import (
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+const DefaultRetention = 90 * 24 * time.Hour
+
+// Retention returns the configured operation-log age, defaulting to the
+// documented 90 days. Invalid or non-positive values are ignored so a bad
+// setting cannot turn pruning into an accidental delete-all operation.
+func Retention() time.Duration {
+	days, err := strconv.Atoi(os.Getenv("CASANOVA_OPLOG_RETENTION_DAYS"))
+	if err != nil || days <= 0 {
+		return DefaultRetention
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
 
 // Status represents the current state of an operation.
 type Status string
@@ -151,7 +166,12 @@ func (l *Logger) ListFailed(limit int) ([]Entry, error) {
 // Prune deletes operation log entries older than maxAge.
 // Should be called periodically (e.g. daily) to prevent unbounded growth.
 func (l *Logger) Prune(maxAge time.Duration) (int64, error) {
+	if maxAge <= 0 {
+		return 0, nil
+	}
 	cutoff := time.Now().Add(-maxAge)
-	result := l.db.Where("started_at < ?", cutoff).Delete(&Entry{})
+	// Zero timestamps are indeterminate, not old. Keep them rather than
+	// treating an unreadable/malformed date as older than every cutoff.
+	result := l.db.Where("started_at > ? AND started_at < ?", time.Time{}, cutoff).Delete(&Entry{})
 	return result.RowsAffected, result.Error
 }
