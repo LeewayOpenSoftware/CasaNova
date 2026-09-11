@@ -1,0 +1,15 @@
+[
+  {"input": "admin", "want": "admin", "note": "exact match"},
+  {"input": "  Admin  ", "want": "admin", "note": "trim + lowercase"},
+  {"input": "ADMIN", "want": "admin", "note": "uppercase"},
+  {"input": "user", "want": "user", "note": "exact match"},
+  {"input": "  User\t", "want": "user", "note": "trim + lowercase, tab whitespace"},
+  {"input": "guest", "want": "guest", "note": "exact match"},
+  {"input": "GUEST", "want": "guest", "note": "uppercase"},
+  {"input": "", "want": "guest", "note": "empty fails closed to guest"},
+  {"input": "   ", "want": "guest", "note": "whitespace-only fails closed to guest"},
+  {"input": "administrator", "want": "guest", "note": "unrecognized legacy string fails closed, never admin"},
+  {"input": "root", "want": "guest", "note": "unrecognized string fails closed"},
+  {"input": "superadmin", "want": "guest", "note": "unrecognized string never silently grants admin"},
+  {"input": "Admin ", "want": "admin", "note": "trailing whitespace only"}
+]

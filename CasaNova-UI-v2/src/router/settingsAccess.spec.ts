@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   ADMIN_ONLY_SETTINGS_PATHS,
@@ -8,6 +10,29 @@ import {
   normalizeRole,
   roleFromAccessToken,
 } from './settingsAccess'
+
+interface NormalizeCase {
+  input: unknown
+  want: string
+  note: string
+}
+
+// OLA 3 — the shared contract with rbac_test.go
+// (CasaNova-Common/pkg/rbac/testdata/normalize_cases.json). normalizeRole is
+// a hand-written TS mirror of Go's rbac.Normalize with no shared code
+// possible across languages; both sides reading the same fixture is what
+// makes a future divergence a reviewed diff to the JSON instead of a silent
+// drift between two independently-maintained case lists.
+function loadNormalizeCases(): NormalizeCase[] {
+  const path = fileURLToPath(
+    new URL('../../../CasaNova-Common/pkg/rbac/testdata/normalize_cases.json', import.meta.url),
+  )
+  const cases = JSON.parse(readFileSync(path, 'utf8')) as NormalizeCase[]
+  // Anti-vacuity: an empty or unreadable fixture must fail loudly, not pass
+  // by asserting nothing.
+  expect(cases.length).toBeGreaterThan(0)
+  return cases
+}
 
 function tokenWith(claims: Record<string, unknown>): string {
   const payload = btoa(JSON.stringify(claims))
@@ -31,6 +56,12 @@ describe('normalizeRole', () => {
     // guest here too — the promotion is the server's to make, not ours.
     for (const v of ['', '   ', 'administrator', 'owner', 'root', null, undefined, 7, {}]) {
       expect(normalizeRole(v)).toBe('guest')
+    }
+  })
+
+  it('agrees with Go\'s rbac.Normalize on every case in the shared fixture', () => {
+    for (const tc of loadNormalizeCases()) {
+      expect(normalizeRole(tc.input), `${JSON.stringify(tc.input)} (${tc.note})`).toBe(tc.want)
     }
   })
 })
