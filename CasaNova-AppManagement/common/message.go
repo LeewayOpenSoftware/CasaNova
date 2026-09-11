@@ -226,16 +226,46 @@ var (
 		},
 	}
 
+	// Declared because these ARE published. The handler writes app:name onto the
+	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
+	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// mutating it changes what every later publish on the same context carries.
+	// The list said {} while the wire carried three properties.
+	//
+	// Declaring the reality is not a behaviour change; REMOVING the properties
+	// would be, and on a frozen line could break a subscriber already reading
+	// them. Per-event filtering is deliberately NOT built on top of this yet: a
+	// filter that silently drops against a declaration that lies is worse than
+	// no filter, so the declaration tells the truth first.
 	EventTypeAppUpdateBegin = message_bus.EventType{
-		SourceID:         AppManagementServiceName,
-		Name:             "app:update-begin",
-		PropertyTypeList: []message_bus.PropertyType{},
+		SourceID: AppManagementServiceName,
+		Name:     "app:update-begin",
+		PropertyTypeList: []message_bus.PropertyType{
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+		},
 	}
 
+	// Declared because these ARE published. The handler writes app:name onto the
+	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
+	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// mutating it changes what every later publish on the same context carries.
+	// The list said {} while the wire carried three properties.
+	//
+	// Declaring the reality is not a behaviour change; REMOVING the properties
+	// would be, and on a frozen line could break a subscriber already reading
+	// them. Per-event filtering is deliberately NOT built on top of this yet: a
+	// filter that silently drops against a declaration that lies is worse than
+	// no filter, so the declaration tells the truth first.
 	EventTypeAppUpdateEnd = message_bus.EventType{
-		SourceID:         AppManagementServiceName,
-		Name:             "app:update-end",
-		PropertyTypeList: []message_bus.PropertyType{},
+		SourceID: AppManagementServiceName,
+		Name:     "app:update-end",
+		PropertyTypeList: []message_bus.PropertyType{
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+		},
 	}
 
 	EventTypeAppUpdateError = message_bus.EventType{
@@ -246,16 +276,46 @@ var (
 		},
 	}
 
+	// Declared because these ARE published. The handler writes app:name onto the
+	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
+	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// mutating it changes what every later publish on the same context carries.
+	// The list said {} while the wire carried three properties.
+	//
+	// Declaring the reality is not a behaviour change; REMOVING the properties
+	// would be, and on a frozen line could break a subscriber already reading
+	// them. Per-event filtering is deliberately NOT built on top of this yet: a
+	// filter that silently drops against a declaration that lies is worse than
+	// no filter, so the declaration tells the truth first.
 	EventTypeAppApplyChangesBegin = message_bus.EventType{
-		SourceID:         AppManagementServiceName,
-		Name:             "app:apply-changes-begin",
-		PropertyTypeList: []message_bus.PropertyType{},
+		SourceID: AppManagementServiceName,
+		Name:     "app:apply-changes-begin",
+		PropertyTypeList: []message_bus.PropertyType{
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+		},
 	}
 
+	// Declared because these ARE published. The handler writes app:name onto the
+	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
+	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// mutating it changes what every later publish on the same context carries.
+	// The list said {} while the wire carried three properties.
+	//
+	// Declaring the reality is not a behaviour change; REMOVING the properties
+	// would be, and on a frozen line could break a subscriber already reading
+	// them. Per-event filtering is deliberately NOT built on top of this yet: a
+	// filter that silently drops against a declaration that lies is worse than
+	// no filter, so the declaration tells the truth first.
 	EventTypeAppApplyChangesEnd = message_bus.EventType{
-		SourceID:         AppManagementServiceName,
-		Name:             "app:apply-changes-end",
-		PropertyTypeList: []message_bus.PropertyType{},
+		SourceID: AppManagementServiceName,
+		Name:     "app:apply-changes-end",
+		PropertyTypeList: []message_bus.PropertyType{
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+		},
 	}
 
 	EventTypeAppApplyChangesError = message_bus.EventType{
