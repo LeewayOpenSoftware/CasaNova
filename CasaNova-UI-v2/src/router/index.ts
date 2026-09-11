@@ -14,6 +14,7 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getUserStatus } from '@/api/users'
+import { shouldDiscardExpiredSession } from './sessionExpiry'
 
 // Cache the initialization check so we don't hit the API on every navigation.
 // The promise acts as a dedup lock: concurrent navigations await the same call.
@@ -245,31 +246,6 @@ const routes: RouteRecordRaw[] = [
  * to the login screen — every reload, every route change. Decoded
  * symptom: "users complain they have to log in five times a day".
  */
-function base64UrlToBase64(s: string): string {
-  // Translate base64url alphabet → standard base64.
-  let out = s.replace(/-/g, '+').replace(/_/g, '/')
-  // Pad to a multiple of 4. JWTs strip padding to keep the URL short.
-  const pad = out.length % 4
-  if (pad === 2) out += '=='
-  else if (pad === 3) out += '='
-  else if (pad === 1) return '' // malformed — caller catches
-  return out
-}
-
-function isTokenExpired(token: string): boolean {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return true
-    const b64 = base64UrlToBase64(parts[1])
-    if (!b64) return true
-    const payload = JSON.parse(atob(b64))
-    if (typeof payload.exp !== 'number') return true
-    return payload.exp * 1000 < Date.now()
-  } catch {
-    return true
-  }
-}
-
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
@@ -279,10 +255,10 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   auth.hydrate()
 
-  // If the stored token is expired, treat the user as unauthenticated
-  // and proactively clear the session so downstream code doesn't attempt
-  // API calls with a stale bearer token.
-  if (auth.isAuthenticated && isTokenExpired(auth.accessToken)) {
+  // Keep a refreshable session alive: the first protected request will
+  // receive 401 and the axios interceptor renews + retries it exactly once.
+  // Without a refresh credential there is no recovery path, so clear it.
+  if (auth.isAuthenticated && shouldDiscardExpiredSession(auth.accessToken, auth.refreshToken)) {
     auth.logout()
   }
 
