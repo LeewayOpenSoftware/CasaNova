@@ -19,7 +19,6 @@ package v1
 import (
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -28,6 +27,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/loopback"
 	"github.com/labstack/echo/v4"
 )
 
@@ -82,11 +82,16 @@ var embedProbeClient = &http.Client{
 
 // loopbackHost reports whether a redirect target stays on this box. Anything
 // else is refused: an app must not be able to bounce the probe into the LAN.
+//
+// Literal IPs only — "localhost" used to also pass here, independently of
+// CasaNova-Gateway's isLoopbackTarget (route/management_route.go), which
+// enforces the same rule for route-target validation and rejects hostnames
+// entirely, specifically because a hostname's meaning depends on DNS/hosts
+// resolution that can change between this check and the dial that follows it.
+// Two modules deciding the same question differently is how this endpoint
+// ended up more permissive than its sibling for no reasoned difference.
 func loopbackHost(host string) bool {
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
-	}
-	return host == "localhost"
+	return loopback.IsLoopbackHost(host)
 }
 
 // frameAncestorsOf extracts the frame-ancestors directive from a CSP header,

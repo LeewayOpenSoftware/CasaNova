@@ -1,7 +1,7 @@
 package route
 
 import (
-	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/authskip"
 	"github.com/labstack/echo/v4"
 )
 
@@ -38,23 +38,17 @@ import (
 //
 // Anything else authenticates. The list is closed: adding to it is a visible
 // edit to a reviewed variable, not an emergent property of a boolean.
+//
+// THIS USED TO BE A SECOND, INDEPENDENT IMPLEMENTATION of exactly this
+// decision — the body below was a near word-for-word copy of
+// CasaNova-Common/utils/authskip.For, written by someone who didn't know that
+// package existed (the same failure mode documented on requireSystemPrincipal
+// in system.go, and the reason authskip was extracted in the first place: it
+// was copy-pasted, wrong, into nine routers before that). Delegating instead
+// of reimplementing means a future hardening of the shared decision reaches
+// this router automatically instead of depending on someone remembering this
+// file exists. The doc comment above stays — CasaNova's own incident history
+// with this bug — but the logic itself now has one source.
 func skipAuthFor(allow map[string]bool) func(echo.Context) bool {
-	return func(c echo.Context) bool {
-		// A genuine peer service, proven by an unforgeable secret.
-		//
-		// This has to happen HERE and not only in the handler: the JWT
-		// middleware runs first, so without this a peer presenting the internal
-		// header and no bearer token is refused with 401 before
-		// requirePermInternal ever sees it.
-		if internalauth.Valid(c.Request().Header.Get(internalauth.HeaderName)) {
-			return true
-		}
-
-		// Match on the ROUTE PATTERN (c.Path()), not the raw URL. c.Path()
-		// is what the router matched — "/v1/recover/:type" — so no amount of
-		// encoding, traversal or query trickery in the request line can be
-		// bent into a listed entry, and a parameterised route is expressed
-		// once instead of as a prefix that would swallow its children.
-		return allow[c.Path()]
-	}
+	return authskip.For(allow)
 }

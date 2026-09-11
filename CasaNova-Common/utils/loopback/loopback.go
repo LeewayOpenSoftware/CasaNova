@@ -47,9 +47,24 @@ func isLoopbackAddr(remoteAddr string) bool {
 		// Fallback for RemoteAddr without a port (rare but possible).
 		host = remoteAddr
 	}
+	return IsLoopbackHost(host)
+}
+
+// IsLoopbackHost reports whether host is a LITERAL loopback IP address.
+//
+// Unlike IsLoopback, this takes a bare host string rather than a request — it
+// is for validating a DIAL TARGET (a redirect Location header, a proxy route
+// target) rather than an inbound caller's address. Hostnames are refused on
+// purpose, never resolved: two independent call sites in this codebase
+// (CasaNova-Gateway's route-target validator, CasaNova's embed-probe redirect
+// walker) used to each decide this for themselves, and one of the two
+// additionally accepted the literal string "localhost" — a hostname whose
+// meaning depends on DNS/hosts resolution the caller who names it does not
+// control, but which a poisoned resolver or a doctored /etc/hosts entry can
+// repoint after this check passes. A literal IP is the exact bytes that will
+// be dialed; nothing about a name is checked twice and guaranteed to still be
+// true when the dial happens.
+func IsLoopbackHost(host string) bool {
 	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback()
+	return ip != nil && ip.IsLoopback()
 }
