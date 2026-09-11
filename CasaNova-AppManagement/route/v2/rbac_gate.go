@@ -5,6 +5,7 @@ import (
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 	"github.com/labstack/echo/v4"
 )
 
@@ -54,4 +55,19 @@ func requirePerm(ctx echo.Context, p rbac.Permission) error {
 		})
 	}
 	return nil
+}
+
+// requirePermInternal is intentionally NOT the default AppManagement gate.
+// It exists only for the three explicitly named read-only diagnostics whose
+// root-local CLI caller holds the per-boot, root-only peer secret:
+// GetGlobalSettings, MyComposeApp, and ComposeAppLogs. They reveal sensitive
+// configuration (the first and third may expose credentials), so mutations and
+// every other route keep their ordinary user-JWT permission check. The gateway
+// strips this header at its public proxy boundary; a valid header therefore
+// proves a local peer, never a loopback/LAN caller.
+func requirePermInternal(ctx echo.Context, p rbac.Permission) error {
+	if internalauth.Valid(ctx.Request().Header.Get(internalauth.HeaderName)) {
+		return nil
+	}
+	return requirePerm(ctx, p)
 }

@@ -25,7 +25,10 @@ import (
 var globalEnvMu sync.Mutex
 
 func (a *AppManagement) GetGlobalSettings(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+	// A root-local diagnostic peer may inspect the whole global map, including
+	// unredacted credential values such as OPENAI_API_KEY. This is deliberately
+	// read-only and narrow: the PUT/DELETE routes below still require a user JWT.
+	if err := requirePermInternal(ctx, rbac.PermAppConfigure); err != nil {
 		return err
 	}
 

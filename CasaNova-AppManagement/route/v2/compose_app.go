@@ -89,7 +89,10 @@ func (a *AppManagement) MyComposeApp(ctx echo.Context, id codegen.ComposeAppID) 
 	// variables (DB passwords, API keys, etc.) — with Accept: application/yaml
 	// it hands back the raw compose file text directly. Same data class as
 	// ApplyComposeAppSettings below, gated the same way.
-	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+	// Root-local diagnostics may read one installed compose project. The project
+	// can contain credentials, so only a valid internal peer secret (or the
+	// ordinary configured user permission) reaches this read-only endpoint.
+	if err := requirePermInternal(ctx, rbac.PermAppConfigure); err != nil {
 		return err
 	}
 
@@ -759,7 +762,9 @@ func (a *AppManagement) ComposeAppLogs(ctx echo.Context, id codegen.ComposeAppID
 	// strings, and anything else the app printed, which routinely includes
 	// secrets. Same data class as MyComposeApp above (env vars): gated the
 	// same way, not on a lower "can view the app" bit.
-	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+	// Root-local diagnostics may read logs, which can contain credentials.
+	// This exception is read-only; all compose mutations retain user-JWT RBAC.
+	if err := requirePermInternal(ctx, rbac.PermAppConfigure); err != nil {
 		return err
 	}
 
