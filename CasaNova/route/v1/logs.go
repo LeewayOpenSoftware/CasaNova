@@ -186,7 +186,8 @@ func GetSystemLogs(ctx echo.Context) error {
 
 // GET /v1/sys/logs/units — List available systemd service units.
 func GetLogUnits(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see antivirus.go's GetAntivirusStatus comment.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	// systemctl list-units occasionally stalls when a unit is in a

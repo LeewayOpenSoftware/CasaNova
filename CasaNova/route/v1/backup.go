@@ -152,7 +152,10 @@ func PostBackupCreate(ctx echo.Context) error {
 
 // GET /v1/sys/backup/list — List existing backups, newest first.
 func GetBackupList(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see antivirus.go's GetAntivirusStatus comment —
+	// guest holds PermSystemRead, so a bare requirePerm never refused a
+	// tokenless caller.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {

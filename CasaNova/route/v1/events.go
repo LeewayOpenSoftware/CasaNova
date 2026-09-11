@@ -79,7 +79,10 @@ func GetAuditEvents(ctx echo.Context) error {
 //
 // GET /v1/sys/notifications?unread=true&limit=50
 func GetNotifications(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see antivirus.go's GetAntivirusStatus comment.
+	// Reads stay at PermSystemRead (the dashboard widgets poll them) — this
+	// closes the tokenless-caller gap, not the permission tier.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 

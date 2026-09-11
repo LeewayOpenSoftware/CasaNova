@@ -112,7 +112,11 @@ var validEmailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 // GET /v1/sys/certs/status
 func GetCertsStatus(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see antivirus.go's GetAntivirusStatus comment.
+	// This response also carries cfg.Email — the operator's email address —
+	// so a tokenless caller is not just recon here, same content class as the
+	// already-gated /v1/sys/certs/config.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	certsMu.Lock()
@@ -193,7 +197,8 @@ func GetCertsStatus(ctx echo.Context) error {
 
 // GET /v1/sys/certs/check
 func GetCertsCheck(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see antivirus.go's GetAntivirusStatus comment.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	certbotInstalled := true
