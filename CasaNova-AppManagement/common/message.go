@@ -81,6 +81,36 @@ var (
 	}
 )
 
+// QueryParamEventProperties is the DECLARED set of query parameters that may
+// become properties of a bus event. Nothing outside this list enters the
+// payload — see route/v2.PropertiesFromQueryParams.
+//
+// WHY THIS LIST IS SHORT, AND WHY IT IS NOT "EVERY DECLARED PROPERTY TYPE".
+// The handlers used to copy EVERY incoming query parameter into the event
+// payload, which made any HTTP client the author of arbitrary fields on an
+// internal event. Two details make that sharper than it looks:
+//
+//   - PublishEventWrapper merges the context properties OVER the publisher's
+//     own map (service/service.go), so a client-supplied key does not merely
+//     get added to the event — it OVERWRITES what the service set. A request
+//     carrying ?message=... rewrote the error text of an error event, and
+//     ?app:icon=... would have pointed subscribers at an attacker's URL.
+//   - the message bus does not filter either: its PublishEvent takes the
+//     properties verbatim and relays them to every subscriber.
+//
+// So app:name, app:icon, app:title and message are deliberately ABSENT here
+// even though they are declared property types: they are SERVICE-OWNED, set
+// from the app's own record, and must never be author-able by a caller. Only
+// these two are genuinely supplied by the client and reported onward — which is
+// also why both carry a "should be removed in future" note above: they are the
+// legacy passengers, not a general-purpose channel.
+//
+// Adding an entry here is a security decision, not a refactor.
+var QueryParamEventProperties = []message_bus.PropertyType{
+	PropertyTypeCheckPortConflict,
+	PropertyTypeDryRun,
+}
+
 var EventTypes = []message_bus.EventType{
 	// app-store
 	EventTypeAppStoreRegisterBegin, EventTypeAppStoreRegisterEnd, EventTypeAppStoreRegisterError,
