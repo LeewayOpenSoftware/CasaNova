@@ -939,6 +939,20 @@ func uninstall(ctx context.Context, ctr *container.InspectResponse, isDelete boo
 		// could cause RMDir to walk outside the apps directory entirely.
 		// Confining the resolved path to AppsPath turns the worst case from
 		// "host file deletion" into "no-op + log line".
+		//
+		// And "no-op" is the ordinary case, not the worst one: an app's mount
+		// sources are /DATA/AppData/<name>/…, which is not under AppsPath, so
+		// delete_config_folder deletes nothing for a normal app. Same shape and
+		// same consequence as the v2 sweep in service/compose_app.go. Repointing
+		// it is 27.04 work — converting a silent no-op into a recursive delete
+		// of user data is not a frozen-line change.
+		//
+		// NOTE for whoever does that work: unlike the v2 sweep, the check below
+		// admits candidate == appsPath itself (the != is what lets it through),
+		// so a candidate that derives to exactly /var/lib/casaos/apps would take
+		// every installed app's working dir with it. Not reached today — landing
+		// on it needs a mount source containing the apps path, which compose
+		// security refuses to bind — but it should be a strict prefix like v2's.
 		appsPath := filepath.Clean(config.AppInfo.AppsPath)
 		appsPathPrefix := appsPath + string(filepath.Separator)
 		for _, v := range ctr.Mounts {

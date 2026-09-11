@@ -546,6 +546,20 @@ func (a *AppManagement) UninstallComposeApp(ctx echo.Context, id codegen.Compose
 	// attach context key/value pairs from upstream
 	backgroundCtx := common.WithProperties(context.Background(), PropertiesFromQueryParams(ctx))
 
+	// WHAT delete_config_folder ACTUALLY DOES TODAY — narrower than its name.
+	//
+	// Uninstall always removes the containers, the images, the app's named
+	// docker volumes and its working dir under AppsPath, whatever this flag
+	// says. The flag governs only the extra sweep over each service's volume
+	// sources, and that sweep is confined to AppsPath by a lexical prefix
+	// check — so for an ordinary app, whose sources are /DATA/AppData/<name>/…,
+	// it matches nothing and the flag is a NO-OP. The user's data survives.
+	//
+	// Left exactly as it is, deliberately. Repointing the sweep at /DATA/AppData
+	// would turn a silent no-op into a recursive delete of user data; that is
+	// 27.04 work with a migration and a confirmation story, not a change this
+	// frozen line takes. The note is here so the next reader and the next API
+	// consumer stop believing the parameter name.
 	deleteConfigFolder := true
 	if params.DeleteConfigFolder != nil {
 		deleteConfigFolder = *params.DeleteConfigFolder

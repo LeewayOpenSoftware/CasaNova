@@ -221,8 +221,35 @@ func rebuildCrontab(jobs []CronJob) []string {
 // ---- Handlers ----
 
 // GET /v1/sys/cron — List all cron jobs.
+//
+// READS SIT AT THE SAME BIT AS WRITES (PermSystemConfig), deliberately. What
+// this returns is the ROOT CRONTAB: every entry is a command line the box runs
+// as root on a schedule, so listing it is publishing root's command inventory —
+// the paths, the scripts, the flags, and often enough the arguments that say
+// where the interesting data lives. There is no bit between guest and admin
+// that expresses "may read root's scheduled commands but may not add one", and
+// inventing one is a scheme change this line does not take.
+//
+// WHAT WAS WRONG BEFORE: this was requirePerm(PermSystemRead), and guestPerms
+// HOLDS PermSystemRead (CasaNova-Common/pkg/rbac/rbac.go — deliberately, so the
+// read-only dashboard widgets and internal reads keep working). rbac.Normalize
+// also fails closed to RoleGuest, so "no role" is not "no permissions": it is
+// guest, and guest passed. The gate could not refuse anyone the JWT middleware
+// admitted — including an OAuth2-delegated token minted with role "guest" ON
+// PURPOSE to de-privilege a relying party. The four mutating handlers below
+// were already on PermSystemConfig; only the read was open.
+//
+// This is the same defect and the same fix as requireTaskRead in
+// CasaNova-JobManagement/route/scheduled_tasks.go, which shipped first; that
+// comment carries the full derivation, including why requireSystemPrincipal is
+// the WRONG tool here (the principals to refuse are authenticated and have a
+// non-zero user id, so an identity check admits exactly them — the fix is the
+// BIT, not the identity check).
+//
+// ACCEPTED CONSEQUENCE, approved by the user: Settings → Scheduled disappears
+// for non-admins, because the list call it is built on now returns 403.
 func GetCronJobs(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	if err := requirePerm(ctx, rbac.PermSystemConfig); err != nil {
 		return err
 	}
 	lines, err := readCrontab()
