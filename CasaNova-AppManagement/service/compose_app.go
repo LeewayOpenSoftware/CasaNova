@@ -921,6 +921,28 @@ func (a *ComposeApp) pullAndInstall(ctx context.Context) (err error) {
 	return nil
 }
 
+// uninstallOutcome is the message the operation log records when an uninstall
+// finishes without an error.
+//
+// It exists because "app uninstalled successfully" was recorded unconditionally,
+// including when the caller asked for the config folder to be deleted and the
+// sweep below removed nothing — which is the ORDINARY case, not an edge one: the
+// sweep is confined to AppsPath while a real app's volume sources live under
+// /DATA/AppData/<name>. An operator reading the operation log was told their
+// data had been deleted when it was still on disk. The delete itself is
+// deliberately unchanged; only the claim about it is.
+func uninstallOutcome(configFolderRequested bool, configFoldersRemoved int) string {
+	if !configFolderRequested {
+		return "app uninstalled successfully"
+	}
+	if configFoldersRemoved == 0 {
+		return "app uninstalled successfully, but NO config folder was deleted: " +
+			"the requested data deletion is confined to the apps directory and this " +
+			"app's volumes resolve outside it. Its data is still on disk."
+	}
+	return fmt.Sprintf("app uninstalled successfully, %d config folder(s) deleted", configFoldersRemoved)
+}
+
 func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (err error) {
 	// Wave 2c: Acquire per-app lock
 	release, lockErr := MyService.AppLock().Acquire(a.Name)
@@ -932,14 +954,17 @@ func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (er
 	}
 	defer release()
 
-	// Operation logging
+	// Operation logging. configFoldersRemoved is counted by the cleanup sweep at
+	// the end of this function so the completion message can state what actually
+	// happened; see uninstallOutcome above.
+	configFoldersRemoved := 0
 	op := StartOp("app.uninstall", a.Name)
 	defer func() {
 		if op != nil {
 			if err != nil {
 				op.Fail(err)
 			} else {
-				op.Complete("app uninstalled successfully")
+				op.Complete(uninstallOutcome(deleteConfigFolder, configFoldersRemoved))
 			}
 		}
 	}()
@@ -1010,8 +1035,27 @@ func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (er
 			if strings.Contains(volume.Source, a.Name) {
 				path := filepath.Clean(filepath.Join(strings.Split(volume.Source, a.Name)[0], a.Name))
 
-				// Validate the resolved path is within the expected apps directory
-				// to prevent path traversal attacks.
+				// CONTAINMENT: this is a LEXICAL check on an UNRESOLVED path.
+				// Nothing is resolved here despite what this comment used to
+				// claim, so a symlink among the components under appsPath
+				// would be followed by RMDir (os.RemoveAll opens the parent
+				// by path). It holds anyway, for reasons outside this line:
+				// filepath.Clean runs BEFORE the check, so no ".." input can
+				// survive it, and appsPath is /var/lib/casaos/apps -- a root-
+				// owned tree the file API refuses outright (/var is in
+				// utils.BlockedSystemPrefixes) and no compose file can bind
+				// into a container (isDangerousBindSource covers
+				// /var/lib/casaos, its ancestors, and the named-volume-with-
+				// driver_opts disguise). Planting the symlink therefore needs
+				// host root already. compose_security_test.go pins that
+				// precondition; if it is ever relaxed, this check must become
+				// resolve-then-verify before appsPath widens.
+				//
+				// Note the guard is also stricter than the loop's purpose: a
+				// normal app's volume.Source is /DATA/AppData/<name>/..., which
+				// is NOT under appsPath, so deleteConfigFolder is a no-op for
+				// it. Left as-is deliberately -- making it fire would turn a
+				// no-op into a recursive delete of user data.
 				if !strings.HasPrefix(path, filepath.Clean(appsPath)+string(filepath.Separator)) {
 					logger.Error("refusing to delete volume path outside apps directory",
 						zap.String("path", path),
@@ -1026,6 +1070,8 @@ func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (er
 					go PublishEventWrapper(ctx, common.EventTypeImageRemoveError, map[string]string{
 						common.PropertyTypeMessage.Name: err.Error(),
 					})
+				} else {
+					configFoldersRemoved++
 				}
 			}
 		}

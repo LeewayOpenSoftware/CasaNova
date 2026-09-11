@@ -113,8 +113,13 @@ func InitV1Router() http.Handler {
 	// itself, outside this group, so this middleware never runs for them.
 
 	// strictJWT returns a JWT-validation middleware identical to the one
-	// mounted on v1Group, except that it does NOT honour the loopback
-	// skipper. Use it on routes whose privilege-elevation potential makes
+	// mounted on v1Group, except that it carries NO Skipper at all: it
+	// admits nobody without a valid, unrevoked token -- not even a peer
+	// service presenting the internal secret, which skipAuthFor does let
+	// past on the group. (It was written when the group's skipper was the
+	// tokenless-loopback rule; that rule is gone, so what it drops is
+	// narrower now, but it still drops every exemption there is.) Use it
+	// on routes whose privilege-elevation potential makes
 	// them unsafe to expose to any unauthenticated local caller — in
 	// particular the SSH terminal endpoints, which would otherwise let a
 	// less-privileged local process launder OS credentials through the
@@ -168,16 +173,18 @@ func InitV1Router() http.Handler {
 		// user's data outright and it should be obvious in the route table.
 		//
 		// Reads are gated on PermStorageRead inside each handler — NOT
-		// PermSystemRead, which guest holds. The gateway forwards every LAN
-		// and internet request over 127.0.0.1, so the v1Group JWT skipper
-		// (loopback && no Authorization header) lets a tokenless request from
-		// anywhere through as guest; the device inventory it would otherwise
-		// return is a map of which disks are disposable and which hold the
-		// system.
+		// PermSystemRead, which guest holds. The tokenless-loopback skipper
+		// that used to make that urgent is GONE (see route/auth_skipper.go):
+		// none of these patterns is in v1PreLoginRoutes, so an unauthenticated
+		// caller is refused by the group middleware before any handler runs.
+		// The bit still matters, because authenticated is not privileged: a
+		// guest-role principal holds PermSystemRead, and the device inventory
+		// these routes return is a map of which disks are disposable and which
+		// hold the system.
 		//
-		// Every mutating route additionally carries strictJWT(), which drops
-		// that loopback skipper entirely, so a tokenless caller is refused by
-		// the middleware before a handler is reached at all. The handler's own
+		// Every mutating route additionally carries strictJWT(), which carries
+		// no skipper at all, so not even a peer service presenting the internal
+		// secret reaches the handler without a user token. The handler's own
 		// requireStorageMutationCaller then re-checks the permission bit AND that a
 		// real principal exists. Three independent barriers, because the
 		// failure mode is a formatted disk.
