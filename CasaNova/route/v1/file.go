@@ -1673,19 +1673,18 @@ func DeleteOperateFileOrDir(ctx echo.Context) error {
 // CN-DOS-03, second half. /file/operate got the cancellable, budgeted pre-scan;
 // this handler — a recursive walk with NOTHING else in it — kept calling
 // file.GetFileOrDirSize with no context, no deadline and no cancellation, on
-// the request goroutine. It was also completely ungated, and the v1 JWT
-// middleware skips auth for tokenless loopback requests while the gateway
-// reverse-proxies every LAN AND tunnel request over 127.0.0.1: GET
+// the request goroutine. Historically it was also completely ungated, and the
+// old v1 JWT middleware skipped auth for tokenless loopback requests while the
+// gateway reverse-proxied every LAN AND tunnel request over 127.0.0.1: GET
 // /v1/folder/size?path=/DATA was therefore an UNAUTHENTICATED, uncancellable,
 // endlessly repeatable full traversal of a 5.4 TB array reachable from the
 // internet — a strictly cheaper version of the DoS the first patch closed.
 //
 // Two fixes, both required:
-//   - requirePerm(PermFileRead). The guest role (what a tokenless request
-//     resolves to) does NOT hold PermFileRead, so this is what actually takes
-//     the endpoint away from the loopback skipper. The gate alone would leave
-//     an authenticated user able to pin the box; the budget alone would leave
-//     it free to anyone on the internet.
+//   - requirePerm(PermFileRead). The guest role does NOT hold PermFileRead,
+//     so this prevents guest or unauthenticated callers from running the scan.
+//     The gate alone would leave an authenticated user able to pin the box;
+//     the budget alone would leave it free to anyone on the internet.
 //   - the scan runs under the request's own context plus an overall budget, so
 //     it dies the moment the client disconnects.
 //
@@ -1731,7 +1730,7 @@ func GetSize(ctx echo.Context) error {
 
 // GetFileCount answers GET /v1/folder/count.
 //
-// Same exposure as GetSize above (ungated + loopback skipper + tunnel), and the
+// Same historical exposure as GetSize above (ungated traversal + DoS risk), and the
 // same unbounded shape: os.ReadDir reads the WHOLE directory into a slice and
 // then SORTS it by name, only for len() to be taken. On a directory with
 // millions of entries that is a large allocation plus an O(n log n) sort per

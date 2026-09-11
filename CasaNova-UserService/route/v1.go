@@ -16,8 +16,8 @@ import (
 )
 
 // jwtLoopbackSkipper reports whether JWT validation should be skipped for a
-// request. Loopback callers bypass auth ONLY when they present no token at all
-// (truly anonymous local/CLI calls, e.g. the public /v1/users/status probe).
+// request. Pre-login routes are handled outside this middleware; peer services
+// bypass auth only when presenting the per-boot internal secret.
 //
 // jwtLoopbackSkipper decides who reaches /v1/users/* and the protected oauth2
 // routes WITHOUT a token. The answer is: a peer service holding the per-boot

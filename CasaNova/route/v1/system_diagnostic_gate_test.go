@@ -418,11 +418,11 @@ func TestNoUngatedDiagnosticEndpoints(t *testing.T) {
 			lines = append(lines, o.where+"  GET "+o.path+" → "+o.handler)
 		}
 		t.Fatalf("%d diagnostic endpoint(s) reachable with no gate:\n  %s\n\n"+
-			"The gateway proxies the LAN and the Cloudflare tunnel over 127.0.0.1 and the v1 JWT "+
-			"middleware skips a loopback request that carries no Authorization header, so an "+
-			"ungated read here answers the internet. Gate it (requireSystemPrincipal for state a "+
-			"signed-in principal may read), or record it in publicByDesign with the reason it is "+
-			"safe for an anonymous caller.",
+			"An anonymous context defaults to RoleGuest which holds PermSystemRead, so an "+
+			"ungated or naively gated read here would fail open if invoked outside group "+
+			"middleware. Gate it (requireSystemPrincipal for state a signed-in principal "+
+			"may read), or record it in publicByDesign with the reason it is safe for an "+
+			"anonymous caller.",
 			len(offenders), strings.Join(lines, "\n  "))
 	}
 	t.Logf("%d diagnostic route(s) scanned; %d public by design, %d ungated and reported upward",

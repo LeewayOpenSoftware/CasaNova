@@ -126,8 +126,7 @@ func GetRouter() http.Handler {
 	// scheduled tasks 404s before reaching its handler. The entire
 	// scheduled-tasks feature was dead from the network. Skip the
 	// validator on the user-route prefix so handlers added outside the
-	// codegen surface still work. (Loopback also bypasses validation
-	// because it never has the right Authorization headers anyway.)
+	// codegen surface still work.
 	e.Use(echomiddleware.OapiRequestValidatorWithOptions(_swagger, &echomiddleware.Options{
 		Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 		Skipper: func(c echo.Context) bool {
@@ -141,7 +140,7 @@ func GetRouter() http.Handler {
 	// Wave 4e: user-defined scheduled tasks. Routes are added after the
 	// codegen handlers so they live alongside /jobs/* without needing a
 	// schema regeneration. All permission enforcement is inside each
-	// handler; loopback callers bypass it as usual.
+	// handler (requiring PermSystemConfig).
 	RegisterScheduledTaskRoutes(e, APIPath)
 
 	return e

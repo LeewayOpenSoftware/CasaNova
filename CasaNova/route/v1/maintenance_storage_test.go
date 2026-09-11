@@ -564,8 +564,7 @@ func TestFormatPrepareReachesTheEngineForAnAuthenticatedAdmin(t *testing.T) {
 	}
 }
 
-// The read gate, isolated the same way: guest is what a tokenless loopback
-// request resolves to, and it must not receive the device inventory.
+// The read gate, isolated the same way: guest role must not receive the device inventory.
 func TestDeviceListRefusesGuest(t *testing.T) {
 	f := newStorageFixture(t)
 	f.standardHost()

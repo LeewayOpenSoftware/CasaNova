@@ -316,9 +316,9 @@ func (r *storageRefusal) write(ctx echo.Context) error {
 
 // requireStorageReadCaller is the gate for the read-only endpoints.
 //
-// PermStorageRead, not PermSystemRead: guest holds PermSystemRead, and a
-// tokenless request arriving over the gateway's 127.0.0.1 hop resolves to
-// guest. The device inventory carries serial numbers, models and the exact
+// PermStorageRead, not PermSystemRead: guest holds PermSystemRead, and an
+// unauthenticated context in RoleFromContext fails closed to guest.
+// The device inventory carries serial numbers, models and the exact
 // protection topology of the box — a map of what to attack and what is
 // disposable. Guest does not get it.
 func requireStorageReadCaller(ctx echo.Context) error {
@@ -347,10 +347,9 @@ func requireStorageReadCaller(ctx echo.Context) error {
 //  1. the RBAC bit — PermStorageFormat or PermStorageSanitize, which only admin
 //     holds and which PermStorageWrite does not imply; and
 //  2. a real authenticated principal — user id 0 means no token was ever
-//     validated. A tokenless loopback caller (which is every internet request
-//     the gateway forwards without an Authorization header) has no principal,
-//     so even if the permission bit were mis-granted tomorrow, there is still
-//     nobody to attribute the wipe to and the request is refused.
+//     validated. An anonymous caller has no principal, so even if the
+//     permission bit were mis-granted tomorrow, there is still nobody to
+//     attribute the wipe to and the request is refused.
 //
 // The second check is not decoration: it is the one that survives a mistake in
 // the permission table, and the audit record depends on it being true.

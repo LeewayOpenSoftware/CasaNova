@@ -43,14 +43,10 @@ func baseMiddleware(e *echo.Echo) {
 
 func jwtConfig() echo_middleware.JWTConfig {
 	return echo_middleware.JWTConfig{
-		// Skip JWT ONLY for tokenless loopback (genuine internal service hops).
-		// A presented token is ALWAYS validated so the role is set on the
-		// context — critical because the gateway reverse-proxies LAN traffic
-		// over 127.0.0.1, so every proxied request looks loopback; blanket-
-		// skipping it would drop a real user's token and leave RoleFromContext
-		// at guest, which the per-handler requireConfig/requireRead gates
-		// (route/v2/rbac_gate.go) then evaluate. Tokenless callers fail closed.
-		// Nothing here answers without a credential.
+		// Skipper uses authskip.For(nil): nothing answers without a credential.
+		// Peer services must present the per-boot internal secret. A presented
+		// user token is ALWAYS validated so the role is set on the context and
+		// evaluated by the per-handler gates (route/v2/rbac_gate.go).
 		//
 		// The previous skipper passed any tokenless request whose socket peer was
 		// 127.0.0.1 — which is EVERY request, because the gateway reverse-proxies

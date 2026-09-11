@@ -36,11 +36,12 @@ import (
 // Why the permission alone is not a boundary here. A tokenless request reaches
 // these handlers with no role on the context, and RoleFromContext fails closed
 // to guest — which deliberately holds PermSystemRead. `requirePerm(ctx,
-// PermSystemRead)` therefore answers "allowed" for an anonymous caller. The v1
-// JWT middleware does not close it either: its skipper is `IsLoopback(c) && no
-// Authorization header`, and the gateway reverse-proxies every LAN request AND
-// every Cloudflare-tunnel request over 127.0.0.1, so omitting the header is
-// enough to be skipped — from the internet.
+// PermSystemRead)` therefore answers "allowed" for an anonymous caller.
+// The v1 JWT middleware rejects unauthenticated requests at the perimeter, but
+// handler-level defense-in-depth is essential: historically the middleware
+// skipped loopback requests and exposed these handlers to the internet.
+// Requiring an authenticated principal ensures that even if called outside the
+// group middleware or tested directly, anonymous callers are stopped.
 //
 // UserIDFromContext is non-zero only after that middleware validated a real
 // token: SetRoleInContext stores claims.ID, and the only token issuer
@@ -59,11 +60,11 @@ import (
 // WHY THIS EXISTS AND WHEN IT IS THE ONLY CORRECT GATE.
 //
 // A tokenless request resolves to RoleGuest, and guestPerms deliberately holds
-// PermAppView and PermSystemRead. Combine that with the v1 JWT skipper, which
-// passes tokenless loopback traffic through while the gateway proxies the LAN
-// and the Cloudflare tunnel over 127.0.0.1, and `requirePerm(ctx,
-// rbac.PermSystemRead)` ALLOWS THE INTERNET. It reads like a gate, it survives
-// review, and it enforces nothing.
+// PermAppView and PermSystemRead. If an endpoint relying only on
+// `requirePerm(ctx, rbac.PermSystemRead)` is ever invoked with an anonymous
+// context (such as when remounted outside the group JWT middleware or tested
+// directly), it ALLOWS THE CALLER. It reads like a gate, it survives review,
+// and it enforces nothing against an unauthenticated context.
 //
 // So: use requirePerm when the permission is already beyond guest
 // (PermFileRead, PermStorageRead, PermSystemNetwork, anything admin). Use this

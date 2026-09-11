@@ -54,16 +54,13 @@ func v2TokenExtractor(c echo.Context) ([]string, error) {
 	// GET /v2/app_management/compose/install/:id/progress is a
 	// Server-Sent Events stream, and EventSource cannot set request
 	// headers, so the browser has no way to present a bearer token
-	// (CasaNova-UI-v2/src/api/containers.ts:773). Today that stream
-	// works only because the loopback skipper waves it through
-	// unauthenticated — it has never actually been authenticated.
-	// Closing the skipper without this turns every install progress
-	// bar into a silent 401.
+	// (CasaNova-UI-v2/src/api/containers.ts:773). Historically that stream
+	// worked only because the loopback skipper waved it through
+	// unauthenticated. Supporting ?token= query parameter extraction allows
+	// SSE streams to authenticate now that authskip.For(nil) closes the skipper.
 	//
-	// A token in a query string is worse than a header: it reaches
-	// access logs and Referer. It is accepted here because the
-	// alternative for SSE is no authentication at all, which is
-	// what we have now.
+	// A token in a query string is accepted here because the alternative for
+	// browser SSE handshakes is no authentication at all.
 	return []string{c.QueryParam("token")}, nil
 }
 
