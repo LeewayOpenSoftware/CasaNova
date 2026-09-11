@@ -1,3 +1,12 @@
+//go:build integration
+
+// These tests exercise the deprecated Mod Management SDK against a live
+// third-party/store endpoint and are excluded from the default suite. The
+// store now returns a ZimaOS envelope with data as an object containing
+// `modules`, while the generated SDK model expects data to be an array of
+// Module values; the store also requires authentication that this client
+// does not send. Do not repair that model spec drift here: if the SDK is
+// adopted again, update the contract and its client deliberately.
 package modmanagement_test
 
 import (
