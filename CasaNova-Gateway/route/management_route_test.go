@@ -77,7 +77,7 @@ func TestCreateRoute(t *testing.T) {
 
 	route := &model.Route{
 		Path:   "test",
-		Target: "http://localhost:8080",
+		Target: "http://127.0.0.1:8080",
 	}
 
 	body, err := json.Marshal(route)

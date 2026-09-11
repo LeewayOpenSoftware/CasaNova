@@ -232,7 +232,11 @@ func (b *bufferPool) Put(buf []byte) { b.pool.Put(&buf) }
 // whitelistFile is the persistent path the global IP allow-list lives
 // at. Outside the gateway's tmpfs runtime dir so a reboot doesn't wipe
 // the operator's configuration.
-const whitelistFile = "/etc/casanova/whitelist.json"
+//
+// A var (not a const), like routePolicyFile, purely so tests can point it at
+// a temp directory instead of the real /etc/casanova. See
+// SetConfigPathsForTest.
+var whitelistFile = "/etc/casanova/whitelist.json"
 
 type Management struct {
 	mu                  sync.RWMutex
