@@ -18,6 +18,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { getMigrationReport } from '@/api/migration'
+import { getScan as getMaintenanceScan, isModuleAbsent } from '@/api/maintenance'
 import { safeCall } from '@/api/safeCall'
 import { useAuthStore } from '@/stores/auth'
 import { canAccessSettingsPath, effectiveRole } from '@/router/settingsAccess'
@@ -49,6 +50,29 @@ const role = computed(() => effectiveRole(auth.accessToken, auth.user?.role))
 // URL for power users debugging an upgrade.
 const showMigration = ref(false)
 
+// Maintenance can be absent from the BUILD, not just from this user's reach:
+// route/v1.go registers its whole group behind a compile-time constant that is
+// currently false, so every path answers 404 and the page itself renders an
+// honest "not available in this build" card. That card is the right answer for
+// someone who arrives with a bookmark; it is the wrong thing for the rail to
+// steer people into. Offering a section whose only content is an apology is
+// still offering it.
+//
+// Probed rather than hard-coded, which matters more than it looks: mirroring a
+// backend constant in the frontend would silently become a lie the day the
+// constant flips, and nobody would think to come back here. Asking the backend
+// means this rail is right in both builds without being edited again. Same
+// shape as the migration probe below it, which is why it lives beside it.
+//
+// Shown until proven absent: hiding on any error would drop a working entry
+// during a blip, and only 404/405 actually means "this build does not have it".
+const showMaintenance = ref(true)
+
+onMounted(async () => {
+  const result = await safeCall(() => getMaintenanceScan())
+  if (isModuleAbsent(result.status)) showMaintenance.value = false
+})
+
 onMounted(async () => {
   const result = await safeCall(() => getMigrationReport())
   if (result.error || !result.data) return
@@ -69,9 +93,17 @@ const sections = computed<SettingsNavSection[]>(() => {
     { to: '/app/settings/logs', labelKey: 'settings.nav.logs', icon: 'ScrollText' },
     { to: '/app/settings/audit', labelKey: 'settings.nav.audit', icon: 'FileText' },
     { to: '/app/settings/troubleshooter', labelKey: 'settings.nav.troubleshooter', icon: 'Wrench' },
-    { to: '/app/settings/maintenance', labelKey: 'settings.nav.maintenance', icon: 'Sparkles' },
     { to: '/app/settings/diagnosis', labelKey: 'settings.nav.diagnosis', icon: 'Activity' },
   ]
+  if (showMaintenance.value) {
+    // Kept in its original slot rather than appended, so a build that HAS the
+    // module shows the same rail order it always did.
+    advanced.splice(6, 0, {
+      to: '/app/settings/maintenance',
+      labelKey: 'settings.nav.maintenance',
+      icon: 'Sparkles',
+    })
+  }
   if (showMigration.value) {
     advanced.push({ to: '/app/settings/migration', labelKey: 'settings.nav.migration', icon: 'ArrowRightLeft' })
   }

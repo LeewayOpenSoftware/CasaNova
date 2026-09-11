@@ -114,6 +114,7 @@ describe('admin-only settings pages', () => {
     expect([...ADMIN_ONLY_SETTINGS_PATHS].sort()).toEqual([
       '/app/settings/audit',
       '/app/settings/logs',
+      '/app/settings/maintenance',
       '/app/settings/scheduled',
     ])
   })
@@ -152,7 +153,6 @@ describe('admin-only settings pages', () => {
       '/app/settings/about',
       '/app/settings/updates',
       '/app/settings/diagnosis',
-      '/app/settings/maintenance',
       '/app/settings/troubleshooter',
       '/app/settings/remote-access',
       '/app/settings/app-stores',
