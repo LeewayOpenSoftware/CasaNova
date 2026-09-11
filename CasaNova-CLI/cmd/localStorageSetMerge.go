@@ -59,7 +59,7 @@ var localStorageSetMergeCmd = &cobra.Command{
 			log.Fatalln(err.Error())
 		}
 
-		client, err := local_storage.NewClientWithResponses(url)
+		client, err := local_storage.NewClientWithResponses(url, local_storage.WithHTTPClient(cliHTTPClient()))
 		if err != nil {
 			log.Fatalln(err.Error())
 		}

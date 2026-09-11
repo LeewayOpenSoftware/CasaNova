@@ -49,7 +49,7 @@ var appManagementSearchCmd = &cobra.Command{
 
 		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathAppManagement)
 
-		client, err := app_management.NewClientWithResponses(url)
+		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
 		if err != nil {
 			return err
 		}
