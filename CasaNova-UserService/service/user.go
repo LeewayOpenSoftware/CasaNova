@@ -51,7 +51,6 @@ type UserService interface {
 	DeleteUserById(id string)
 	GetUserInfoByUserName(userName string) (m model.UserDBModel)
 	GetAllUserName() (list []model.UserDBModel)
-	CountUsersByRole(role string) (count int64)
 
 	GetKeyPair() (*ecdsa.PrivateKey, *ecdsa.PublicKey)
 }
@@ -83,15 +82,6 @@ func (u *userService) CreateUser(m model.UserDBModel) model.UserDBModel {
 
 func (u *userService) GetUserCount() (userCount int64) {
 	u.db.Find(&model.UserDBModel{}).Count(&userCount)
-	return
-}
-
-// CountUsersByRole backs the last-admin guard in DeleteUser and PutUserRole:
-// the caller needs to know whether the account it is about to remove or
-// demote is the box's only one left holding a given role, not just how many
-// users exist in total.
-func (u *userService) CountUsersByRole(role string) (count int64) {
-	u.db.Model(&model.UserDBModel{}).Where("role = ?", role).Count(&count)
 	return
 }
 
