@@ -211,8 +211,22 @@ func PostCreateShareLink(ctx echo.Context) error {
 }
 
 // GET /v1/file/share-links
+//
+// ADMIN ONLY, at the same bit as the create and delete siblings above and
+// below. The whole security model of /public/share/:id is that the ID is an
+// unguessable secret handed only to the person the link was shared with. This
+// endpoint returns every live link's ID, its absolute path on disk, and the
+// ready-made public URL — so listing it IS handing out every share.
+//
+// It was gated on PermSystemRead, which guestPerms HOLDS
+// (CasaNova-Common/pkg/rbac/rbac.go), so the gate could not refuse a guest-role
+// principal — including an OAuth2-delegated token minted with role "guest" on
+// purpose to de-privilege a relying party. Same defect as requireTaskRead in
+// CasaNova-JobManagement and GetCronJobs in route/v1/cron.go; that pair carries
+// the full derivation. A read whose CONTENT is the credential belongs at the
+// write bit.
 func GetShareLinks(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	if err := requirePerm(ctx, rbac.PermSystemConfig); err != nil {
 		return err
 	}
 	shareLinksMu.Lock()

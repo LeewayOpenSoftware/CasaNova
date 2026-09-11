@@ -14,6 +14,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/authskip"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
 	"github.com/LeewayOpenSoftware/CasaNova-Gateway/service"
 	"github.com/labstack/echo/v4"
@@ -178,6 +179,39 @@ func (m *ManagementRoute) managementJWTConfig() echo_middleware.JWTConfig {
 	}
 }
 
+// WHO MAY MUTATE THE GATEWAY, AND WHY TWO SHAPES ARE NEEDED.
+//
+// PUT /tls has carried an in-handler PermSystemConfig check since Wave 31; the
+// other four mutating routes carried NONE, so any principal the JWT middleware
+// admitted — including a guest-role token — could rewrite the internal routing
+// table, drop the global IP whitelist, or move the public port.
+//
+// But two of those four have a LEGITIMATE TOKENLESS CALLER and an admin-only
+// check would have broken the box at boot: every CasaNova service registers
+// itself with POST /v1/gateway/routes, and CasaNova relays the operator's port
+// change to PUT /v1/gateway/port — both through
+// CasaNova-Common/external/gateway.go, which sends ONLY the internal secret and
+// no JWT. Such a caller skips the JWT middleware, so nothing sets a role and
+// RoleFromContext yields guest. A bare rbac.Allows would have answered 403 to
+// every service's route registration.
+//
+// So: admin OR a genuine peer, proven by the per-boot internal secret (a 0600
+// file in a 0700 root-owned directory — a caller that can read it is already
+// root). This is the shape CasaNova/route/v1/rbac_gate.go calls
+// requirePermInternal; it is spelled out here rather than imported because that
+// helper lives in another module.
+//
+// The whitelist pair gets NO peer allowance: its only client is the browser UI
+// (CasaNova-UI-v2/src/api/system.ts), which carries a real JWT. An exemption
+// with no caller is an exemption waiting to be misused.
+func managementAdmin(ctx echo.Context) bool {
+	return rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig)
+}
+
+func managementPeer(ctx echo.Context) bool {
+	return internalauth.Valid(ctx.Request().Header.Get(internalauth.HeaderName))
+}
+
 func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 	v1GatewayGroup := v1Group.Group("/gateway")
 
@@ -192,6 +226,14 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 
 		v1GatewayGroup.POST("/routes",
 			func(ctx echo.Context) error {
+				// Rewriting the routing table redirects every user's traffic.
+				// Peer-allowed: this is how each service registers at boot.
+				if !managementAdmin(ctx) && !managementPeer(ctx) {
+					return ctx.JSON(http.StatusForbidden, model.Result{
+						Success: common_err.CLIENT_ERROR,
+						Message: "admin role required",
+					})
+				}
 				var route *model.Route
 				err := ctx.Bind(&route)
 				if err != nil {
@@ -296,6 +338,14 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 
 		v1GatewayGroup.PUT("/port",
 			func(ctx echo.Context) error {
+				// Peer-allowed: CasaNova relays the operator's port change here
+				// after doing its own admin check (CasaNova/main.go).
+				if !managementAdmin(ctx) && !managementPeer(ctx) {
+					return ctx.JSON(http.StatusForbidden, model.Result{
+						Success: common_err.CLIENT_ERROR,
+						Message: "admin role required",
+					})
+				}
 				var request *model.ChangePortRequest
 
 				if err := ctx.Bind(&request); err != nil {
@@ -341,6 +391,14 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 			})
 		})
 		v1GatewayGroup.POST("/whitelist", func(ctx echo.Context) error {
+			// Admin only, no peer allowance: the whitelist is enforced on every
+			// inbound request and its only client is the browser UI.
+			if !managementAdmin(ctx) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
+			}
 			var body struct {
 				CIDR string `json:"cidr"`
 			}
@@ -373,6 +431,13 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 		// having. It returns as its own change, with its own certification.
 
 		v1GatewayGroup.DELETE("/whitelist", func(ctx echo.Context) error {
+			// Admin only, no peer allowance — see POST /whitelist above.
+			if !managementAdmin(ctx) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
+			}
 			cidr := ctx.QueryParam("cidr")
 			if cidr == "" {
 				return ctx.JSON(http.StatusBadRequest, model.Result{
