@@ -205,6 +205,14 @@ func saveCloudBackupConfig(cfg cloudBackupConfig) error {
 
 // GET /v1/sys/cloud/status — cloud backup status overview.
 func GetCloudBackupStatus(ctx echo.Context) error {
+	// Gated: reports every configured remote NAME, the local sync paths and
+	// the schedule — strictly more than GetCloudBackupProviders two
+	// functions below, which is already gated and only returns a static
+	// list of supported providers. Same gate, for the same reason.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
+		return err
+	}
+
 	_, rcloneErr := exec.LookPath("rclone")
 	installed := rcloneErr == nil
 
@@ -535,6 +543,12 @@ func PostCloudBackupSync(ctx echo.Context) error {
 
 // GET /v1/sys/cloud/sync/status — current sync progress.
 func GetCloudBackupSyncStatus(ctx echo.Context) error {
+	// Gated: the live sync state carries the remote name and the paths being
+	// synced. Same gate as its sibling status endpoint.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
+		return err
+	}
+
 	currentCloudSyncMu.Lock()
 	state := currentCloudSync
 	currentCloudSyncMu.Unlock()
