@@ -16,10 +16,12 @@ import (
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
 	"github.com/LeewayOpenSoftware/CasaNova/common"
 	"github.com/LeewayOpenSoftware/CasaNova/model"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/utils/common_err"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const backupDir = "/var/lib/casaos/backups"
@@ -46,22 +48,37 @@ var backupSources = []string{
 	"/var/lib/casaos/conf",
 }
 
+// Kept indirect so the error-reporting path can be exercised without
+// requiring tests to run as a non-root user.
+var backupWalk = filepath.Walk
+
 // ---- manifest embedded in every backup ----
 
 type backupManifest struct {
-	Hostname  string   `json:"hostname"`
-	Version   string   `json:"version"`
-	CreatedAt string   `json:"created_at"`
-	Apps      []string `json:"apps"`
+	Hostname  string          `json:"hostname"`
+	Version   string          `json:"version"`
+	CreatedAt string          `json:"created_at"`
+	Apps      []string        `json:"apps"`
+	Skipped   []backupSkipped `json:"skipped,omitempty"`
+}
+
+type backupSkipped struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+type backupCreateResult struct {
+	Skipped []backupSkipped `json:"skipped,omitempty"`
 }
 
 // ---- response shapes ----
 
 type backupInfo struct {
-	Filename string `json:"filename"`
-	Size     int64  `json:"size"`
-	Created  string `json:"created"`
-	Path     string `json:"path"`
+	Filename string          `json:"filename"`
+	Size     int64           `json:"size"`
+	Created  string          `json:"created"`
+	Path     string          `json:"path"`
+	Skipped  []backupSkipped `json:"skipped,omitempty"`
 }
 
 // POST /v1/sys/backup/create — Create a system backup tarball.
@@ -99,13 +116,17 @@ func PostBackupCreate(ctx echo.Context) error {
 	}
 
 	// Create the tarball.
-	if err := createBackupTarball(backupPath, manifest); err != nil {
+	created, err := createBackupTarball(backupPath, manifest)
+	if err != nil {
 		// Clean up partial file.
 		os.Remove(backupPath)
 		return ctx.JSON(http.StatusInternalServerError, model.Result{
 			Success: common_err.SERVICE_ERROR,
 			Message: "backup failed: " + err.Error(),
 		})
+	}
+	if len(created.Skipped) > 0 {
+		logger.Error("backup omitted paths", zap.Int("skipped", len(created.Skipped)), zap.Any("paths", created.Skipped))
 	}
 
 	info, err := os.Stat(backupPath)
@@ -124,6 +145,7 @@ func PostBackupCreate(ctx echo.Context) error {
 			Size:     info.Size(),
 			Created:  now.UTC().Format(time.RFC3339),
 			Path:     backupPath,
+			Skipped:  created.Skipped,
 		},
 	})
 }
@@ -353,10 +375,11 @@ func discoverApps() []string {
 // can read the file and so we refuse to overwrite an existing backup
 // with the same timestamp-based name (which would otherwise silently
 // clobber a legitimate backup on a clock-skew edge case).
-func createBackupTarball(dest string, manifest backupManifest) error {
+func createBackupTarball(dest string, manifest backupManifest) (backupCreateResult, error) {
+	var result backupCreateResult
 	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer f.Close()
 
@@ -366,31 +389,16 @@ func createBackupTarball(dest string, manifest backupManifest) error {
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
-	// Write the manifest first.
-	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
-	}
-	if err := tw.WriteHeader(&tar.Header{
-		Name:    "manifest.json",
-		Size:    int64(len(manifestBytes)),
-		Mode:    0644,
-		ModTime: time.Now(),
-	}); err != nil {
-		return err
-	}
-	if _, err := tw.Write(manifestBytes); err != nil {
-		return err
-	}
-
 	// Walk each source directory and add files.
 	for _, src := range backupSources {
-		if _, err := os.Stat(src); os.IsNotExist(err) {
+		if _, err := os.Stat(src); err != nil && os.IsNotExist(err) {
+			result.Skipped = append(result.Skipped, backupSkipped{Path: src, Reason: err.Error()})
 			continue
 		}
-		err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		err := backupWalk(src, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				return nil // skip unreadable files
+				result.Skipped = append(result.Skipped, backupSkipped{Path: path, Reason: err.Error()})
+				return nil
 			}
 			// Only archive regular files and directories.
 			if !info.Mode().IsRegular() && !info.IsDir() {
@@ -399,6 +407,7 @@ func createBackupTarball(dest string, manifest backupManifest) error {
 
 			header, err := tar.FileInfoHeader(info, "")
 			if err != nil {
+				result.Skipped = append(result.Skipped, backupSkipped{Path: path, Reason: err.Error()})
 				return nil
 			}
 			// Use the absolute path so restore puts files back in the
@@ -416,7 +425,8 @@ func createBackupTarball(dest string, manifest backupManifest) error {
 
 			file, err := os.Open(path)
 			if err != nil {
-				return nil // skip files we can't read
+				result.Skipped = append(result.Skipped, backupSkipped{Path: path, Reason: err.Error()})
+				return nil
 			}
 			defer file.Close()
 
@@ -424,11 +434,28 @@ func createBackupTarball(dest string, manifest backupManifest) error {
 			return err
 		})
 		if err != nil {
-			return fmt.Errorf("walk %s: %w", src, err)
+			return result, fmt.Errorf("walk %s: %w", src, err)
 		}
 	}
 
-	return nil
+	manifest.Skipped = result.Skipped
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return result, fmt.Errorf("marshal manifest: %w", err)
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name:    "manifest.json",
+		Size:    int64(len(manifestBytes)),
+		Mode:    0644,
+		ModTime: time.Now(),
+	}); err != nil {
+		return result, err
+	}
+	if _, err := tw.Write(manifestBytes); err != nil {
+		return result, err
+	}
+
+	return result, nil
 }
 
 // restoreFromTarball extracts a backup tarball to the filesystem root.
