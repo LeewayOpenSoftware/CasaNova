@@ -71,13 +71,16 @@ func (w *wsConnWriter) Write(p []byte) (int, error) {
 // log viewer is a leak waiting for one failed Kill; cancelling the request
 // context closes the daemon connection deterministically.
 func WsContainerLogs(ctx echo.Context) error {
-	// Logs routinely echo secrets (startup banners, connection strings). Gate
-	// on app-view, the same permission that lets a role see the app at all.
-	// The route is mounted behind strictJWT() so the ?token= the browser puts
-	// on the WebSocket URL is actually validated — the group-level JWT
-	// middleware skips tokenless loopback requests, and every gateway-proxied
-	// request looks exactly like one.
-	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+	// Logs routinely echo secrets (startup banners, connection strings) — the
+	// same class of data ContainerUpdateInfo/ToComposeYAML are gated to
+	// protect. A read whose content can BE a credential belongs at that
+	// same write-ish bit, not at app-view (which guest holds): "can see the
+	// app exists" is not "may read anything it ever printed." The route is
+	// mounted behind strictJWT() so the ?token= the browser puts on the
+	// WebSocket URL is actually validated — the group-level JWT middleware
+	// skips tokenless loopback requests, and every gateway-proxied request
+	// looks exactly like one.
+	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
 		return err
 	}
 
