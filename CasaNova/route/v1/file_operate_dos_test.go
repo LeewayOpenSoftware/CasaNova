@@ -85,7 +85,11 @@ func operateRequest(t *testing.T, reqCtx context.Context, body model.FileOperate
 	}
 	rec := httptest.NewRecorder()
 	ctx := echo.New().NewContext(req, rec)
+	// Both keys, because the JWT middleware sets both: SetRoleInContext(c,
+	// claims.Role, claims.ID). A role with no user id is the anonymous context
+	// requirePerm now refuses, and is not a shape production can produce.
 	ctx.Set(commonmw.ContextKeyRole, rbac.RoleAdmin)
+	ctx.Set(commonmw.ContextKeyUserID, 1)
 
 	if err := PostOperateFileOrDir(ctx); err != nil {
 		t.Fatalf("handler returned an error: %v", err)

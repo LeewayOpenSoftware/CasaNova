@@ -32,14 +32,57 @@ import (
 // file to the recycle bin. Carrying the same model.Result as the error Message
 // keeps the wire format byte-identical: echo's default error handler serialises
 // a non-string Message as-is.
+// AUTHORIZATION IS TWO QUESTIONS, AND THIS HELPER USED TO ASK ONLY ONE.
+//
+// "Does the role hold the permission" was the whole check. A request that
+// arrives with NO principal is not rejected by that question — RoleFromContext
+// fails closed to RoleGuest, and guestPerms deliberately holds PermAppView and
+// PermSystemRead, so `requirePerm(ctx, PermSystemRead)` RETURNED NIL for a
+// context nobody ever authenticated. It reads like a gate, it survives review,
+// and for those two bits it enforced nothing. Roughly forty routes were closed
+// by hand, in several waves, before it was clear the patches were chasing a
+// DEFAULT THAT FAILS OPEN rather than a run of individual oversights.
+//
+// So the second question is now asked HERE, once, instead of being remembered
+// at each of the 230+ call sites: a permission that resolved only because an
+// absent principal fell back to guest is not authorization, and is refused 401.
+//
+// THE ORDER OF THE TWO CHECKS IS THE ENTIRE SAFETY ARGUMENT — do not swap it.
+// The permission test runs FIRST, so every request this helper already refused
+// is still refused at the same branch, with the same 403 and the same body. The
+// principal test can therefore only ever turn an ALLOW into a DENY; it cannot
+// turn a DENY into an ALLOW, and it cannot change the shape of an existing
+// denial. That makes the change MONOTONE, which is what lets it land on a
+// feature-frozen line: no caller that works today can stop working unless it
+// was relying on the borrowed-guest hole, which is the hole being closed.
+//
+// WHO IS EXEMPT, AND WHY THAT IS NOT SPELLED HERE. A genuine peer service has a
+// real credential — the per-boot internal secret — and its exemption is the
+// separately NAMED requirePermInternal below, which answers before this helper
+// is consulted. An exemption you can see in the route's own gate is reviewable;
+// a tolerance buried in the default is not. Nothing else is exempt: measured
+// across the tree, the only tokenless peer callers are /v1/notify/:path,
+// /v1/samba/shares/:id and /v1/gateway/{routes,port}, none of which is gated on
+// a permission guest holds.
 func requirePerm(ctx echo.Context, p rbac.Permission) error {
-	if rbac.Allows(commonmw.RoleFromContext(ctx), p) {
-		return nil
+	if !rbac.Allows(commonmw.RoleFromContext(ctx), p) {
+		return echo.NewHTTPError(http.StatusForbidden, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: "permission denied",
+		})
 	}
-	return echo.NewHTTPError(http.StatusForbidden, model.Result{
-		Success: common_err.CLIENT_ERROR,
-		Message: "permission denied",
-	})
+	// The role holds the permission. Second question: is there a principal
+	// behind that role, or did an unauthenticated context borrow guest's?
+	// UserIDFromContext is 0 exactly when the JWT middleware set nothing —
+	// the same predicate requireSystemPrincipal already uses, kept identical
+	// on purpose so the strict gate and the default cannot drift apart.
+	if commonmw.UserIDFromContext(ctx) == 0 {
+		return echo.NewHTTPError(http.StatusUnauthorized, model.Result{
+			Success: common_err.ERROR_AUTH_TOKEN,
+			Message: "authentication required",
+		})
+	}
+	return nil
 }
 
 // requirePermInternal is requirePerm PLUS an allowance for a genuine peer

@@ -55,7 +55,13 @@ func folderQueryRequest(t *testing.T, h func(echo.Context) error, target, path s
 	rec := httptest.NewRecorder()
 	ctx := echo.New().NewContext(req, rec)
 	if role != nil {
+		// Both keys, because the JWT middleware sets both: SetRoleInContext(c,
+		// claims.Role, claims.ID). Setting only the role modelled a principal
+		// that cannot exist in production, and requirePerm now refuses it —
+		// having a role but no user id is exactly the anonymous context the
+		// strict default was added to reject.
 		ctx.Set(commonmw.ContextKeyRole, *role)
+		ctx.Set(commonmw.ContextKeyUserID, 7)
 	}
 	return rec, h(ctx)
 }

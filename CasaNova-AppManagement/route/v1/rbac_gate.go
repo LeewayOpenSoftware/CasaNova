@@ -33,9 +33,24 @@ import (
 // live box (an unauthenticated DELETE answered 403 and still deleted), and this
 // copy had the identical defect. The response body is unchanged: echo's default
 // error handler serialises a non-string Message as-is.
+// The permission test runs FIRST and the principal test SECOND, and that order
+// is the safety argument: every request already refused is still refused at the
+// same branch with the same 403 and the same body, so this can only ever turn an
+// ALLOW into a DENY — never a DENY into an ALLOW, never a different denial.
+//
+// The second test exists because "does the role hold the permission" does not
+// reject a request that arrived with NO principal: RoleFromContext fails closed
+// to RoleGuest, and guest holds PermAppView and PermSystemRead, so a gate on
+// either of those bits returned nil for a context nobody authenticated. See
+// CasaNova/route/v1/rbac_gate.go for the full account.
 func requirePerm(ctx echo.Context, p rbac.Permission) error {
-	if rbac.Allows(commonmw.RoleFromContext(ctx), p) {
-		return nil
+	if !rbac.Allows(commonmw.RoleFromContext(ctx), p) {
+		return echo.NewHTTPError(http.StatusForbidden, map[string]string{"message": "permission denied"})
 	}
-	return echo.NewHTTPError(http.StatusForbidden, map[string]string{"message": "permission denied"})
+	// The role holds the permission. Second question: is there a principal
+	// behind that role, or did an unauthenticated context borrow guest's?
+	if commonmw.UserIDFromContext(ctx) == 0 {
+		return echo.NewHTTPError(http.StatusUnauthorized, map[string]string{"message": "authentication required"})
+	}
+	return nil
 }
