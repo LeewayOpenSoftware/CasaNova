@@ -108,7 +108,12 @@ func (m *Manager) Trash(srcPath string) (*Entry, error) {
 	}
 
 	// Refuse to trash the trash directory itself (infinite recursion).
-	if strings.HasPrefix(absPath, trashRoot) {
+	// A bare HasPrefix would also reject a sibling whose name merely starts
+	// with trashRoot's name (e.g. trashRoot=".Trash-casanova" wrongly
+	// matching ".Trash-casanova-backup/foo") — pathWithinMount requires an
+	// exact match or a path separator after it, same fix already applied
+	// to the mount-containment check below.
+	if pathWithinMount(absPath, trashRoot) {
 		return nil, errors.New("cannot trash items inside the trash directory")
 	}
 
