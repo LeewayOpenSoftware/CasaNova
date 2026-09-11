@@ -49,7 +49,11 @@ type AntivirusStatus struct {
 // Currently supports ClamAV detection via `clamscan --version` and
 // daemon check via `clamd` or `clamav-daemon` service status.
 func GetAntivirusStatus(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal, not requirePerm: guest holds PermSystemRead, and
+	// a tokenless caller resolves to guest, so the bare permission check was a
+	// no-op against an unauthenticated request. See system.go's comment on
+	// requireSystemPrincipal for the full mechanism.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	status := AntivirusStatus{
