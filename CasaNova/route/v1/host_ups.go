@@ -59,7 +59,10 @@ func loadUPSConfig() UPSConfig {
 
 // GET /v1/sys/host/ups/config
 func GetUPSConfig(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see route/v1/antivirus.go's GetAntivirusStatus
+	// comment — guest holds PermSystemRead, so a bare requirePerm never
+	// refused a tokenless caller.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: loadUPSConfig()})
@@ -112,7 +115,8 @@ func PutUPSConfig(ctx echo.Context) error {
 
 // GET /v1/sys/host/ups
 func GetHostUPS(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see GetUPSConfig above.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	cfg := loadUPSConfig()

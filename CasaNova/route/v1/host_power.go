@@ -13,7 +13,10 @@ import (
 // GET /v1/sys/host/power — current UPS power state (from the Forza daemon) +
 // orchestrator health. Read-only; drives the UI power card.
 func GetHostPower(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see route/v1/antivirus.go's GetAntivirusStatus
+	// comment — guest holds PermSystemRead, so a bare requirePerm never
+	// refused a tokenless caller.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	reading, lastErr := service.Power().Status()
@@ -34,7 +37,11 @@ func GetHostPower(ctx echo.Context) error {
 
 // GET /v1/sys/host/power/config
 func GetHostPowerConfig(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see GetHostPower above. RedactedConfig already
+	// strips the Forza UPS token from this response (see its own comment in
+	// service/power.go); this closes the tokenless-caller gap that remained
+	// around the rest of the config.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	return ctx.JSON(http.StatusOK, model.Result{

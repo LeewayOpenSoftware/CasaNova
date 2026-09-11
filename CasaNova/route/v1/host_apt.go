@@ -116,7 +116,10 @@ type AptStatus struct {
 
 // GET /v1/sys/host/apt/updates — the cached result of the last check.
 func GetAptUpdates(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see route/v1/antivirus.go's GetAntivirusStatus
+	// comment — guest holds PermSystemRead, so a bare requirePerm never
+	// refused a tokenless caller.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	st := readAptCache()
@@ -321,7 +324,8 @@ type AptUpgradeStatus struct {
 
 // GET /v1/sys/host/apt/upgrade/status — poll the transient unit + log tail.
 func GetAptUpgradeStatus(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see GetAptUpdates above.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	st := AptUpgradeStatus{State: "idle"}
@@ -421,7 +425,8 @@ type AptAutoStatus struct {
 
 // GET /v1/sys/host/apt/auto — unattended-upgrades status.
 func GetAptAuto(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see GetAptUpdates above.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	st := AptAutoStatus{}

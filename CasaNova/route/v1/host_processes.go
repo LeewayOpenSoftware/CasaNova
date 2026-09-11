@@ -33,7 +33,10 @@ var unitCgroupRe = regexp.MustCompile(`([a-zA-Z0-9_.@-]+\.service)`)
 
 // GET /v1/sys/host/processes?limit=25
 func GetHostProcesses(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// requireSystemPrincipal: see route/v1/antivirus.go's GetAntivirusStatus
+	// comment — guest holds PermSystemRead, so a bare requirePerm never
+	// refused a tokenless caller.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
 	limit := 25
