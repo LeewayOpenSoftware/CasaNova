@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
@@ -30,7 +31,6 @@ import (
 const (
 	aptCacheFile   = "/var/lib/casanova/apt-status.json"
 	aptUpgradeUnit = "casanova-apt-upgrade"
-	aptUpgradeLog  = "/var/lib/casanova/logs/apt-upgrade.log"
 	// The transient unit runs with --collect (so the fixed name is always
 	// reusable), which garbage-collects the unit on exit — erasing its
 	// ActiveState/ExecMainStatus. A collected SUCCESS and a collected FAILURE
@@ -39,6 +39,10 @@ const (
 	aptUpgradeStatusFile = "/var/lib/casanova/logs/apt-upgrade.status"
 	aptCheckMax          = 3 * time.Minute
 )
+
+// aptUpgradeLog is a var (not const) so a test can point it at a temp file
+// instead of the real /var/lib/casanova/logs path.
+var aptUpgradeLog = "/var/lib/casanova/logs/apt-upgrade.log"
 
 // launchAptUnit starts a privileged apt/unattended-upgrade command as a
 // transient one-shot service. It wraps the (constant) command so the child's
@@ -328,7 +332,11 @@ func GetAptUpgradeStatus(ctx echo.Context) error {
 	if err := requireSystemPrincipal(ctx, rbac.PermSystemRead); err != nil {
 		return err
 	}
-	st := AptUpgradeStatus{State: "idle"}
+	// Tail defaults to an empty (non-nil) slice, not the zero value's nil:
+	// the JSON tag has no omitempty, so a nil slice serializes as `"tail":
+	// null` and the UI reads `upgrade.tail.length` unconditionally once state
+	// isn't idle — a null there is a client-side crash, not a hidden field.
+	st := AptUpgradeStatus{State: "idle", Tail: []string{}}
 	unit := aptUpgradeUnit + ".service"
 	active := showUnitProp(unit, "ActiveState")
 	if active == "active" || active == "activating" || active == "deactivating" || active == "reloading" {
@@ -345,8 +353,19 @@ func GetAptUpgradeStatus(ctx echo.Context) error {
 			st.State = "failed"
 		}
 	}
-	st.Tail = tailFile(aptUpgradeLog, 40)
 	st.RebootRequired, st.RebootPackages = rebootRequired()
+	// Tail is the raw stdout/stderr of a privileged apt-get run: package
+	// names/versions, dpkg maintainer-script output, and — for a private or
+	// third-party APT source — potentially a repo URL carrying embedded Basic
+	// Auth credentials. Triggering an upgrade already requires
+	// PermSystemConfig (PostAptUpgrade above); reading the full raw output of
+	// that privileged run should require the same tier, not the broader
+	// PermSystemRead this handler is gated on for its coarse status. A merely
+	// authenticated, non-admin caller still gets state/exit code/reboot info
+	// — enough for a "system needs attention" indicator — without the raw log.
+	if rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
+		st.Tail = tailFile(aptUpgradeLog, 40)
+	}
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: st})
 }
 

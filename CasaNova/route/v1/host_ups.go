@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
+	commonfile "github.com/LeewayOpenSoftware/CasaNova-Common/utils/file"
 	"github.com/labstack/echo/v4"
 )
 
@@ -23,7 +23,7 @@ import (
 // we run `upsc <name>@<host>`; otherwise we probe the local daemon. host/name
 // are validated to a safe charset and passed as separate argv (no shell), so
 // there is no injection path.
-const upsConfigFile = "/var/lib/casanova/ups-config.json"
+var upsConfigFile = "/var/lib/casanova/ups-config.json"
 
 // hostname / IPv4 / IPv6-in-brackets, plus the NUT ups name charset.
 var upsHostRe = regexp.MustCompile(`^[a-zA-Z0-9._:\[\]-]{1,255}$`)
@@ -98,13 +98,15 @@ func PutUPSConfig(ctx echo.Context) error {
 			Message: "failed to encode UPS config: " + err.Error(),
 		})
 	}
-	if err := os.MkdirAll(filepath.Dir(upsConfigFile), 0o755); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, model.Result{
-			Success: common_err.SERVICE_ERROR,
-			Message: "failed to create config directory: " + err.Error(),
-		})
-	}
-	if err := os.WriteFile(upsConfigFile, raw, 0o644); err != nil {
+	// commonfile.WriteFileAtomic does write-tmp + fsync(file) + close + rename
+	// + fsync(parent dir) (it also creates the parent directory). A plain
+	// os.WriteFile leaves a window where a crash mid-write, or a crash after
+	// the write but before the page cache flushes, can leave upsConfigFile
+	// truncated or torn; loadUPSConfig ignores json.Unmarshal errors on a
+	// corrupt file and silently falls back to a zero-value config, so the
+	// box would quietly stop monitoring the UPS with no error surfaced
+	// anywhere.
+	if err := commonfile.WriteFileAtomic(upsConfigFile, raw, 0o644); err != nil {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{
 			Success: common_err.SERVICE_ERROR,
 			Message: "failed to save UPS config: " + err.Error(),
