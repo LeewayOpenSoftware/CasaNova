@@ -19,6 +19,8 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { getMigrationReport } from '@/api/migration'
 import { safeCall } from '@/api/safeCall'
+import { useAuthStore } from '@/stores/auth'
+import { canAccessSettingsPath, effectiveRole } from '@/router/settingsAccess'
 
 interface SettingsNavEntry {
   to: string
@@ -32,6 +34,12 @@ interface SettingsNavSection {
 }
 
 const { t } = useI18n()
+const auth = useAuthStore()
+
+// Same question the router guard asks, so the rail never offers a page the
+// guard would immediately bounce the visitor out of. A non-admin is not being
+// denied anything here: those pages load nothing without PermSystemConfig.
+const role = computed(() => effectiveRole(auth.accessToken, auth.user?.role))
 
 // Probe the migration report once at mount. Fresh CasaNova installs
 // (no /etc/casaos/, no casaos-* units, no legacy compose stacks) get
@@ -67,10 +75,12 @@ const sections = computed<SettingsNavSection[]>(() => {
   if (showMigration.value) {
     advanced.push({ to: '/app/settings/migration', labelKey: 'settings.nav.migration', icon: 'ArrowRightLeft' })
   }
+  const visible = (entries: SettingsNavEntry[]) =>
+    entries.filter((e) => canAccessSettingsPath(e.to, role.value))
   return [
     {
       labelKey: 'settings.nav.core',
-      entries: [
+      entries: visible([
         { to: '/app/settings/general', labelKey: 'settings.nav.general', icon: 'Settings' },
         // Theme packs used to be its own entry. It is now a section inside
         // Appearance: picking a theme and managing the packs they come from
@@ -93,10 +103,12 @@ const sections = computed<SettingsNavSection[]>(() => {
         // through the power-user shelf. It is a basic question, so it
         // closes the basic group instead.
         { to: '/app/settings/about', labelKey: 'settings.nav.about', icon: 'Info' },
-      ],
+      ]),
     },
-    { labelKey: 'settings.nav.advanced', entries: advanced },
-  ]
+    { labelKey: 'settings.nav.advanced', entries: visible(advanced) },
+    // A section filtered down to nothing would still draw its rule and its
+    // header — a group label with no group under it.
+  ].filter((section) => section.entries.length > 0)
 })
 </script>
 

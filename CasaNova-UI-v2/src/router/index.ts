@@ -15,6 +15,11 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-rou
 import { useAuthStore } from '@/stores/auth'
 import { getUserStatus } from '@/api/users'
 import { shouldDiscardExpiredSession } from './sessionExpiry'
+import {
+  SETTINGS_FALLBACK_PATH,
+  canAccessSettingsPath,
+  effectiveRole,
+} from './settingsAccess'
 
 // Cache the initialization check so we don't hit the API on every navigation.
 // The promise acts as a dedup lock: concurrent navigations await the same call.
@@ -306,6 +311,19 @@ router.beforeEach(async (to) => {
   }
   if (to.name === 'login' && auth.isAuthenticated) {
     return { path: '/app' }
+  }
+
+  // A handful of settings pages have no content at all below PermSystemConfig
+  // — their single mount-time read is admin-only, so a non-admin who reaches
+  // one gets an empty page and an error toast. Send them to a page that will
+  // load instead. The decision itself lives in settingsAccess.ts, next to the
+  // evidence for which pages those are; the guard only applies it.
+  //
+  // Not a security boundary: the backend refuses these reads on its own and
+  // keeps refusing them. This is why an undeterminable role hides rather than
+  // shows — a page wrongly hidden costs nothing that was reachable anyway.
+  if (auth.isAuthenticated && !canAccessSettingsPath(to.path, effectiveRole(auth.accessToken, auth.user?.role))) {
+    return { path: SETTINGS_FALLBACK_PATH }
   }
   return true
 })
