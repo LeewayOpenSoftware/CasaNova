@@ -755,6 +755,14 @@ func (a *AppManagement) RepairComposeApp(ctx echo.Context) error {
 }
 
 func (a *AppManagement) ComposeAppLogs(ctx echo.Context, id codegen.ComposeAppID, params codegen.ComposeAppLogsParams) error {
+	// Up to 1000 lines of raw stdout/stderr — startup banners, connection
+	// strings, and anything else the app printed, which routinely includes
+	// secrets. Same data class as MyComposeApp above (env vars): gated the
+	// same way, not on a lower "can view the app" bit.
+	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+		return err
+	}
+
 	if id == "" {
 		message := ErrComposeAppIDNotProvided.Error()
 		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{
