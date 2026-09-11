@@ -14,7 +14,7 @@
 // the whole app because we back it with a single module-level ref.
 
 import { ref, watch } from 'vue'
-import { getPref, setPref } from '@/composables/syncedPrefs'
+import { getPref, setPref, prefsGeneration } from '@/composables/syncedPrefs'
 
 const STORAGE_KEY = 'casanova.devmode'
 const ADVANCED_KEY = 'casanova.advancedmode'
@@ -43,17 +43,27 @@ const advancedMode = ref<boolean>(readAdvanced())
 // because it keeps the composable usable as a plain ref in templates.
 watch(devMode, (v) => {
   try {
-    setPref(STORAGE_KEY, v ? 'true' : 'false')
+    const next = v ? 'true' : 'false'
+    if (getPref(STORAGE_KEY) !== next) setPref(STORAGE_KEY, next)
   } catch {
     // localStorage access can throw in some sandboxed contexts; ignore.
   }
 })
 watch(advancedMode, (v) => {
   try {
-    setPref(ADVANCED_KEY, v ? 'true' : 'false')
+    const next = v ? 'true' : 'false'
+    if (getPref(ADVANCED_KEY) !== next) setPref(ADVANCED_KEY, next)
   } catch {
     // localStorage access can throw in some sandboxed contexts; ignore.
   }
+})
+
+// Module-level refs are built at IMPORT time, which is long before the
+// backend hydrate lands on a fresh login. Re-read when it does, or both
+// toggles silently revert to off for the whole session. See iconPack.ts.
+watch(prefsGeneration(), () => {
+  devMode.value = readInitial()
+  advancedMode.value = readAdvanced()
 })
 
 export function useDevMode() {
