@@ -21,6 +21,12 @@ type MountError interface {
 }
 
 func (s *LocalStorage) GetMounts(ctx echo.Context, params codegen.GetMountsParams) error {
+	// See v1/disk.go GetDiskList for why this needs PermStorageRead: the
+	// Wave 26 hardening pass gated Mount/Unmount below but never touched
+	// this read of the full mount table.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	mounts, err := service.MyService.LocalStorage().GetMounts(params)
 	if err != nil {
 		message := err.Error()

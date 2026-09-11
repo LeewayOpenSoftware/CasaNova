@@ -40,6 +40,15 @@ type StorageMessage struct {
 // @Success 200 {string} string "ok"
 // @Router /disk/list [get]
 func GetDiskList(ctx echo.Context) error {
+	// Wave 26 gated every mutation in this file on PermStorageWrite but never
+	// touched the reads: full block-device/partition/serial inventory was
+	// reachable with no permission check at all. PermStorageRead is the bit
+	// rbac.go itself defines for exactly this ("list disks, SMART, usage"),
+	// matching the read/write split every other storage-read handler in this
+	// codebase uses (e.g. CasaNova/route/v1/samba.go, smart.go, smb.go).
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	blkList := service.MyService.Disk().LSBLK(false)
 
 	dbList, err := service.MyService.Disk().GetSerialAllFromDB()
@@ -293,6 +302,11 @@ func DeleteDisksUmount(ctx echo.Context) error {
 }
 
 func GetDiskSize(ctx echo.Context) error {
+	// Same gap as GetDiskList above, sharper here: path is caller-supplied,
+	// so an ungated caller could probe usage of any path on the host.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	path := ctx.QueryParam("path")
 	if len(path) == 0 {
 		return ctx.JSON(common_err.CLIENT_ERROR, model.Result{Success: common_err.INVALID_PARAMS, Message: common_err.GetMsg(common_err.INVALID_PARAMS)})

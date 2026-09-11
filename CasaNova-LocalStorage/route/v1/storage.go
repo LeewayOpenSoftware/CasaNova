@@ -71,6 +71,12 @@ func validateDevicePath(ctx echo.Context, path string) error {
 }
 
 func GetStorageList(ctx echo.Context) error {
+	// See GetDiskList (disk.go) for why this needs PermStorageRead: the
+	// Wave 26 hardening pass gated every write in this package (PostAddStorage,
+	// PutFormatStorage, DeleteStorage below) but never touched the reads.
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	system := ctx.QueryParam("system")
 
 	blkList := service.MyService.Disk().LSBLK(false)

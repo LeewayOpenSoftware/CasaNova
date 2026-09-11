@@ -85,6 +85,14 @@ func (a *AppManagement) MyComposeAppList(ctx echo.Context) error {
 }
 
 func (a *AppManagement) MyComposeApp(ctx echo.Context, id codegen.ComposeAppID) error {
+	// The compose project this returns includes every service's environment
+	// variables (DB passwords, API keys, etc.) — with Accept: application/yaml
+	// it hands back the raw compose file text directly. Same data class as
+	// ApplyComposeAppSettings below, gated the same way.
+	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+		return err
+	}
+
 	if id == "" {
 		message := ErrComposeAppIDNotProvided.Error()
 		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{

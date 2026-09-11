@@ -17,6 +17,13 @@ import (
 )
 
 func ListStorages(ctx echo.Context) error {
+	// See GetDiskList (disk.go) for why this needs PermStorageRead: the
+	// Wave 26/30 hardening pass gated UmountStorage below but never touched
+	// this read, which lists every configured cloud-storage mount (fs type,
+	// mount point, account name).
+	if err := requirePerm(ctx, rbac.PermStorageRead); err != nil {
+		return err
+	}
 	// var req model.PageReq
 	// if err := ctx.Bind(&req); err != nil {
 	// 	return ctx.JSON(common_err.SUCCESS, model.Result{Success: common_err.CLIENT_ERROR, Message: common_err.GetMsg(common_err.CLIENT_ERROR), Data: err.Error()})

@@ -591,6 +591,14 @@ func ToComposeYAML(ctx echo.Context) error {
 // @Success 200 {string} string "ok"
 // @Router /app/update/{id}/info [get]
 func ContainerUpdateInfo(ctx echo.Context) error {
+	// Same data class as ToComposeYAML above — GetCustomizationPostData
+	// includes every environment variable on a locally-installed container,
+	// which routinely holds database passwords and API keys. Gated the same
+	// way for the same reason.
+	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
+		return err
+	}
+
 	appID := ctx.Param("id")
 
 	// Wave 35-X: bounded synchronous read.
