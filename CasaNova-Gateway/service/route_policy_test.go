@@ -16,13 +16,13 @@ import (
 
 // TestMain keeps the whole package off the real /etc/casanova path. Tests in
 // this package construct Management freely and must never touch (or depend
-// on) the production policy file.
+// on) the production policy file or the global whitelist file.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "casanova-gateway-policy-testmain")
 	if err != nil {
 		panic(err)
 	}
-	routePolicyFile = filepath.Join(dir, "route-policy.json")
+	SetConfigPathsForTest(dir)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
