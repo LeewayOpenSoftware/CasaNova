@@ -581,7 +581,7 @@ type InstallComposeAppParams struct {
 
 // UninstallComposeAppParams defines parameters for UninstallComposeApp.
 type UninstallComposeAppParams struct {
-	// DeleteConfigFolder Delete the config folder of the app
+	// DeleteConfigFolder Also delete volume source directories that live under the apps directory. NOT a general delete-my-data switch - an app whose volumes live outside it (the normal case) keeps its data. Containers, images, named volumes and the app working directory are deleted regardless of this value.
 	DeleteConfigFolder *DeleteConfigFolder `form:"delete_config_folder,omitempty" json:"delete_config_folder,omitempty"`
 }
 
