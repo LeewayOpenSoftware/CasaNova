@@ -537,6 +537,40 @@ func getUserLimiter(username string) *rate.Limiter {
 	return limiter
 }
 
+// resolveEffectiveRole determines the effective role to mint into access and
+// refresh tokens, preserving backward-compatibility for legacy accounts across
+// both login and refresh token issuance.
+//
+// Wave 35-U / Role Mint Parity:
+// A previous implementation used `string(rbac.Normalize(role))` under the
+// assumption that missing/empty values would normalize to admin. However,
+// rbac.Normalize fails closed to RoleGuest for empty or invalid input.
+// This caused legacy accounts with empty role columns or unrecognized
+// legacy strings (e.g. "administrator", "owner") to be silently demoted
+// to guest upon token minting.
+//
+// To prevent locking account holders out of their own box:
+//   - If the stored role is empty or whitespace-only, fall back explicitly to
+//     "admin" (matching startup backfill in pkg/sqlite/db.go).
+//   - If rbac.Normalize returns RoleGuest but the raw value was NOT
+//     case-insensitively "guest" (e.g. "administrator", "owner", typos),
+//     promote to "admin".
+//   - Otherwise, return the normalized role ("admin", "user", "guest").
+//
+// Both PostUserLogin and PostUserRefreshToken MUST use this helper so their
+// minted tokens never diverge.
+func resolveEffectiveRole(storedRole string) string {
+	trimmed := strings.TrimSpace(storedRole)
+	if trimmed == "" {
+		return string(rbac.RoleAdmin)
+	}
+	normalized := rbac.Normalize(trimmed)
+	if normalized == rbac.RoleGuest && !strings.EqualFold(trimmed, "guest") {
+		return string(rbac.RoleAdmin)
+	}
+	return string(normalized)
+}
+
 // @Summary login
 // @Produce  application/json
 // @Accept application/json
@@ -658,44 +692,10 @@ func PostUserLogin(ctx echo.Context) error {
 
 	privateKey, _ := service.MyService.User().GetKeyPair()
 
-	// Resolve the user's role at issue time.
-	//
-	// Wave 35-U: the previous implementation was
-	//     effectiveRole := string(rbac.Normalize(user.Role))
-	// with a comment claiming "Missing/empty column normalizes to admin
-	// (backward-compatible with pre-RBAC installs)". That comment was
-	// aspirational — rbac.Normalize actually fails closed to RoleGuest
-	// for empty or invalid input. So any user whose DB row still held
-	// an empty Role column (legacy installs, or rows created by the
-	// register handler before the column was added) received a JWT
-	// with role="guest" at login time. The token was perfectly valid,
-	// the user was immediately demoted to guest, and every admin page
-	// (users list, system updates, RBAC settings…) silently 403'd for
-	// their otherwise-normal session.
-	//
-	// Fix: fall BACK to admin explicitly when the stored role is
-	// empty, and only run Normalize on non-empty values. This matches
-	// the AutoMigrate backfill in pkg/sqlite/db.go which already
-	// promotes legacy empty rows to "admin" at startup — the backfill
-	// alone wasn't enough because a row created between the schema
-	// migration and the first admin login could still end up here
-	// with an empty Role (e.g. register handler paths that didn't
-	// populate the column yet).
-	effectiveRole := ""
-	if strings.TrimSpace(user.Role) == "" {
-		effectiveRole = string(rbac.RoleAdmin)
-	} else {
-		normalized := rbac.Normalize(user.Role)
-		if normalized == rbac.RoleGuest && !strings.EqualFold(user.Role, "guest") {
-			// An explicitly-unrecognized legacy role like "administrator"
-			// or "owner" — promote to admin rather than silently dropping
-			// the user to guest. Admin mis-spellings should not lock
-			// the account holder out of their own box.
-			effectiveRole = string(rbac.RoleAdmin)
-		} else {
-			effectiveRole = string(normalized)
-		}
-	}
+	// Resolve the user's role at issue time using resolveEffectiveRole.
+	// Both login and refresh MUST use the same role resolution logic to
+	// prevent legacy admin accounts from dropping to guest upon token refresh.
+	effectiveRole := resolveEffectiveRole(user.Role)
 
 	token := system_model.VerifyInformation{}
 
@@ -1591,8 +1591,9 @@ func PostUserRefreshToken(ctx echo.Context) error {
 	//     refresh-family TTL — completely defeating role changes.
 	//   - A user renamed via PutUser kept appearing in audit logs
 	//     under their old username.
-	// Login (line 578) already does `effectiveRole := rbac.Normalize(...)`
-	// from the DB; refresh just skipped that step.
+	// Wave 34-X / Role Mint Parity: re-resolve role + username from the
+	// database using resolveEffectiveRole. Both login and refresh must
+	// use resolveEffectiveRole to guarantee identical token role minting.
 	currentUser := service.MyService.User().GetUserInfoById(strconv.Itoa(claims.ID))
 	if currentUser.Id == 0 {
 		// Account no longer exists — refuse to mint a new token. The
@@ -1605,7 +1606,7 @@ func PostUserRefreshToken(ctx echo.Context) error {
 			Message: common_err.GetMsg(common_err.VERIFICATION_FAILURE),
 		})
 	}
-	effectiveRole := string(rbac.Normalize(currentUser.Role))
+	effectiveRole := resolveEffectiveRole(currentUser.Role)
 	effectiveUsername := currentUser.Username
 	if effectiveUsername == "" {
 		effectiveUsername = claims.Username
