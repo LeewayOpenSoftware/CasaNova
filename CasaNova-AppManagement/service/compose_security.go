@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -313,6 +314,26 @@ func isHostNamespace(mode string) bool {
 // are caught by the install path's filepath.Clean before mkdir.
 func isDangerousBindSource(src string) bool {
 	clean := filepath.Clean(src)
+	if matchesDangerousBind(clean) {
+		return true
+	}
+	// filepath.Clean is a STRING operation: it cannot see that an allowed
+	// path is a symlink INTO a denied one. Docker resolves the host path when
+	// it mounts, so a link planted at an allowed location — say
+	// /DATA/AppData/<app>/hostlink -> /var/run — mounts the target and hands
+	// the container the docker socket, while the lexical check above reads
+	// only "/DATA/AppData/...", which is allowed. Check where it actually
+	// lands as well. This can only ever ADD a denial: a source whose
+	// resolved form is harmless keeps the verdict it had.
+	if resolved := resolveBindSource(clean); resolved != clean {
+		return matchesDangerousBind(resolved)
+	}
+	return false
+}
+
+// matchesDangerousBind is the lexical denylist test, unchanged — split out so
+// it can be applied to both the literal path and its resolved form.
+func matchesDangerousBind(clean string) bool {
 	sep := string(filepath.Separator)
 	for _, prefix := range dangerousBindSources {
 		if clean == prefix {
@@ -331,6 +352,34 @@ func isDangerousBindSource(src string) bool {
 		}
 	}
 	return false
+}
+
+// resolveBindSource reports where clean actually lands on disk, resolving the
+// deepest ancestor that exists and re-appending the components that do not.
+//
+// A bind source frequently does NOT exist yet — Docker creates it — and a path
+// that does not exist cannot be a symlink to anywhere, so an unresolvable one
+// keeps its lexical verdict rather than being guessed at. os.Lstat, not
+// os.Stat, so a dangling link still counts as existing.
+func resolveBindSource(clean string) string {
+	dir := clean
+	var missing []string
+	for {
+		if _, err := os.Lstat(dir); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return clean
+		}
+		missing = append([]string{filepath.Base(dir)}, missing...)
+		dir = parent
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return clean
+	}
+	return filepath.Join(append([]string{resolved}, missing...)...)
 }
 
 func isDangerousDevice(src string) bool {
