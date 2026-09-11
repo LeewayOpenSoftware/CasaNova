@@ -101,17 +101,17 @@ func InitV2Router() http.Handler {
 				return nil, echo.ErrUnauthorized
 			}
 
-			// Wave 35-U: match v1's role-recovery path so v2 endpoints
-			// (e.g. /v2/users/*) don't silently 403 for sessions that
-			// were issued before the login handler was fixed. See
-			// v1.go's ParseTokenFunc comment for the full rationale.
-			role := claims.Role
-			// Skip the DB re-read for OAuth2-delegated tokens (minted "guest"
-			// on purpose to de-privilege a relying party). See v1.go.
-			if (role == "" || role == "guest") && claims.ID != 0 && claims.Issuer != "oauth2-delegated" {
-				if dbUser := service.MyService.User().GetUserInfoById(strconv.Itoa(claims.ID)); dbUser.Id != 0 && dbUser.Role != "" {
-					role = dbUser.Role
-				}
+			// finalizeAccessClaims (access_claims.go) rejects refresh-issued
+			// claims and resolves the effective role, recovering a stale
+			// empty/guest claim from the DB. OLA 3 — this call site used to
+			// do only the role-recovery half by hand, with a comment
+			// claiming to match v1.go; the refresh-rejection half was
+			// missing, so a caller holding only a refresh token (minted for
+			// POST /v1/users/refresh, never meant to be used directly) could
+			// call any v2 endpoint with it.
+			role, ok := finalizeAccessClaims(claims)
+			if !ok {
+				return nil, echo.ErrUnauthorized
 			}
 
 			c.Request().Header.Set("user_id", strconv.Itoa(claims.ID))
@@ -119,22 +119,7 @@ func InitV2Router() http.Handler {
 
 			return claims, nil
 		},
-		TokenLookupFuncs: []echo_middleware.ValuesExtractor{
-			func(c echo.Context) ([]string, error) {
-				h := c.Request().Header.Get(echo.HeaderAuthorization)
-				// Strip the "Bearer " auth scheme so ParseTokenFunc receives
-				// the bare JWT. echo does NOT strip the scheme for custom
-				// extractors, and jwt.Validate cannot parse "Bearer <jwt>".
-				// Case-insensitive per RFC 6750 §2.1. Mirrors v1.go:161-172.
-				// (Previously latent: the blanket loopback skip meant the JWT
-				// middleware never ran on the Gateway-proxied path, so this
-				// extractor was never exercised for real traffic.)
-				if len(h) >= 7 && strings.EqualFold(h[:7], "Bearer ") {
-					h = h[7:]
-				}
-				return []string{h}, nil
-			},
-		},
+		TokenLookupFuncs: []echo_middleware.ValuesExtractor{v2TokenExtractor},
 	}))
 
 	e.Use(middleware.OapiRequestValidatorWithOptions(_swagger, &middleware.Options{Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc}}))
@@ -142,6 +127,28 @@ func InitV2Router() http.Handler {
 	codegen.RegisterHandlersWithBaseURL(e, UserService, V2APIPath)
 
 	return e
+}
+
+// v2TokenExtractor reads the bearer token from the Authorization header,
+// falling back to ?token= for WebSocket/SSE callers that cannot set a
+// header. Named and tested on its own because it silently lost that
+// fallback once already: this file's own comment on the closure it replaces
+// claimed to mirror v1.go's extractor, which has the fallback — this one
+// didn't. OLA 3 — same failure mode CasaNova/route/v1.go's wsTokenExtractor
+// was written to prevent, just not yet applied to this module.
+func v2TokenExtractor(c echo.Context) ([]string, error) {
+	h := c.Request().Header.Get(echo.HeaderAuthorization)
+	if h == "" {
+		return []string{c.QueryParam("token")}, nil
+	}
+	// Strip the "Bearer " auth scheme so ParseTokenFunc receives the bare
+	// JWT. echo does NOT strip the scheme for custom extractors, and
+	// jwt.Validate cannot parse "Bearer <jwt>". Case-insensitive per RFC
+	// 6750 §2.1.
+	if len(h) >= 7 && strings.EqualFold(h[:7], "Bearer ") {
+		h = h[7:]
+	}
+	return []string{h}, nil
 }
 
 func InitV2DocRouter(docHTML string, docYAML string) http.Handler {

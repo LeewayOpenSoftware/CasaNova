@@ -103,19 +103,7 @@ func InitV2Router() http.Handler {
 
 			return claims, nil
 		},
-		TokenLookupFuncs: []echo_middleware.ValuesExtractor{
-			func(c echo.Context) ([]string, error) {
-				h := c.Request().Header.Get(echo.HeaderAuthorization)
-				// Strip the "Bearer " auth scheme so ParseTokenFunc
-				// receives the bare JWT. echo does NOT strip the scheme
-				// for custom extractors, and jwt.Validate cannot parse
-				// "Bearer <jwt>". Case-insensitive per RFC 6750 §2.1.
-				if len(h) >= 7 && strings.EqualFold(h[:7], "Bearer ") {
-					h = h[7:]
-				}
-				return []string{h}, nil
-			},
-		},
+		TokenLookupFuncs: []echo_middleware.ValuesExtractor{v2TokenExtractor},
 	}))
 
 	e.Use(middleware.OapiRequestValidatorWithOptions(_swagger, &middleware.Options{
@@ -136,6 +124,30 @@ func InitV2Router() http.Handler {
 	e.PUT(V2APIPath+"/standby", ls.PutStandby)
 
 	return e
+}
+
+// v2TokenExtractor reads the bearer token from the Authorization header,
+// falling back to ?token= for WebSocket/SSE callers that cannot set a
+// header. Named and tested on its own (see v2_token_extractor_test.go)
+// because it silently lost that fallback once already: this file's own
+// logger-config comment above documents that ?token= is expected here for
+// WS/SSE auth, but the inline closure this replaces only ever read the
+// header. OLA 3 — same failure mode as CasaNova/route/v1.go's
+// wsTokenExtractor was written to prevent, just not yet applied to this
+// module.
+func v2TokenExtractor(c echo.Context) ([]string, error) {
+	h := c.Request().Header.Get(echo.HeaderAuthorization)
+	if h == "" {
+		return []string{c.QueryParam("token")}, nil
+	}
+	// Strip the "Bearer " auth scheme so ParseTokenFunc receives the bare
+	// JWT. echo does NOT strip the scheme for custom extractors, and
+	// jwt.Validate cannot parse "Bearer <jwt>". Case-insensitive per RFC
+	// 6750 §2.1.
+	if len(h) >= 7 && strings.EqualFold(h[:7], "Bearer ") {
+		h = h[7:]
+	}
+	return []string{h}, nil
 }
 
 func InitV2DocRouter(docHTML string, docYAML string) http.Handler {
