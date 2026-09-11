@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
 	"go.uber.org/zap"
 )
@@ -93,6 +94,15 @@ func newConfiguredProxy(target *url.URL) *httputil.ReverseProxy {
 		req.Header.Del("User-Id")
 		req.Header.Del("role")
 		req.Header.Del("Role")
+		// X-CasaNova-Internal is the strongest identity header: its valid
+		// value makes requirePermInternal admit a request without a JWT. It
+		// must never survive the public reverse-proxy boundary, regardless
+		// of the casing a client used for the field name.
+		for key := range req.Header {
+			if strings.EqualFold(key, internalauth.HeaderName) {
+				delete(req.Header, key)
+			}
+		}
 		if req.TLS != nil {
 			req.Header.Set("X-Forwarded-Proto", "https")
 		} else {
