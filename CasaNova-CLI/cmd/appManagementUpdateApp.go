@@ -42,7 +42,7 @@ var appManagementUpdateAppCmd = &cobra.Command{
 
 		force := cmd.Flag(FlagForce).Value.String() == "true"
 
-		client, err := app_management.NewClientWithResponses(url)
+		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
 		if err != nil {
 			return err
 		}

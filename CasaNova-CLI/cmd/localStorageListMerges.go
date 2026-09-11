@@ -40,7 +40,7 @@ var localStorageListMergesCmd = &cobra.Command{
 
 		url := fmt.Sprintf("http://%s/%s", rootURL, BasePathLocalStorage)
 
-		client, err := local_storage.NewClientWithResponses(url)
+		client, err := local_storage.NewClientWithResponses(url, local_storage.WithHTTPClient(cliHTTPClient()))
 		if err != nil {
 			log.Fatalln(err.Error())
 		}

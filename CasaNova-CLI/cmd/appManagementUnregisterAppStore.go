@@ -51,7 +51,7 @@ var appManagementUnregisterAppStoreCmd = &cobra.Command{
 			return fmt.Errorf("how can it get here?? should have been validated in cobra.MatchAll(...)")
 		}
 
-		client, err := app_management.NewClientWithResponses(url)
+		client, err := app_management.NewClientWithResponses(url, app_management.WithHTTPClient(cliHTTPClient()))
 		if err != nil {
 			return err
 		}
