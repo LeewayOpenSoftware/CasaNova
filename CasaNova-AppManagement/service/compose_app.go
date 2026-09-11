@@ -921,6 +921,28 @@ func (a *ComposeApp) pullAndInstall(ctx context.Context) (err error) {
 	return nil
 }
 
+// uninstallOutcome is the message the operation log records when an uninstall
+// finishes without an error.
+//
+// It exists because "app uninstalled successfully" was recorded unconditionally,
+// including when the caller asked for the config folder to be deleted and the
+// sweep below removed nothing — which is the ORDINARY case, not an edge one: the
+// sweep is confined to AppsPath while a real app's volume sources live under
+// /DATA/AppData/<name>. An operator reading the operation log was told their
+// data had been deleted when it was still on disk. The delete itself is
+// deliberately unchanged; only the claim about it is.
+func uninstallOutcome(configFolderRequested bool, configFoldersRemoved int) string {
+	if !configFolderRequested {
+		return "app uninstalled successfully"
+	}
+	if configFoldersRemoved == 0 {
+		return "app uninstalled successfully, but NO config folder was deleted: " +
+			"the requested data deletion is confined to the apps directory and this " +
+			"app's volumes resolve outside it. Its data is still on disk."
+	}
+	return fmt.Sprintf("app uninstalled successfully, %d config folder(s) deleted", configFoldersRemoved)
+}
+
 func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (err error) {
 	// Wave 2c: Acquire per-app lock
 	release, lockErr := MyService.AppLock().Acquire(a.Name)
@@ -932,14 +954,17 @@ func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (er
 	}
 	defer release()
 
-	// Operation logging
+	// Operation logging. configFoldersRemoved is counted by the cleanup sweep at
+	// the end of this function so the completion message can state what actually
+	// happened; see uninstallOutcome above.
+	configFoldersRemoved := 0
 	op := StartOp("app.uninstall", a.Name)
 	defer func() {
 		if op != nil {
 			if err != nil {
 				op.Fail(err)
 			} else {
-				op.Complete("app uninstalled successfully")
+				op.Complete(uninstallOutcome(deleteConfigFolder, configFoldersRemoved))
 			}
 		}
 	}()
@@ -1045,6 +1070,8 @@ func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (er
 					go PublishEventWrapper(ctx, common.EventTypeImageRemoveError, map[string]string{
 						common.PropertyTypeMessage.Name: err.Error(),
 					})
+				} else {
+					configFoldersRemoved++
 				}
 			}
 		}
