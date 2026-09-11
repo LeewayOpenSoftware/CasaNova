@@ -27,16 +27,21 @@ import (
 // It is not the same claim as "the handler calls requirePerm". A tokenless
 // request arrives with no role on the context, RoleFromContext fails closed to
 // guest, and guest holds PermSystemRead — so requirePerm(PermSystemRead) is a
-// no-op against exactly the caller this invariant is about. The v1 JWT
-// middleware does not stop them either: it skips a loopback request with no
-// Authorization header, and the gateway proxies the LAN and the Cloudflare
-// tunnel over 127.0.0.1. That combination is why /v1/sys/logs (the daemon log
-// tail) and /v1/sys/debug (uname -a, distro, RAM, disk) were readable from the
-// internet with curl and no credentials.
+// no-op against an unauthenticated context.
 //
-// The tests below therefore drive the HANDLERS with an anonymous context and
-// require a 401 — not "some error", and not a 403 that a permission table
-// could hand out by accident.
+// The tokenless-loopback skipper that used to make that fatal is GONE (see
+// route/auth_skipper.go): none of these routes is in v1PreLoginRoutes, so the
+// v1 JWT middleware now refuses unauthenticated callers at the perimeter before
+// any handler runs. Historically, that skipper paired with a gateway that
+// proxies the LAN and the Cloudflare tunnel over 127.0.0.1 was why /v1/sys/logs
+// (the daemon log tail) and /v1/sys/debug (uname -a, distro, RAM, disk) were
+// readable from the internet with curl and no credentials.
+//
+// Handler-level defense-in-depth remains essential: if a diagnostic route is
+// ever remounted or invoked outside the group middleware, requirePerm alone
+// would still fail open to guest. The tests below therefore drive the HANDLERS
+// directly with an anonymous context and require a 401 — not "some error", and
+// not a 403 that a permission table could hand out by accident.
 
 // anonContext builds the request context a tokenless caller produces: the JWT
 // middleware never ran, so nothing was stored under the RBAC context keys.
