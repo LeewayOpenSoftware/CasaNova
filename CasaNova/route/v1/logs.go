@@ -57,7 +57,10 @@ var validPriorities = map[string]bool{
 //   - priority — minimum priority filter (emerg..debug)
 //   - since   — journalctl --since value (e.g. "1 hour ago", "today")
 func GetSystemLogs(ctx echo.Context) error {
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
+	// Journal messages can contain credentials and other secrets emitted by any
+	// service. Treat reading them like the daemon log tail: an identified
+	// system administrator, not a guest who holds the general read bit.
+	if err := requireSystemPrincipal(ctx, rbac.PermSystemConfig); err != nil {
 		return err
 	}
 	if _, err := exec.LookPath("journalctl"); err != nil {
