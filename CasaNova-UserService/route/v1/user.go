@@ -1337,6 +1337,24 @@ func DeleteUser(ctx echo.Context) error {
 		})
 	}
 
+	// Refuse to delete the box's last admin account, whether the caller is
+	// deleting themselves or another admin. CasaNova-UI-v2's
+	// stores/users.ts already refuses this client-side with a comment
+	// claiming "the backend has the same check" — it did not. Anyone
+	// reaching this endpoint directly (curl, an older frontend build, a
+	// future client) could delete the sole admin and permanently lock the
+	// box out of every PermUserManage-gated capability. A nonexistent
+	// target's zero-value Role never equals RoleAdmin, so this does not
+	// change behavior for a delete of an already-gone or non-admin account.
+	target := service.MyService.User().GetUserAllInfoById(id)
+	if rbac.Role(target.Role) == rbac.RoleAdmin &&
+		service.MyService.User().CountUsersByRole(string(rbac.RoleAdmin)) <= 1 {
+		return ctx.JSON(http.StatusForbidden, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: "cannot delete the last admin account",
+		})
+	}
+
 	service.MyService.User().DeleteUserById(id)
 
 	// Revoke all outstanding JWT tokens for this user.
