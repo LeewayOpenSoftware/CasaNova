@@ -29,7 +29,6 @@ import (
 // never accepts a package name — the whole class of injection is designed out.
 
 const (
-	aptCacheFile   = "/var/lib/casanova/apt-status.json"
 	aptUpgradeUnit = "casanova-apt-upgrade"
 	// The transient unit runs with --collect (so the fixed name is always
 	// reusable), which garbage-collects the unit on exit — erasing its
@@ -40,9 +39,12 @@ const (
 	aptCheckMax          = 3 * time.Minute
 )
 
-// aptUpgradeLog is a var (not const) so a test can point it at a temp file
-// instead of the real /var/lib/casanova/logs path.
-var aptUpgradeLog = "/var/lib/casanova/logs/apt-upgrade.log"
+// aptUpgradeLog and aptCacheFile are vars (not consts) so a test can point
+// them at a temp file instead of the real /var/lib/casanova paths.
+var (
+	aptUpgradeLog = "/var/lib/casanova/logs/apt-upgrade.log"
+	aptCacheFile  = "/var/lib/casanova/apt-status.json"
+)
 
 // launchAptUnit starts a privileged apt/unattended-upgrade command as a
 // transient one-shot service. It wraps the (constant) command so the child's
@@ -136,6 +138,33 @@ func GetAptUpdates(ctx echo.Context) error {
 	st.Checking = aptCheckRunning
 	aptCheckMu.Unlock()
 	st.RebootRequired, st.RebootPackages = rebootRequired()
+	// Packages carries, per row, the INSTALLED version and whether the update
+	// is a security one: an exact, machine-readable map of which known-
+	// vulnerable versions this box is running right now. That is
+	// reconnaissance, and its twin GetAptUpgradeStatus already draws the line
+	// in this same place — coarse state for any authenticated caller, the
+	// privileged CONTENT for PermSystemConfig.
+	//
+	// Total and Security (the COUNTS) deliberately stay: they say "this box is
+	// behind" without naming a target, which is exactly the needs-attention
+	// indicator the non-admin card renders. Note the counts cannot be the only
+	// thing hidden — Security is len(rows where security), so publishing the
+	// rows and hiding the tally would not be a control at all.
+	//
+	// FailedRepos is the inventory of this box's (often private) third-party
+	// sources, and only an admin can act on it: PostAptCheck is
+	// PermSystemConfig. It carries no credential — apt's own URI printer
+	// strips userinfo before it reaches the Err: line we parse.
+	//
+	// Packages MUST serialize as [] and never null: the tag has no omitempty,
+	// and AptUpdateCard.vue's dockerInUpgrade computed reads
+	// apt.packages.some(...) with no optional chaining on /app/settings/updates
+	// — a route that is NOT admin-only. A null there turns this security fix
+	// into a client-side crash for every non-admin viewer.
+	if !rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
+		st.Packages = []AptPackage{}
+		st.FailedRepos = nil
+	}
 	return ctx.JSON(http.StatusOK, model.Result{
 		Success: common_err.SUCCESS,
 		Message: common_err.GetMsg(common_err.SUCCESS),
