@@ -337,11 +337,38 @@ func InitDir() http.Handler {
 			return
 		}
 
-		valid, _, errs := jwt.Validate(token, func() (*ecdsa.PublicKey, error) { return external.GetPublicKey(config.CommonInfo.RuntimePath) })
+		valid, claims, errs := jwt.Validate(token, func() (*ecdsa.PublicKey, error) { return external.GetPublicKey(config.CommonInfo.RuntimePath) })
 		if errs != nil || !valid {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"message": "validation failure"}`))
+			return
+		}
+		// The same two holes InitFile had, in the same shape, for the same
+		// reason: both are mounted standalone in main.go, outside
+		// InitV1Router/InitV2Router, so neither inherits their middleware and
+		// both discarded the claims they had already decoded.
+		//
+		// REVOCATION. A signature check alone says the token was once issued,
+		// never that it still stands. A logged-out or deleted principal kept
+		// downloading here for the token's full lifetime, across restarts.
+		// Fails closed if the revocation authority cannot be consulted.
+		if jwt.RevokedForClaims(claims) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"message": "validation failure"}`))
+			return
+		}
+		// AUTHORISATION. PermFileRead, the same bit InitFile and v1
+		// GetDownloadFile require, and deliberately not in guestPerms. If
+		// anything this route needs it MORE than InitFile does: that one
+		// serves a single named path, while this one takes a comma-separated
+		// LIST and streams an archive, so one unauthorised request drains as
+		// much of the tree as the blocked-prefix list leaves reachable.
+		if !rbac.Allows(rbac.Normalize(claims.Role), rbac.PermFileRead) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"message": "access denied"}`))
 			return
 		}
 		t := r.URL.Query().Get("format")
