@@ -77,9 +77,7 @@ func WsContainerLogs(ctx echo.Context) error {
 	// same write-ish bit, not at app-view (which guest holds): "can see the
 	// app exists" is not "may read anything it ever printed." The route is
 	// mounted behind strictJWT() so the ?token= the browser puts on the
-	// WebSocket URL is actually validated — the group-level JWT middleware
-	// skips tokenless loopback requests, and every gateway-proxied request
-	// looks exactly like one.
+	// WebSocket URL is validated and sets the authenticated role.
 	if err := requirePerm(ctx, rbac.PermAppConfigure); err != nil {
 		return err
 	}

@@ -110,14 +110,9 @@ func InitV1Router() http.Handler {
 			v1ContainerGroup.PUT("/archive/:id", v1.ArchiveContainer) // /container/archive/:id
 
 			// WebSocket endpoints. A browser cannot set headers on a WebSocket
-			// handshake, so the UI puts the JWT in ?token= — and the group's
-			// JWT middleware skips any loopback request that carries no
-			// Authorization header, which is EVERY gateway-proxied request.
-			// The token was therefore never validated, the role stayed guest,
-			// and the terminal answered 403 to a legitimately authenticated
-			// admin. strictJWT() validates the query token with no loopback
-			// escape hatch, so the in-handler permission checks see the real
-			// role.
+			// handshake, so the UI puts the JWT in ?token=. strictJWT()
+			// validates the query token and extracts claims so that
+			// the in-handler permission checks see the real authenticated role.
 			//
 			// These two routes must live in this service: they are shaped
 			// "/v1/container/:id/...", the gateway routes on literal prefixes,
@@ -155,12 +150,11 @@ func InitV1Router() http.Handler {
 // strictJWT validates the caller's token with NO loopback escape hatch, and is
 // meant for routes the group-level middleware cannot authenticate.
 //
-// The group middleware skips JWT validation for loopback requests that carry
-// no Authorization header. The gateway reverse-proxies every LAN and Internet
-// request over 127.0.0.1, and a browser cannot attach headers to a WebSocket
-// handshake, so a WebSocket request is indistinguishable from an internal
-// tokenless call: the skipper fires, the role stays guest, and the handler's
-// permission check rejects a fully authenticated admin.
+// Historically, the group middleware skipped JWT validation for loopback
+// requests that carried no Authorization header, which caused WebSocket
+// handshakes (unable to set custom headers) to fail authentication.
+// strictJWT validates tokens from both Authorization headers and the
+// ?token= query parameter without relying on default skippers.
 //
 // Mounted per-route, it runs after the group middleware has skipped and reads
 // the token from the query string, so RoleFromContext reflects the real user.

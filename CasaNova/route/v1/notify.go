@@ -19,9 +19,9 @@ import (
 const maxNotifyBodyBytes = 64 << 10
 
 func PostNotifyMessage(ctx echo.Context) error {
-	// CasaNova-LocalStorage posts here tokenless over loopback (disk/USB
-	// status). Keep the loopback allowance so inter-service notifications
-	// keep flowing; authenticated callers still need PermSystemConfig.
+	// CasaNova-LocalStorage posts here (disk/USB status) presenting the
+	// per-boot internal peer secret via requirePermInternal; authenticated
+	// callers still need PermSystemConfig.
 	if err := requirePermInternal(ctx, rbac.PermSystemConfig); err != nil {
 		return err
 	}
@@ -38,9 +38,9 @@ func PostNotifyMessage(ctx echo.Context) error {
 }
 
 func PostSystemStatusNotify(ctx echo.Context) error {
-	// CasaNova-LocalStorage posts system status here tokenless over
-	// loopback (external.NotifyService.SendSystemStatusNotify). Keep the
-	// loopback allowance; authenticated callers still need PermSystemConfig.
+	// CasaNova-LocalStorage posts system status here (external.NotifyService.
+	// SendSystemStatusNotify) presenting the per-boot internal peer secret;
+	// authenticated callers still need PermSystemConfig.
 	if err := requirePermInternal(ctx, rbac.PermSystemConfig); err != nil {
 		return err
 	}

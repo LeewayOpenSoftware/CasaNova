@@ -67,10 +67,9 @@ func (c *CasaOS) CheckUploadChunk(ctx echo.Context, params codegen.CheckUploadCh
 //     utils.BlockedSystemPrefixes (/etc, /root, /boot, /usr, /run,
 //     /var — the JWT key — etc.), matching what route/v2.go::InitFile
 //     enforces on the download side. Single source of truth = no drift.
-//  2. PermFileWrite is required for non-loopback callers. The
-//     loopback skipper is preserved so internal services keep
-//     working, but a remote authenticated user must hold the file
-//     write permission (denied to read-only operator roles).
+//  2. PermFileWrite is required for all callers (lines 93-98). Loopback
+//     is NOT trusted, preventing unauthenticated file uploads; authenticated
+//     users must hold PermFileWrite (denied to read-only operator roles).
 func (c *CasaOS) PostUploadFile(ctx echo.Context) error {
 	rawPath := ctx.FormValue("path")
 	cleanPath, err := utils.SanitizeFilePath(rawPath)

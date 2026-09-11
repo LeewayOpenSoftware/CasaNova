@@ -53,13 +53,10 @@ func InitV2Router() http.Handler {
 
 	g := e.Group(V2APIPath)
 
-	// Skip JWT ONLY for tokenless loopback (genuine internal service hops).
-	// A presented token is ALWAYS validated so the role is set on the context
-	// — critical because the gateway reverse-proxies LAN traffic over
-	// 127.0.0.1, so every proxied request looks loopback; blanket-skipping it
-	// would drop a real user's token and leave RoleFromContext at guest, which
-	// the per-handler requireConfig/requireRead gates (route/v2/rbac_gate.go)
-	// then evaluate. Tokenless callers fail closed to guest.
+	// Skipper uses authskip.For(nil): nothing answers without a credential.
+	// Peer services must present the per-boot internal secret. A presented
+	// user token is ALWAYS validated so the role is set on the context and
+	// evaluated by the per-handler gates (route/v2/rbac_gate.go).
 	g.Use(echo_middleware.JWTWithConfig(echo_middleware.JWTConfig{
 		// Nothing here answers without a credential.
 		//

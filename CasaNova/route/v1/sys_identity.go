@@ -47,11 +47,10 @@ var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])
 var tzRe = regexp.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)+$`)
 
 func GetSystemHostname(ctx echo.Context) error {
-	// Guest holds PermSystemRead so tokenless internal reads keep working —
-	// but hostname/timezone have no internal caller and the UI only reads
-	// them from Settings (post-login). Require a real session so a tokenless
-	// LAN caller can't fingerprint the box (UserIDFromContext is 0 unless the
-	// JWT middleware validated a token).
+	// Guest holds PermSystemRead, but hostname/timezone have no internal peer
+	// caller and the UI only reads them from Settings (post-login). Require a
+	// real session so an unauthenticated or guest caller can't fingerprint
+	// the box (UserIDFromContext is 0 unless the JWT middleware validated a token).
 	if commonmw.UserIDFromContext(ctx) == 0 {
 		return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
 	}
@@ -113,11 +112,10 @@ func PutSystemHostname(ctx echo.Context) error {
 }
 
 func GetSystemTimezone(ctx echo.Context) error {
-	// Guest holds PermSystemRead so tokenless internal reads keep working —
-	// but hostname/timezone have no internal caller and the UI only reads
-	// them from Settings (post-login). Require a real session so a tokenless
-	// LAN caller can't fingerprint the box (UserIDFromContext is 0 unless the
-	// JWT middleware validated a token).
+	// Guest holds PermSystemRead, but hostname/timezone have no internal peer
+	// caller and the UI only reads them from Settings (post-login). Require a
+	// real session so an unauthenticated or guest caller can't fingerprint
+	// the box (UserIDFromContext is 0 unless the JWT middleware validated a token).
 	if commonmw.UserIDFromContext(ctx) == 0 {
 		return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
 	}

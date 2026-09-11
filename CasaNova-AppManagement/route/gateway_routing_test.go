@@ -156,11 +156,8 @@ func TestClientContainerEndpointsAreHandled(t *testing.T) {
 // TestWebSocketRoutesRejectABadQueryToken guards the other half of the fix.
 //
 // A browser cannot set headers on a WebSocket handshake, so the UI puts the JWT
-// in ?token=. The group's JWT middleware skips validation for loopback requests
-// that carry no Authorization header — and the gateway reverse-proxies every
-// request over 127.0.0.1, so that describes every real WebSocket request. The
-// token was therefore never looked at: the role stayed guest, which happens to
-// hold PermAppView, so a forged or expired token would have been served logs.
+// in ?token=. This test ensures that invalid or forged query tokens are rejected
+// before handlers run, rather than falling back to unauthenticated guest access.
 //
 // The request below is shaped exactly like the gateway's: loopback peer, no
 // Authorization header, a junk ?token=. With strictJWT mounted it is rejected
@@ -174,8 +171,7 @@ func TestWebSocketRoutesRejectABadQueryToken(t *testing.T) {
 		"/v1/container/9b1deadbeef0/terminal?token=not-a-jwt",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		// The gateway proxies over loopback; that is what makes the group
-		// middleware's skipper fire.
+		// Proxied loopback request simulating browser WebSocket connection with bad token.
 		req.RemoteAddr = "127.0.0.1:54321"
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

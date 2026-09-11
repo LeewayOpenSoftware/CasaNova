@@ -149,10 +149,9 @@ func PostSambaSharesCreate(ctx echo.Context) error {
 }
 
 func DeleteSambaShares(ctx echo.Context) error {
-	// CasaNova-LocalStorage deletes a share tokenless over loopback when
-	// its backing disk is removed (external.ShareService.DeleteShare ->
-	// disk.go). Keep the loopback allowance so that cleanup keeps working;
-	// authenticated callers still need PermStorageWrite.
+	// CasaNova-LocalStorage deletes a share when its backing disk is removed
+	// (external.ShareService.DeleteShare -> disk.go), presenting the per-boot
+	// internal peer secret; authenticated callers still need PermStorageWrite.
 	if err := requirePermInternal(ctx, rbac.PermStorageWrite); err != nil {
 		return err
 	}
