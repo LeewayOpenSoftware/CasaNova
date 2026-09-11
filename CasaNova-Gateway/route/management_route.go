@@ -114,8 +114,9 @@ func (m *ManagementRoute) buildV1Group(e *echo.Echo) {
 // management endpoint. POST/PUT routes previously declared it inline and
 // GET routes had no auth at all — meaning GET /routes leaked the entire
 // internal service topology to any process on localhost, and GET /port
-// leaked the active listen port. Loopback is still skipped because local
-// CasaNova services rely on unauthenticated inter-service calls.
+// leaked the active listen port. Peer services are still let through
+// without a user token, but they must now prove they are peers with the
+// per-boot internal secret rather than merely arriving over loopback.
 //
 // Wave 31: tokens are taken from the Authorization header ONLY. The
 // previous fallback to ?token=… in the query string ended up in every
@@ -135,7 +136,10 @@ func (m *ManagementRoute) managementJWTConfig() echo_middleware.JWTConfig {
 		// code. And loopback is not "internal" here — the gateway
 		// reverse-proxies the LAN and the Cloudflare tunnel over
 		// 127.0.0.1, so anything that reached this port was already
-		// exempt, from anywhere.
+		// exempt, from anywhere. The Wave 31 note above about browsers
+		// on the same host having a loopback RemoteAddr is the same hole
+		// seen from the CORS side; dropping CORS narrowed who could read
+		// the reply, not who could make the call.
 		//
 		// authskip.For(nil) is the shared decision used by every other
 		// CasaNova router: answer without a user token only for a caller
@@ -216,8 +220,8 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 	v1GatewayGroup := v1Group.Group("/gateway")
 
 	// Apply JWT to the whole group so GET endpoints get the same treatment
-	// as POST/PUT. The loopback skipper still allows local service-to-service
-	// calls to go through unauthenticated.
+	// as POST/PUT. Local service-to-service calls still go through without a
+	// user token, but only when they carry the internal peer secret.
 	v1GatewayGroup.Use(echo_middleware.JWTWithConfig(m.managementJWTConfig()))
 	{
 		v1GatewayGroup.GET("/routes", func(ctx echo.Context) error {
