@@ -258,6 +258,7 @@ func PostUpdateRollback(ctx echo.Context) error {
 	// writable, like the update path. --collect reaps the unit so the fixed
 	// --unit name is reusable. Output goes to the update log via the property,
 	// never os.Stdout (casanova's journal fd closes on stop → SIGPIPE).
+	prepareLogRotation("/var/lib/casanova/logs/update.log", "CASANOVA_UPDATE_LOG", "casanova-self-rollback")
 	os.MkdirAll("/var/lib/casanova/logs", 0o755)
 	cmd := exec.Command(
 		"systemd-run",
@@ -742,6 +743,7 @@ func runUpdateScript(packagePath, jobID string) {
 	// which Phase 3 closes — writing to it would SIGPIPE the script, the
 	// 2026-07-16 incident). --collect reaps the unit after it exits so the
 	// fixed --unit name is reusable next time.
+	prepareLogRotation("/var/lib/casanova/logs/update.log", "CASANOVA_UPDATE_LOG", "casanova-self-update")
 	os.MkdirAll("/var/lib/casanova/logs", 0o755)
 	cmd := exec.Command(
 		"systemd-run",

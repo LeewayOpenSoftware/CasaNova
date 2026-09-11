@@ -171,6 +171,13 @@ func PostAntivirusScan(ctx echo.Context) error {
 			avScanMu.Unlock()
 		}()
 		logFile := "/var/log/casanova/clamscan.log"
+		maxBytes, maxAge := logRotationConfig("CASANOVA_CLAMSCAN_LOG")
+		rotated, err := rotateLog(logFile, maxBytes, maxAge, false)
+		if err != nil {
+			logger.Error("antivirus log rotation failed", zap.String("path", logFile), zap.Error(err))
+		} else if rotated {
+			logger.Info("antivirus log rotated", zap.String("path", logFile), zap.Int64("max_bytes", maxBytes), zap.Duration("retention", maxAge))
+		}
 		os.MkdirAll("/var/log/casanova", 0755)
 		cmd := exec.CommandContext(runCtx, "clamscan", "-r", "--infected", "--log="+logFile, "/DATA")
 		cmd.Stdout = nil
