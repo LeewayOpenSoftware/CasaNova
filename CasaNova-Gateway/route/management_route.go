@@ -2,7 +2,6 @@ package route
 
 import (
 	"crypto/ecdsa"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/loopback"
 	"github.com/LeewayOpenSoftware/CasaNova-Gateway/service"
 	"github.com/labstack/echo/v4"
 	echo_middleware "github.com/labstack/echo/v4/middleware"
@@ -33,6 +33,12 @@ import (
 // a literal IP that is itself loopback closes the entire window: the IP
 // in the URL *is* the address the gateway will dial, no name resolution
 // happens, and rebinding is impossible.
+//
+// The literal-IP-only rule is enforced via loopback.IsLoopbackHost, shared
+// with CasaNova's embed-probe redirect walker (route/v1/embed_probe.go) —
+// that walker used to also accept the string "localhost", independently
+// reintroducing exactly the hostname-resolution gap this function exists to
+// close. Two modules, same conceptual guard, is what let them disagree.
 func isLoopbackTarget(target string) bool {
 	u, err := url.Parse(target)
 	if err != nil {
@@ -45,11 +51,7 @@ func isLoopbackTarget(target string) bool {
 	if host == "" {
 		return false
 	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback()
+	return loopback.IsLoopbackHost(host)
 }
 
 type ManagementRoute struct {
