@@ -116,6 +116,28 @@ let isHydrating = false
 let flushTimer: number | null = null
 let lastKnownUserId: number | null = null
 
+// Whether a hydrate for lastKnownUserId has COMPLETED SUCCESSFULLY — i.e. the
+// GET came back and we know what the server holds. This is the gate on every
+// PUT, because putUiPrefs REPLACES the whole blob (there is no diff protocol):
+// flushing a cache we never filled deletes every preference the server has.
+//
+// "Succeeded" deliberately includes a server that answered with NOTHING. A
+// fresh install, or a user who has never saved a preference, legitimately has
+// no blob, and that round-trip tells us just as much as a full one — treating
+// it as "not hydrated" would mean such a user could never persist their first
+// preference at all. The only state that blocks a PUT is a GET that THREW.
+let hydratedOk = false
+
+// Keys written locally while un-hydrated. They are the only thing standing
+// between the user's change and a recovery hydrate that would overwrite it
+// with the server's older value on its way back up. Value `null` records a
+// removePref. Emptied once a flush has actually shipped them.
+const unsyncedEdits = new Map<string, string | null>()
+
+function noteUnsyncedEdit(key: string, value: string | null): void {
+  if (!hydratedOk && isSyncableKey(key)) unsyncedEdits.set(key, value)
+}
+
 function isSyncableKey(k: string): boolean {
   return k.startsWith(KEY_PREFIX) && !EXCLUDED_KEYS.has(k)
 }
@@ -161,6 +183,7 @@ export function getPref(key: string): string | null {
  */
 export function setPref(key: string, value: string): void {
   cache[key] = value
+  noteUnsyncedEdit(key, value)
   if (typeof window !== 'undefined') {
     try {
       window.localStorage.setItem(key, value)
@@ -177,6 +200,7 @@ export function setPref(key: string, value: string): void {
  */
 export function removePref(key: string): void {
   delete cache[key]
+  noteUnsyncedEdit(key, null)
   if (typeof window !== 'undefined') {
     try {
       window.localStorage.removeItem(key)
@@ -207,12 +231,21 @@ export function prefsGeneration() {
  */
 export async function hydrateFromBackend(userId: number): Promise<void> {
   if (lastKnownUserId === userId && hydrateInflight) return hydrateInflight
+  if (lastKnownUserId !== userId) {
+    // A different account: nothing we know about the previous one carries over.
+    hydratedOk = false
+    unsyncedEdits.clear()
+  }
   lastKnownUserId = userId
 
   hydrateInflight = (async () => {
     isHydrating = true
     try {
       const remote = await getUiPrefs()
+      // The GET came back. Whatever it contained, we now know what the server
+      // holds, so a flush may proceed — see hydratedOk. Set BEFORE the
+      // migration push below, which is itself a flush and must be allowed.
+      hydratedOk = true
       if (remote && remote.values) {
         // Backend wins for any key it knows about. Local-only keys
         // (e.g. a setting added on this browser before the user logged
@@ -254,8 +287,14 @@ export async function hydrateFromBackend(userId: number): Promise<void> {
         }
       }
     } catch (err) {
-      // Backend unreachable, expired token, etc. — keep using local
-      // values silently. The next setPref will retry the flush.
+      // Backend unreachable, expired token, mid-deploy restart. Keep using
+      // local values, and — critically — do NOT leave this rejection cached
+      // as the answer for the session. The guard at the top of this function
+      // short-circuits on hydrateInflight, so a failed attempt that stayed
+      // parked there turned a transient blip into a permanent un-hydrated
+      // session: the prefs never arrive AND every flush stays blocked. Drop
+      // it so the next caller genuinely retries.
+      hydrateInflight = null
       console.warn('[syncedPrefs] hydrate failed; using local cache', err)
     } finally {
       isHydrating = false
@@ -300,6 +339,13 @@ export function clearLocalPrefs(): void {
   }
   hydrateInflight = null
   lastKnownUserId = null
+  // The cache this function just emptied is not a hydrated cache, and the
+  // edits it held are gone with it. Both must reset or the next account's
+  // first flush would ship this one's leftovers — or ship nothing at all.
+  // The wipe itself is unchanged: it is why a second user on this browser
+  // does not inherit the first one's layout.
+  hydratedOk = false
+  unsyncedEdits.clear()
   cacheGeneration.value++
 }
 
@@ -318,6 +364,37 @@ function scheduleFlush(): void {
 }
 
 async function flushNow(): Promise<void> {
+  // A PUT replaces the ENTIRE server blob, so it may only be built from a
+  // cache we know is complete. Without a successful hydrate behind us the
+  // cache holds, at most, the handful of keys this session happened to write
+  // — and shipping that deletes everything else the user ever saved. Their
+  // first click after a failed hydrate would wipe theme, layout, icons and
+  // the rest, silently and permanently.
+  if (!hydratedOk) {
+    if (lastKnownUserId === null) {
+      // Nobody is signed in (pre-login screens still write prefs such as the
+      // UI language). Keep it local; the hydrate at login decides what to do
+      // with it, including the one-shot migration push.
+      return
+    }
+    // Try to learn the server's state first, then send the merge.
+    const pending = new Map(unsyncedEdits)
+    await hydrateFromBackend(lastKnownUserId)
+    if (!hydratedOk) {
+      // Still blind. Send NOTHING: the change is already in localStorage and
+      // the next setPref retries. A preference the user has to set twice is a
+      // nuisance; a preference set silently destroys the other nineteen.
+      throw new Error('[syncedPrefs] refusing to flush before a successful hydrate')
+    }
+    // Hydration overwrites cache keys with the server's copy, which for the
+    // keys the user just edited is the OLDER value. Re-apply their edits over
+    // what came down so the merge going up keeps the change that triggered it.
+    for (const [k, v] of pending) {
+      if (v === null) delete cache[k]
+      else cache[k] = v
+    }
+  }
+
   // Build the blob from the live cache. Excluded keys never reach the
   // backend even if something else accidentally added them.
   const values: Record<string, string> = {}
@@ -326,4 +403,7 @@ async function flushNow(): Promise<void> {
   }
   const blob: UiPrefsBlob = { version: 1, values }
   await putUiPrefs(blob)
+  // Shipped: these are no longer unsynced. Anything written after this point
+  // while still hydrated needs no special handling — the full cache goes up.
+  unsyncedEdits.clear()
 }
