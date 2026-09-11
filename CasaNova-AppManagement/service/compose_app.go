@@ -1010,8 +1010,27 @@ func (a *ComposeApp) Uninstall(ctx context.Context, deleteConfigFolder bool) (er
 			if strings.Contains(volume.Source, a.Name) {
 				path := filepath.Clean(filepath.Join(strings.Split(volume.Source, a.Name)[0], a.Name))
 
-				// Validate the resolved path is within the expected apps directory
-				// to prevent path traversal attacks.
+				// CONTAINMENT: this is a LEXICAL check on an UNRESOLVED path.
+				// Nothing is resolved here despite what this comment used to
+				// claim, so a symlink among the components under appsPath
+				// would be followed by RMDir (os.RemoveAll opens the parent
+				// by path). It holds anyway, for reasons outside this line:
+				// filepath.Clean runs BEFORE the check, so no ".." input can
+				// survive it, and appsPath is /var/lib/casaos/apps -- a root-
+				// owned tree the file API refuses outright (/var is in
+				// utils.BlockedSystemPrefixes) and no compose file can bind
+				// into a container (isDangerousBindSource covers
+				// /var/lib/casaos, its ancestors, and the named-volume-with-
+				// driver_opts disguise). Planting the symlink therefore needs
+				// host root already. compose_security_test.go pins that
+				// precondition; if it is ever relaxed, this check must become
+				// resolve-then-verify before appsPath widens.
+				//
+				// Note the guard is also stricter than the loop's purpose: a
+				// normal app's volume.Source is /DATA/AppData/<name>/..., which
+				// is NOT under appsPath, so deleteConfigFolder is a no-op for
+				// it. Left as-is deliberately -- making it fire would turn a
+				// no-op into a recursive delete of user data.
 				if !strings.HasPrefix(path, filepath.Clean(appsPath)+string(filepath.Separator)) {
 					logger.Error("refusing to delete volume path outside apps directory",
 						zap.String("path", path),
