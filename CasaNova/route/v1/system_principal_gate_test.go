@@ -39,9 +39,19 @@ func TestGuestHeldPermissionIsNotBorrowableWithoutIdentity(t *testing.T) {
 
 	tokenless := ctxWith("", 0) // exactly what the JWT skipper leaves behind
 
-	if err := requirePerm(tokenless, rbac.PermSystemRead); err != nil {
-		t.Fatal("setup is wrong: requirePerm was expected to ALLOW this, which is " +
-			"the whole reason the stricter helper exists")
+	// This used to assert that requirePerm ALLOWS the tokenless caller — the
+	// trap requireSystemPrincipal was written to work around. requirePerm now
+	// asks for a principal itself, so the two gates agree and that assertion
+	// would fail. The PREMISE it was really expressing is the one below: guest
+	// holds the bit, so the permission table alone cannot refuse this caller.
+	// Stating it directly is also more honest — it no longer depends on the
+	// behaviour of the helper under test to establish its own setup.
+	if !rbac.Allows(rbac.RoleGuest, rbac.PermSystemRead) {
+		t.Fatal("setup is wrong: guest must hold PermSystemRead for this trap to exist")
+	}
+	if err := requirePerm(tokenless, rbac.PermSystemRead); err == nil {
+		t.Fatal("requirePerm allowed a caller with no principal — the strict default " +
+			"regressed; requireSystemPrincipal is now the second line, not the only one")
 	}
 	if err := requireSystemPrincipal(tokenless, rbac.PermSystemRead); err == nil {
 		t.Fatal("requireSystemPrincipal allowed a caller with no identity to use a " +

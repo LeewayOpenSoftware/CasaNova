@@ -105,10 +105,14 @@ func TestSystemProxyDeniesNonAdminRoles(t *testing.T) {
 func TestOutboundFetchCallerRejectsTokenlessEvenForAPermissionGuestHolds(t *testing.T) {
 	ctx, _ := newAuthedContext(t, http.MethodGet, "/v1/sys/anything", "", 0)
 
-	// Sanity: guest really does hold this permission, so requirePerm alone
-	// would let the anonymous caller straight through.
-	if err := requirePerm(ctx, rbac.PermSystemRead); err != nil {
-		t.Fatalf("premise broken: guest no longer holds PermSystemRead (%v)", err)
+	// Sanity: guest really does hold this permission, so the PERMISSION TABLE
+	// alone cannot refuse the anonymous caller — which is why this gate has to
+	// check the login separately. Asserted against the table directly: it used
+	// to be asserted by expecting requirePerm to allow the caller, but the
+	// default now refuses a context with no principal too, so that phrasing
+	// tested the wrong thing.
+	if !rbac.Allows(rbac.RoleGuest, rbac.PermSystemRead) {
+		t.Fatal("premise broken: guest no longer holds PermSystemRead")
 	}
 
 	if code := httpErrCode(t, requireOutboundFetchCaller(ctx, rbac.PermSystemRead)); code != http.StatusUnauthorized {

@@ -35,13 +35,32 @@ func requirePerm(ctx echo.Context, p rbac.Permission) error {
 	if isFromInternalSocket(ctx) {
 		return nil
 	}
-	if rbac.Allows(commonmw.RoleFromContext(ctx), p) {
-		return nil
+	if !rbac.Allows(commonmw.RoleFromContext(ctx), p) {
+		return echo.NewHTTPError(http.StatusForbidden, model.Result{
+			Success: http.StatusForbidden,
+			Message: "permission denied",
+		})
 	}
-	return echo.NewHTTPError(http.StatusForbidden, model.Result{
-		Success: http.StatusForbidden,
-		Message: "permission denied",
-	})
+	// The role holds the permission. Second question: is there a principal
+	// behind that role, or did an unauthenticated context borrow guest's?
+	// RoleFromContext fails closed to RoleGuest and guest holds PermSystemRead,
+	// so requireRead below returned nil for a context nobody authenticated.
+	//
+	// This runs AFTER the socket check on purpose: a sibling root service on the
+	// 0600 unix socket has no JWT and therefore no user id, and it is exempt by
+	// the NAMED check above rather than by this default being lax. That is the
+	// whole shape of the change — the exemption is visible, the default is not.
+	//
+	// It also runs AFTER the permission test, so every request already refused is
+	// still refused at the same branch with the same 403 and body: the addition
+	// can only turn an ALLOW into a DENY.
+	if commonmw.UserIDFromContext(ctx) == 0 {
+		return echo.NewHTTPError(http.StatusUnauthorized, model.Result{
+			Success: http.StatusUnauthorized,
+			Message: "authentication required",
+		})
+	}
+	return nil
 }
 
 // requireConfig gates privileged mutations (kernel-module load/unload, GPU

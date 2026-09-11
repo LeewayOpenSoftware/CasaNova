@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/labstack/echo/v4"
 )
@@ -56,12 +57,20 @@ func TestRequirePermAbortsTheHandler(t *testing.T) {
 }
 
 // A permission the role does hold must let the handler through untouched.
+//
+// The context carries a real principal (a signed-in guest ACCOUNT, uid 7). It
+// used to be a bare context with nothing set, which passed only because an
+// absent principal fell back to RoleGuest and borrowed its permissions — so
+// the test was asserting the fail-open default rather than the allow path. A
+// guest account is still allowed; only the ABSENT principal is refused.
 func TestRequirePermAllowsWhenPermitted(t *testing.T) {
 	e := echo.New()
 	ctx := e.NewContext(httptest.NewRequest(http.MethodGet, "/v1/app/list", nil), httptest.NewRecorder())
+	ctx.Set(commonmw.ContextKeyRole, rbac.RoleGuest)
+	ctx.Set(commonmw.ContextKeyUserID, 7)
 	// Guest holds PermAppView.
 	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
-		t.Fatalf("guest was denied PermAppView: %v", err)
+		t.Fatalf("an identified guest account was denied PermAppView: %v", err)
 	}
 }
 
