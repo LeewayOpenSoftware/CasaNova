@@ -19,6 +19,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/external"
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
 	v2Route "github.com/LeewayOpenSoftware/CasaNova/route/v2"
@@ -257,11 +258,37 @@ func InitFile() http.Handler {
 			return
 		}
 
-		valid, _, errs := jwt.Validate(token, func() (*ecdsa.PublicKey, error) { return external.GetPublicKey(config.CommonInfo.RuntimePath) })
+		valid, claims, errs := jwt.Validate(token, func() (*ecdsa.PublicKey, error) { return external.GetPublicKey(config.CommonInfo.RuntimePath) })
 		if errs != nil || !valid {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"message": "validation failure"}`))
+			return
+		}
+		// REVOCATION. This handler is mounted standalone in main.go, outside
+		// InitV1Router/InitV2Router, so it inherits none of their middleware —
+		// and it was the only entry point in the process that validated a
+		// signature without asking whether the token had since been revoked.
+		// A logged-out or deleted principal kept downloading files here for the
+		// token's full lifetime, across restarts. Every other entry point
+		// (v1Group, strictJWT, the gateway management config, v2) calls this;
+		// it fails closed if the revocation authority cannot be consulted.
+		if jwt.RevokedForClaims(claims) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"message": "validation failure"}`))
+			return
+		}
+		// AUTHORISATION. A valid signature said only "some principal"; it never
+		// said "a principal allowed to read files". PermFileRead is the bit the
+		// rest of the file API downloads on (v1 GetDownloadFile), and it is
+		// deliberately NOT in guestPerms — that removal is what stopped guests
+		// reading anything outside the blocked-prefix list, and this route
+		// bypassed it entirely.
+		if !rbac.Allows(rbac.Normalize(claims.Role), rbac.PermFileRead) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"message": "access denied"}`))
 			return
 		}
 		filePath := filepath.Clean(r.URL.Query().Get("path"))
