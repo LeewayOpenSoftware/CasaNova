@@ -33,6 +33,8 @@ func TestGetComposeApp(t *testing.T) {
 	appStorePath, err := os.MkdirTemp("", "appstore")
 	assert.NilError(t, err)
 
+	previousAppStorePath := config.AppInfo.AppStorePath
+	t.Cleanup(func() { config.AppInfo.AppStorePath = previousAppStorePath })
 	defer os.RemoveAll(appStorePath)
 
 	config.AppInfo.AppStorePath = appStorePath
@@ -65,6 +67,8 @@ func TestGetApp(t *testing.T) {
 	appStorePath, err := os.MkdirTemp("", "appstore")
 	assert.NilError(t, err)
 
+	previousAppStorePath := config.AppInfo.AppStorePath
+	t.Cleanup(func() { config.AppInfo.AppStorePath = previousAppStorePath })
 	defer os.RemoveAll(appStorePath)
 
 	config.AppInfo.AppStorePath = appStorePath
@@ -103,6 +107,9 @@ func TestSkipUpdateCatalog(t *testing.T) {
 
 		// mkdir workdir for first
 		err = file.MkDir(workdir)
+		if os.IsPermission(err) {
+			t.Skipf("configured appstore path %q is not writable: %v", config.AppInfo.AppStorePath, err)
+		}
 		assert.NilError(t, err)
 
 		appStoreStat, err := os.Stat(workdir)

@@ -37,6 +37,8 @@ func TestAppStoreList(t *testing.T) {
 	defer os.Remove(file.Name())
 
 	config.InitSetup(file.Name(), "")
+	previousAppStorePath := config.AppInfo.AppStorePath
+	t.Cleanup(func() { config.AppInfo.AppStorePath = previousAppStorePath })
 	config.AppInfo.AppStorePath = t.TempDir()
 
 	appStoreManagement := service.NewAppStoreManagement()
