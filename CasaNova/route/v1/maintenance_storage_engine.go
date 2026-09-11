@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/storageauth"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/storagemaint"
 )
@@ -112,9 +113,18 @@ func InstallStorageMaintenanceEngine(ctx context.Context) error {
 
 func (a *storageEngineAdapter) principal(p StoragePrincipal) storageauth.Principal {
 	return storageauth.Principal{
-		ID:    strconv.Itoa(p.UserID),
-		Role:  p.Role,
-		Admin: p.Role == "admin",
+		ID:   strconv.Itoa(p.UserID),
+		Role: p.Role,
+		// OLA 3 — this used to be a hand-rolled p.Role == "admin" string
+		// compare, independent of route/v1/file.go's Admin derivation
+		// (rbac.Allows(role, rbac.PermUserManage)) for the identical field on
+		// the identical downstream authority (storageauth.AuthorizeStorage).
+		// They happened to agree only because PermUserManage currently
+		// belongs to admin alone; a future rebalance of rbac.go's bitmasks
+		// would silently desync them. Unified onto the permission, which is
+		// what "Admin" is actually supposed to mean here — a role literal is
+		// an implementation detail, not the security boundary.
+		Admin: rbac.Allows(rbac.Role(p.Role), rbac.PermUserManage),
 	}
 }
 

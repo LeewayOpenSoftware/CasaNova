@@ -12,13 +12,12 @@ package v1
 
 import (
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
+	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/mount"
 	"github.com/labstack/echo/v4"
 )
 
@@ -69,50 +68,14 @@ func requirePerm(ctx echo.Context, p rbac.Permission) error {
 	return nil
 }
 
-// allowedMountRoots are the only directories under which a CasaNova
-// mount may be created via the API. Anything outside is rejected.
-//
-// /mnt and /media are the standard Linux conventions for removable
-// storage; /DATA is CasaNova's user-data root. Mounting *over* /etc,
-// /usr, /var, /proc, /sys, /dev, /boot, or any other system path would
-// shadow real files and is precisely the privilege-escalation primitive
-// the API must not expose.
-var allowedMountRoots = []string{
-	"/mnt",
-	"/media",
-	"/DATA",
-}
-
 // validateMountPoint canonicalizes mp and rejects it unless it lies
-// strictly *inside* one of allowedMountRoots — never the root itself
+// strictly *inside* one of pkg/mount.AllowedRoots — never the root itself
 // (mounting over /mnt would hide every other mount under it) and never
 // outside the allowed roots.
+//
+// OLA 3 — this used to keep its own copy of the allow-list and the
+// containment logic, byte-identical to route/v2's copy purely by luck; now
+// both call the single shared CasaNova-LocalStorage/pkg/mount.ValidatePoint.
 func validateMountPoint(mp string) error {
-	if mp == "" {
-		return errInvalidMountPoint("mount point is required")
-	}
-	clean := filepath.Clean(mp)
-	if !filepath.IsAbs(clean) {
-		return errInvalidMountPoint("mount point must be absolute")
-	}
-	if strings.Contains(clean, "..") {
-		return errInvalidMountPoint("mount point must not contain ..")
-	}
-	for _, root := range allowedMountRoots {
-		if clean == root {
-			return errInvalidMountPoint("mount point cannot be the root itself; use a subdirectory")
-		}
-		if strings.HasPrefix(clean, root+string(filepath.Separator)) {
-			return nil
-		}
-	}
-	return errInvalidMountPoint("mount point must live under /mnt, /media, or /DATA")
+	return mount.ValidatePoint(mp)
 }
-
-// errInvalidMountPoint is a tiny helper so the validator can return a
-// distinct sentinel without pulling errors.New into every call site.
-type mountPointError string
-
-func (e mountPointError) Error() string { return string(e) }
-
-func errInvalidMountPoint(msg string) error { return mountPointError(msg) }

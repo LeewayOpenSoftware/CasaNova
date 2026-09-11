@@ -5,12 +5,11 @@ package v2
 
 import (
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/codegen"
+	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/mount"
 	"github.com/labstack/echo/v4"
 )
 
@@ -55,39 +54,12 @@ func requirePerm(ctx echo.Context, p rbac.Permission) error {
 	return nil
 }
 
-// allowedMountRoots are the only directories under which a CasaNova
-// mount may be created. Anything else is treated as an attempted
-// privilege escalation (mount over /etc, /usr, /var/run/docker.sock, …).
-var allowedMountRoots = []string{
-	"/mnt",
-	"/media",
-	"/DATA",
-}
-
 // validateMountPoint canonicalizes mp and rejects it unless it lies
-// strictly inside one of allowedMountRoots.
+// strictly inside one of pkg/mount.AllowedRoots.
+//
+// OLA 3 — this used to keep its own copy of the allow-list and the
+// containment logic, byte-identical to route/v1's copy purely by luck; now
+// both call the single shared CasaNova-LocalStorage/pkg/mount.ValidatePoint.
 func validateMountPoint(mp string) error {
-	if mp == "" {
-		return mountPointError("mount point is required")
-	}
-	clean := filepath.Clean(mp)
-	if !filepath.IsAbs(clean) {
-		return mountPointError("mount point must be absolute")
-	}
-	if strings.Contains(clean, "..") {
-		return mountPointError("mount point must not contain ..")
-	}
-	for _, root := range allowedMountRoots {
-		if clean == root {
-			return mountPointError("mount point cannot be the root itself; use a subdirectory")
-		}
-		if strings.HasPrefix(clean, root+string(filepath.Separator)) {
-			return nil
-		}
-	}
-	return mountPointError("mount point must live under /mnt, /media, or /DATA")
+	return mount.ValidatePoint(mp)
 }
-
-type mountPointError string
-
-func (e mountPointError) Error() string { return string(e) }
