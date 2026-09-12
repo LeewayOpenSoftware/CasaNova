@@ -32,6 +32,13 @@ func SetOpLoggerDB(db *gorm.DB) {
 		return
 	}
 	opLogger = l
+	retention := oplog.Retention()
+	removed, err := l.Prune(retention)
+	if err != nil {
+		logger.Error("failed to prune operation log", zap.Error(err))
+	} else {
+		logger.Info("operation log pruned", zap.Int64("removed", removed), zap.Duration("retention", retention))
+	}
 	logger.Info("operation logger initialized")
 }
 
