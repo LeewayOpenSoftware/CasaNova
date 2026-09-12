@@ -84,8 +84,8 @@ var mutatingManagementRoutes = []struct {
 	{http.MethodPut, "/v1/gateway/port", true},        // CasaNova relays the operator's change
 	{http.MethodPost, "/v1/gateway/whitelist", false}, // browser UI only
 	{http.MethodDelete, "/v1/gateway/whitelist", false},
-	{http.MethodPut, "/v1/gateway/tls", false}, // the pre-existing gate, pinned with the rest
-	{http.MethodGet, "/v1/gateway/tls", false}, // read counterpart: no gate at all until this fix
+	{http.MethodPut, "/v1/gateway/tls", false},       // the pre-existing gate, pinned with the rest
+	{http.MethodGet, "/v1/gateway/tls", false},       // read counterpart: no gate at all until this fix
 	{http.MethodGet, "/v1/gateway/whitelist", false}, // read counterpart of POST/DELETE: no gate at all until this fix
 }
 
