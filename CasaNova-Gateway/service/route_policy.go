@@ -344,6 +344,13 @@ func (s *routePolicyStore) AdoptLegacy(legacy map[string][]*net.IPNet) (int, err
 func (s *routePolicyStore) Health() RoutePolicyHealth {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.healthLocked()
+}
+
+// healthLocked is Health for callers that already hold s.mu. persistLocked runs
+// under the write lock, so it cannot call Health — RWMutex is not reentrant and
+// the RLock would deadlock against the Lock its own caller holds.
+func (s *routePolicyStore) healthLocked() RoutePolicyHealth {
 	h := RoutePolicyHealth{
 		OK:              s.failedInvariant == "",
 		FailedInvariant: s.failedInvariant,
@@ -360,6 +367,37 @@ func (s *routePolicyStore) Health() RoutePolicyHealth {
 		}
 	}
 	return h
+}
+
+// logDegradedLocked journals the store's AGGREGATE standing when it is not
+// healthy, naming the occasion that produced it.
+//
+// Every degrade site already logs the individual failure, and the constructor
+// already reports the aggregate once (service/management.go). What was missing
+// is the aggregate AFTER BOOT: policy can degrade at runtime, because Set() —
+// reachable from the management API — goes through persistLocked, and a
+// degrade there was only ever visible as the single line describing that one
+// failed write. An operator reading "failed to persist route policy" could not
+// tell from it how much policy is now unvouched for.
+//
+// The message string is deliberately IDENTICAL to the one the constructor
+// emits, so the same grep finds the boot-time and the runtime occurrences;
+// "occasion" is what tells them apart. The invariant names above carry the same
+// promise of stability for the same reason.
+func (s *routePolicyStore) logDegradedLocked(occasion string) {
+	h := s.healthLocked()
+	if h.OK {
+		return
+	}
+
+	logger.Error("per-route authorization policy is DEGRADED",
+		zap.String("invariant", h.FailedInvariant),
+		zap.String("detail", h.Detail),
+		zap.String("path", h.Path),
+		zap.String("occasion", occasion),
+		zap.Int("declared_routes", h.DeclaredRoutes),
+		zap.Int("restricted_routes", h.RestrictedRoutes),
+		zap.Int("unusable_routes", h.UnusableRoutes))
 }
 
 type routePolicyDoc struct {
@@ -413,7 +451,15 @@ func (s *routePolicyStore) persistLocked() error {
 
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
+		// This one degraded SILENTLY: unlike its two neighbours below it had no
+		// log line of its own, so the store could enter a degraded state with
+		// nothing at all in the journal.
 		s.degrade(invRoutePolicyDurable, err.Error())
+		logger.Error("failed to serialise route policy",
+			zap.String("invariant", invRoutePolicyDurable),
+			zap.String("path", s.path),
+			zap.Error(err))
+		s.logDegradedLocked("serialising route policy")
 		return err
 	}
 	if err := writePolicyFileAtomic(s.path, data); err != nil {
@@ -422,6 +468,7 @@ func (s *routePolicyStore) persistLocked() error {
 			zap.String("invariant", invRoutePolicyDurable),
 			zap.String("path", s.path),
 			zap.Error(err))
+		s.logDegradedLocked("persisting route policy")
 		return err
 	}
 	// Validate the PROPERTY we depend on, not merely that the write returned
@@ -433,6 +480,7 @@ func (s *routePolicyStore) persistLocked() error {
 			zap.String("invariant", invRoutePolicyFileTrusted),
 			zap.String("path", s.path),
 			zap.Error(err))
+		s.logDegradedLocked("verifying route policy file after write")
 		return err
 	}
 	if s.failedInvariant != "" {
