@@ -16,10 +16,22 @@ import { useToast } from 'primevue/usetoast'
 import SettingsCard from '@/components/settings/SettingsCard.vue'
 import { safeCall } from '@/api/safeCall'
 import { hostApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
+import { effectiveRole } from '@/router/settingsAccess'
 import type { AptStatus, AptUpgradeStatus, AptAutoStatus } from '@/api/host'
 
 const { t } = useI18n()
 const toast = useToast()
+const auth = useAuthStore()
+// Every mutating control on this card — check, upgrade-all, security-now and
+// the unattended-upgrades toggle — is PermSystemConfig on the server
+// (PostAptCheck / PostAptUpgrade / PostAptSecurityNow / PutAptAuto), and
+// PermSystemConfig lives only in adminPerms. So a non-admin who clicks any of
+// them earns a 403 and a red toast for something they were never allowed to
+// do. The page itself stays readable: /app/settings/updates is deliberately
+// not admin-only, and the counts and the reboot alarm are still theirs.
+// Same role source as SettingsNav — the token the server will actually judge.
+const isAdmin = computed(() => effectiveRole(auth.accessToken, auth.user?.role) === 'admin')
 function ok(s: string, d?: string) { toast.add({ severity: 'success', summary: s, detail: d, life: 3000 }) }
 function err(s: string, d?: string) { toast.add({ severity: 'error', summary: s, detail: d, life: 5000 }) }
 
@@ -112,7 +124,7 @@ function shortRepo(url: string): string {
 <template>
   <SettingsCard :title="t('settings.host.apt_title')" :description="t('settings.host.apt_desc')">
     <template #actions>
-      <Button size="small" severity="secondary" :loading="aptChecking" :disabled="!apt || !apt.supported" @click="checkApt">
+      <Button v-if="isAdmin" size="small" severity="secondary" :loading="aptChecking" :disabled="!apt || !apt.supported" @click="checkApt">
         <AppIcon name="RefreshCw" :size="15" class="mr-1.5" />{{ t('settings.host.apt_check') }}
       </Button>
     </template>
@@ -144,15 +156,15 @@ function shortRepo(url: string): string {
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-3">
-        <Button v-if="apt.total > 0" size="small" severity="warn" :loading="upgrading" @click="upgradeConfirm = true">
+        <Button v-if="isAdmin && apt.total > 0" size="small" severity="warn" :loading="upgrading" @click="upgradeConfirm = true">
           <AppIcon name="Download" :size="15" class="mr-1.5" />{{ t('settings.host.apt_upgrade_all') }}
         </Button>
-        <Button v-if="apt.security > 0" size="small" severity="secondary" :loading="upgrading" @click="runSecurityNow">
+        <Button v-if="isAdmin && apt.security > 0" size="small" severity="secondary" :loading="upgrading" @click="runSecurityNow">
           <AppIcon name="ShieldCheck" :size="15" class="mr-1.5" />{{ t('settings.host.security_now') }}
         </Button>
         <label v-if="aptAuto?.supported" class="ml-auto flex items-center gap-2 text-xs text-[var(--cn-text-muted)]">
           {{ t('settings.host.auto_label') }}
-          <ToggleSwitch :model-value="aptAuto.enabled" @update:model-value="toggleAutoUpgrade" />
+          <ToggleSwitch :model-value="aptAuto.enabled" :disabled="!isAdmin" @update:model-value="toggleAutoUpgrade" />
         </label>
       </div>
       <!-- Indeterminate progress while the transient apt service runs (dpkg
