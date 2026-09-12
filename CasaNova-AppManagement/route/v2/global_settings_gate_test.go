@@ -17,9 +17,9 @@ import (
 // such as OPENAI_API_KEY. They must not answer any caller who lacks PermAppConfigure.
 //
 // The tests below assert that:
-// 1. Unauthenticated callers, guests, and normal users are refused with 403
-//    (echo.HTTPError with StatusForbidden) before reading config.Global.
-// 2. An authenticated admin principal is permitted (positive control).
+//  1. Unauthenticated callers, guests, and normal users are refused with 403
+//     (echo.HTTPError with StatusForbidden) before reading config.Global.
+//  2. An authenticated admin principal is permitted (positive control).
 func TestGlobalSettingsDeniesNonAdminRoles(t *testing.T) {
 	config.GlobalMu.Lock()
 	config.Global["OPENAI_API_KEY"] = "sk-testsecretkey12345"

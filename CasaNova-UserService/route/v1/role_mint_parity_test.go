@@ -118,14 +118,16 @@ func (m *mockParityUserService) GetUserInfoByUserName(userName string) model2.Us
 	return m.users[userName]
 }
 
-func (m *mockParityUserService) UpLoadFile(file multipart.File, name string) error       { return nil }
-func (m *mockParityUserService) CreateUser(u model2.UserDBModel) model2.UserDBModel       { return u }
-func (m *mockParityUserService) GetUserCount() int64                                      { return int64(len(m.users)) }
-func (m *mockParityUserService) UpdateUser(u model2.UserDBModel)                          {}
-func (m *mockParityUserService) UpdateUserPassword(u model2.UserDBModel)                  {}
-func (m *mockParityUserService) GetUserAllInfoById(id string) model2.UserDBModel          { return m.usersByID[id] }
-func (m *mockParityUserService) DeleteUserById(id string)                                 {}
-func (m *mockParityUserService) GetAllUserName() []model2.UserDBModel                     { return nil }
+func (m *mockParityUserService) UpLoadFile(file multipart.File, name string) error  { return nil }
+func (m *mockParityUserService) CreateUser(u model2.UserDBModel) model2.UserDBModel { return u }
+func (m *mockParityUserService) GetUserCount() int64                                { return int64(len(m.users)) }
+func (m *mockParityUserService) UpdateUser(u model2.UserDBModel)                    {}
+func (m *mockParityUserService) UpdateUserPassword(u model2.UserDBModel)            {}
+func (m *mockParityUserService) GetUserAllInfoById(id string) model2.UserDBModel {
+	return m.usersByID[id]
+}
+func (m *mockParityUserService) DeleteUserById(id string)             {}
+func (m *mockParityUserService) GetAllUserName() []model2.UserDBModel { return nil }
 
 // 2. End-to-End Handler Comparator Test
 // This test exercises PostUserLogin and PostUserRefreshToken over the full set of
@@ -252,8 +254,8 @@ func TestRoleMintParity_LoginAndRefreshComparator(t *testing.T) {
 			}
 
 			var refreshResp struct {
-				Success int                         `json:"success"`
-				Message string                      `json:"message"`
+				Success int                            `json:"success"`
+				Message string                         `json:"message"`
 				Data    system_model.VerifyInformation `json:"data"`
 			}
 			if err := json.Unmarshal(refreshRec.Body.Bytes(), &refreshResp); err != nil {
