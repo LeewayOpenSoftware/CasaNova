@@ -45,14 +45,14 @@ echo "==> Building services for linux/${ARCH}..."
 cd "$WORKSPACE"
 
 REPOS=(
-    "CasaOS-Gateway"
-    "CasaOS-MessageBus"
-    "CasaOS-UserService"
-    "CasaOS-LocalStorage"
-    "CasaOS-JobManagement"
-    "CasaOS-AppManagement"
-    "CasaOS"
-    "CasaOS-CLI"
+    "CasaNova-Gateway"
+    "CasaNova-MessageBus"
+    "CasaNova-UserService"
+    "CasaNova-LocalStorage"
+    "CasaNova-JobManagement"
+    "CasaNova-AppManagement"
+    "CasaNova"
+    "CasaNova-CLI"
 )
 
 for repo in "${REPOS[@]}"; do
