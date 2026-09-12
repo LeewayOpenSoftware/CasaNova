@@ -60,7 +60,7 @@ readonly UNAME_U="$(uname -s)"
 readonly NET_GETTER="curl -fsSLk"
 
 readonly CASA_CONF_PATH=/etc/casaos/gateway.ini
-readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/IceWhaleTech/get/main/uninstall.sh"
+readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/${CASANOVA_ORG:-LeewayOpenSoftware}/get/main/uninstall.sh"
 readonly CASA_UNINSTALL_PATH=/usr/bin/casaos-uninstall
 readonly CASA_VERSION_URL="https://api.casaos.io/casaos-api/version"
 
@@ -188,19 +188,19 @@ Check_Arch() {
     esac
     Show 0 "Your hardware architecture is : $UNAME_M"
     CASA_PACKAGES=(
-        "https://casaos.oss-cn-shanghai.aliyuncs.com/v0.3.6/linux-${TARGET_ARCH}-casaos-gateway-v0.3.6.tar.gz"
-        "https://casaos.oss-cn-shanghai.aliyuncs.com/v0.3.6/linux-${TARGET_ARCH}-casaos-user-service-v0.3.6.tar.gz"
-        "https://casaos.oss-cn-shanghai.aliyuncs.com/v0.3.6/linux-${TARGET_ARCH}-casaos-v0.3.6.tar.gz"
-        "https://casaos.oss-cn-shanghai.aliyuncs.com/v0.3.6/linux-all-casaos-v0.3.6.tar.gz"
+        "https://github.com/LeewayOpenSoftware/CasaNova-Gateway/releases/download/v0.3.6/linux-${TARGET_ARCH}-casaos-gateway-v0.3.6.tar.gz"
+        "https://github.com/LeewayOpenSoftware/CasaNova-UserService/releases/download/v0.3.6/linux-${TARGET_ARCH}-casaos-user-service-v0.3.6.tar.gz"
+        "https://github.com/LeewayOpenSoftware/CasaNova/releases/download/v0.3.6/linux-${TARGET_ARCH}-casaos-v0.3.6.tar.gz"
+        "https://github.com/LeewayOpenSoftware/CasaNova-UI/releases/download/v0.3.6/linux-all-casaos-v0.3.6.tar.gz"
     )
 }
 
 # PACKAGE LIST OF CASAOS
 
 CASA_SERVICES=(
-    "casaos-gateway.service"
-    "casaos-user-service.service"
-    "casaos.service"
+    "casanova-gateway.service"
+    "casanova-user-service.service"
+    "casanova.service"
 )
 
 # 2 Check Distribution

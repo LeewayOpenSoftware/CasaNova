@@ -73,7 +73,7 @@ UNAME_U="$(uname -s)"
 readonly UNAME_U
 
 readonly CASA_CONF_PATH=/etc/casaos/gateway.ini
-readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/IceWhaleTech/get/main/uninstall.sh"
+readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/${CASANOVA_ORG:-LeewayOpenSoftware}/get/main/uninstall.sh"
 readonly CASA_UNINSTALL_PATH=/usr/bin/casaos-uninstall
 
 # REQUIREMENTS CONF PATH
@@ -208,10 +208,10 @@ Check_Arch() {
 
 # PACKAGE LIST OF CASAOS (make sure the services are in the right order)
 CASA_SERVICES=(
-    "casaos-gateway.service"
-    "casaos-user-service.service"
-    "casaos-local-storage.service"
-    "casaos.service"  # must be the last one so update from UI can work
+    "casanova-gateway.service"
+    "casanova-user-service.service"
+    "casanova-local-storage.service"
+    "casanova.service"  # must be the last one so update from UI can work
 )
 
 # 2 Check Distribution

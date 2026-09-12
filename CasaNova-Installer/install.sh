@@ -220,25 +220,25 @@ Check_Arch() {
     esac
     Show 0 "Your hardware architecture is : $UNAME_M"
     CASA_PACKAGES=(
-        "${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-Gateway/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-gateway-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-MessageBus/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-message-bus-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-UserService/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-user-service-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-LocalStorage/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-local-storage-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-AppManagement/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-app-management-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-CLI/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-cli-${CASANOVA_VERSION}.tar.gz"
-"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-UI/releases/download/${CASANOVA_VERSION}/linux-all-casaos-${CASANOVA_VERSION}.tar.gz"
+        "${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-Gateway/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-gateway-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-MessageBus/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-message-bus-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-UserService/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-user-service-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-LocalStorage/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-local-storage-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-AppManagement/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-app-management-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-CLI/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-cli-${CASANOVA_VERSION}.tar.gz"
+"${CASA_DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-UI/releases/download/${CASANOVA_VERSION}/linux-all-casaos-${CASANOVA_VERSION}.tar.gz"
     )
 }
 
 # PACKAGE LIST OF CASAOS (make sure the services are in the right order)
 CASA_SERVICES=(
-    "casaos-gateway.service"
-"casaos-message-bus.service"
-"casaos-user-service.service"
-"casaos-local-storage.service"
-"casaos-app-management.service"
-"casaos.service"  # must be the last one so update from UI can work 
+    "casanova-gateway.service"
+"casanova-message-bus.service"
+"casanova-user-service.service"
+"casanova-local-storage.service"
+"casanova-app-management.service"
+"casanova.service"  # must be the last one so update from UI can work
 )
 
 # 2 Check Distribution
