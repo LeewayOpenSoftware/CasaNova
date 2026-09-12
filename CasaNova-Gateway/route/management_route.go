@@ -404,6 +404,19 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 		// survives gateway restarts. CIDR validation happens both here
 		// (fail fast) and in SetWhitelist (single source of truth).
 		v1GatewayGroup.GET("/whitelist", func(ctx echo.Context) error {
+			// Admin only, no peer allowance — same as POST/DELETE below: its
+			// only client is the browser UI (CasaNova-UI-v2/src/api/system.ts),
+			// verified independently rather than assumed from the sibling. This
+			// GET carried NO in-handler check at all until this fix — any
+			// authenticated role, guest included, could read the global IP
+			// allow-list. Same shape as GET /tls above: a read counterpart left
+			// ungated while its mutating siblings were locked down.
+			if !managementAdmin(ctx) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
+			}
 			return ctx.JSON(http.StatusOK, model.Result{
 				Success: common_err.SUCCESS,
 				Message: common_err.GetMsg(common_err.SUCCESS),

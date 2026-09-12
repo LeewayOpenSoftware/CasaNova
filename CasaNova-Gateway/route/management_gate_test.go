@@ -86,6 +86,7 @@ var mutatingManagementRoutes = []struct {
 	{http.MethodDelete, "/v1/gateway/whitelist", false},
 	{http.MethodPut, "/v1/gateway/tls", false}, // the pre-existing gate, pinned with the rest
 	{http.MethodGet, "/v1/gateway/tls", false}, // read counterpart: no gate at all until this fix
+	{http.MethodGet, "/v1/gateway/whitelist", false}, // read counterpart of POST/DELETE: no gate at all until this fix
 }
 
 // The whitelist and TLS routes must refuse a non-admin EVEN WHEN the caller
@@ -190,8 +191,8 @@ func TestPeerAllowedRoutesStillCarryTheAdminBranch(t *testing.T) {
 			"exemption it has no caller for.", n)
 	}
 	adminOnly := regexp.MustCompile(`if !managementAdmin\(ctx\) \{`)
-	if n := len(adminOnly.FindAllString(text, -1)); n != 2 {
-		t.Errorf("found %d admin-only gates, want exactly 2 (POST and DELETE "+
+	if n := len(adminOnly.FindAllString(text, -1)); n != 3 {
+		t.Errorf("found %d admin-only gates, want exactly 3 (GET, POST and DELETE "+
 			"/whitelist)", n)
 	}
 	// Count, not Contains: a boolean check on the bare string stays true even
