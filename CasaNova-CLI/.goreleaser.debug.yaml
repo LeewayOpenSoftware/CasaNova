@@ -97,8 +97,8 @@ changelog:
       - "^test:"
 release:
   github:
-    owner: IceWhaleTech
-    name: CasaOS-CLI
+    owner: LeewayOpenSoftware
+    name: CasaNova-CLI
   draft: true
   prerelease: auto
   mode: replace

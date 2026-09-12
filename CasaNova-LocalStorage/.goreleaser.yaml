@@ -210,8 +210,8 @@ changelog:
       - "^test:"
 release:
   github:
-    owner: IceWhaleTech
-    name: CasaOS-LocalStorage
+    owner: LeewayOpenSoftware
+    name: CasaNova-LocalStorage
   draft: true
   prerelease: auto
   mode: replace

@@ -100,8 +100,8 @@ changelog:
       - "^test:"
 release:
   github:
-    owner: IceWhaleTech
-    name: CasaOS-JobManagement
+    owner: LeewayOpenSoftware
+    name: CasaNova-JobManagement
   draft: true
   prerelease: auto
   mode: replace

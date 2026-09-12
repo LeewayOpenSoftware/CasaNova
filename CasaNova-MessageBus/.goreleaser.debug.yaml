@@ -177,8 +177,8 @@ changelog:
       - "^test:"
 release:
   github:
-    owner: IceWhaleTech
-    name: CasaOS-MessageBus
+    owner: LeewayOpenSoftware
+    name: CasaNova-MessageBus
   draft: true
   prerelease: auto
   mode: replace
