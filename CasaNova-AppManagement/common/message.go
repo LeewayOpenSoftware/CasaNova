@@ -135,6 +135,64 @@ var EventTypes = []message_bus.EventType{
 	EventTypeContainerRemoveBegin, EventTypeContainerRemoveEnd, EventTypeContainerRemoveError,
 }
 
+// WHY SO MANY EVENTS DECLARE PROPERTIES THEY NEVER NAME AT THE PUBLISH SITE.
+//
+// Thirty-one of these events used to declare LESS than they put on the wire.
+// That is not thirty-one oversights, it is ONE mechanism seen from thirty-one
+// places: PropertiesFromContext returns the map STORED IN THE CONTEXT, not a
+// copy, so a handler that does
+//
+//	eventProperties := common.PropertiesFromContext(ctx)
+//	eventProperties[PropertyTypeAppName.Name] = app.Name
+//
+// mutates the context's own map, and PublishEventWrapper then merges that map
+// OVER every later publish on the same ctx — including the many call sites that
+// pass nil properties. A key therefore travels to every event published
+// downstream of wherever it was written, however far away that is.
+//
+// The declarations below are the UNION over the paths that actually reach each
+// event. The paths, and the keys each one puts into the context map, are:
+//
+//	route/v1/docker.go AppInstall    app:name, app:icon, docker:image:name,
+//	                                 and docker:container:id once the container
+//	                                 exists — which is why app:install-end, the
+//	                                 DEFERRED publish, carries an id that
+//	                                 app:install-begin cannot
+//	route/v1/docker.go AppUninstall  app:name, app:icon
+//	route/v2/docker.go RecreateCtr   app:name, app:icon
+//	route/v2/image.go PullImages     app:name, app:icon
+//	service/compose_service.go       app:name + app:icon + app:title, the last
+//	  Install / Uninstall            two via UpdateEventPropertiesFromStoreInfo
+//	service/compose_app.go           app:name (+ store info on Update/Apply)
+//	service/image.go PullLatestImage docker:image:updated, written in a DEFER so
+//	                                 that everything published after the pull —
+//	                                 app:update-end and every container event
+//	                                 inside RecreateContainer — carries it
+//
+// DECLARING THE TRUTH IS NOT A BEHAVIOUR CHANGE; REMOVING THE PROPERTIES WOULD
+// BE. On a feature-frozen line a subscriber may already read any of these, so
+// the fix is to make the map match the territory, never to shrink the
+// territory. Per-event filtering is still deliberately NOT built on top of
+// this: a filter enforcing a declaration that lies drops real data silently,
+// which is worse than no filter at all. The declarations tell the truth first.
+//
+// TWO THINGS ARE LEFT ALONE ON PURPOSE, AND BOTH ARE REPORTED RATHER THAN
+// PATCHED:
+//
+//  1. app-store:register-begin/end declare nothing and publish nothing — their
+//     context is built in route/v2/appstore.go and no code on that path writes
+//     an app property. An empty declaration that is already honest must not be
+//     "completed" by analogy with its neighbours.
+//  2. docker:image:pull-progress declares app:name and message and has NO
+//     publisher anywhere in the tree. That is the mirror image of the bug fixed
+//     here — a map claiming territory that does not exist — and deleting it
+//     would change the advertised event set, which is not a declaration fix.
+//
+// check_port_conflict and dry_run are also absent from most lists although
+// PropertiesFromQueryParams admits them on every route that builds a context
+// that way. They are CLIENT-supplied and cross-cutting: they can ride any event
+// and so are a property of the inlet, not of any one event. They stay declared
+// only on app:install-progress, where they were declared before this change.
 // event types for app-store
 var (
 	EventTypeAppStoreRegisterBegin = message_bus.EventType{
@@ -166,6 +224,8 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
 			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
 		},
 	}
 
@@ -179,6 +239,7 @@ var (
 			PropertyTypeAppTitle,
 			PropertyTypeCheckPortConflict,
 			PropertyTypeDryRun,
+			PropertyTypeImageName,
 		},
 	}
 
@@ -188,6 +249,9 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
 			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeContainerID,
 		},
 	}
 
@@ -198,6 +262,9 @@ var (
 			PropertyTypeAppName,
 			PropertyTypeAppIcon,
 			PropertyTypeMessage,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeContainerID,
 		},
 	}
 
@@ -206,6 +273,8 @@ var (
 		Name:     "app:uninstall-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
 		},
 	}
 
@@ -214,6 +283,8 @@ var (
 		Name:     "app:uninstall-end",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
 		},
 	}
 
@@ -223,6 +294,8 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
 			PropertyTypeMessage,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
 		},
 	}
 
@@ -265,6 +338,7 @@ var (
 			PropertyTypeAppName,
 			PropertyTypeAppIcon,
 			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -273,6 +347,10 @@ var (
 		Name:     "app:update-error",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -323,6 +401,9 @@ var (
 		Name:     "app:apply-changes-error",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
 		},
 	}
 
@@ -409,6 +490,9 @@ var (
 		Name:     "docker:image:pull-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
 		},
 	}
 
@@ -427,6 +511,9 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
 			PropertyTypeImageUpdated,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
 		},
 	}
 
@@ -436,6 +523,10 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
 			PropertyTypeMessage,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -444,6 +535,7 @@ var (
 		Name:     "docker:image:remove-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
+			PropertyTypeAppIcon,
 		},
 	}
 
@@ -452,6 +544,7 @@ var (
 		Name:     "docker:image:remove-end",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
+			PropertyTypeAppIcon,
 		},
 	}
 
@@ -461,6 +554,8 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeAppName,
 			PropertyTypeMessage,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
 		},
 	}
 )
@@ -472,6 +567,11 @@ var (
 		Name:     "docker:container:create-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerName,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -481,6 +581,11 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
 			PropertyTypeContainerName,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -490,6 +595,11 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerName,
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -498,6 +608,11 @@ var (
 		Name:     "docker:container:start-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -506,6 +621,11 @@ var (
 		Name:     "docker:container:start-end",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -515,6 +635,11 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageName,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -523,6 +648,10 @@ var (
 		Name:     "docker:container:stop-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -531,6 +660,12 @@ var (
 		Name:     "docker:container:stop-end",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
+			PropertyTypeContainerName,
+			PropertyTypeMessage,
 		},
 	}
 
@@ -540,6 +675,10 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -549,6 +688,9 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
 			PropertyTypeContainerName,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -558,6 +700,9 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
 			PropertyTypeContainerName,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -568,6 +713,9 @@ var (
 			PropertyTypeContainerID,
 			PropertyTypeContainerName,
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -576,6 +724,10 @@ var (
 		Name:     "docker:container:remove-begin",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -584,6 +736,10 @@ var (
 		Name:     "docker:container:remove-end",
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeAppTitle,
+			PropertyTypeImageUpdated,
 		},
 	}
 
@@ -593,6 +749,9 @@ var (
 		PropertyTypeList: []message_bus.PropertyType{
 			PropertyTypeContainerID,
 			PropertyTypeMessage,
+			PropertyTypeAppName,
+			PropertyTypeAppIcon,
+			PropertyTypeImageUpdated,
 		},
 	}
 )

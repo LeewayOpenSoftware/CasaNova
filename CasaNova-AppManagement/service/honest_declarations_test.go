@@ -54,8 +54,20 @@ func TestDeclaredPropertiesMatchWhatIsActuallyPublished(t *testing.T) {
 		common.EventTypeAppApplyChangesEnd,
 	} {
 		t.Run(eventType.Name, func(t *testing.T) {
-			declared := sortedPropertyNames(eventType.PropertyTypeList)
-			assert.DeepEqual(t, declared, carried)
+			// SUBSET, not equality. When this was written these four events
+			// were reachable only down this one path, so the two sets matched.
+			// app:update-end is now also published by route/v2/docker.go after
+			// RecreateContainer, whose PullLatestImage writes
+			// docker:image:updated into the same map, so its declaration is the
+			// UNION over paths and is legitimately larger than what this path
+			// carries. Exactness in the other direction — no declared key
+			// without a publisher — is enforced by
+			// TestEveryDeclaredKeyIsPublished.
+			declared := set(sortedPropertyNames(eventType.PropertyTypeList))
+			for _, k := range carried {
+				_, ok := declared[k]
+				assert.Assert(t, ok, "%s carries %q on this path but does not declare it", eventType.Name, k)
+			}
 		})
 	}
 }
