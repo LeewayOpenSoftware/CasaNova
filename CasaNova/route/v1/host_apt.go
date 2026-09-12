@@ -390,15 +390,24 @@ func GetAptUpgradeStatus(ctx echo.Context) error {
 		}
 	}
 	st.RebootRequired, st.RebootPackages = rebootRequired()
-	// Tail is the raw stdout/stderr of a privileged apt-get run: package
-	// names/versions, dpkg maintainer-script output, and — for a private or
-	// third-party APT source — potentially a repo URL carrying embedded Basic
-	// Auth credentials. Triggering an upgrade already requires
-	// PermSystemConfig (PostAptUpgrade above); reading the full raw output of
-	// that privileged run should require the same tier, not the broader
-	// PermSystemRead this handler is gated on for its coarse status. A merely
-	// authenticated, non-admin caller still gets state/exit code/reboot info
-	// — enough for a "system needs attention" indicator — without the raw log.
+	// Tail is the raw stdout/stderr of a privileged apt-get run: it names
+	// every package and exact version the upgrade touched — the same
+	// reconnaissance value as AptStatus.Packages above (line ~141), which
+	// gets PermSystemConfig for the identical reason: an exact, machine-
+	// readable map of which known-vulnerable versions this box just ran.
+	//
+	// It is NOT gated because the log could carry embedded Basic Auth
+	// credentials from a private repo URL — it can't. Reproduced directly:
+	// `apt-get update` against a source URL with a userinfo component
+	// (https://user:pass@host/...) never printed the credentials in any
+	// Ign:/Err:/W: line; apt's own URI printer strips userinfo before it
+	// reaches output, same behavior FailedRepos above already relies on.
+	// Triggering an upgrade already requires PermSystemConfig (PostAptUpgrade
+	// above); reading the full raw output of that privileged run should
+	// require the same tier, not the broader PermSystemRead this handler is
+	// gated on for its coarse status. A merely authenticated, non-admin
+	// caller still gets state/exit code/reboot info — enough for a "system
+	// needs attention" indicator — without the raw log.
 	// RebootPackages is gated here for the same reason, and in the same commit,
 	// as in GetAptUpdates: gating the identical field in only one of two twin
 	// handlers would leave the other one answering the question anyway.

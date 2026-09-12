@@ -1,13 +1,22 @@
 package v1
 
 // GetAptUpgradeStatus used to return the raw stdout/stderr tail of a
-// privileged apt-get run (package names/versions, dpkg maintainer-script
-// output, and — for a private or third-party APT source — potentially a
-// repo URL carrying embedded Basic Auth credentials) to ANY authenticated
-// caller holding PermSystemRead. Triggering the upgrade already requires the
-// stricter PermSystemConfig (PostAptUpgrade); reading its full raw output
-// should require the same tier. A merely-authenticated non-admin still gets
+// privileged apt-get run — package names and exact versions, plus dpkg
+// maintainer-script output — to ANY authenticated caller holding
+// PermSystemRead. That is the same reconnaissance value as this package's
+// package-list gate (an exact map of which known-vulnerable versions this
+// box just ran). Triggering the upgrade already requires the stricter
+// PermSystemConfig (PostAptUpgrade); reading its full raw output should
+// require the same tier. A merely-authenticated non-admin still gets
 // state/exit-code/reboot info, just not the raw log.
+//
+// This is NOT because the log could carry embedded Basic Auth credentials
+// from a private repo URL: reproduced directly (see host_apt.go's Tail
+// comment), apt's own URI printer strips userinfo before it reaches
+// output, so a real run's log never contains one. The fixture below still
+// includes a credential-shaped string anyway, checked as a belt-and-
+// suspenders property test ("whatever ends up in this log, a non-admin
+// gets none of it") rather than as a claim about what apt actually emits.
 
 import (
 	"net/http"
@@ -48,7 +57,8 @@ Unpacking foo-pkg (1.2.3) over (1.2.2) ...
 Setting up foo-pkg (1.2.3) ...`
 
 // THE GAP: a non-admin ("user" role) authenticated caller must not see the
-// raw log — including any credentials embedded in a private repo URL.
+// raw log — package/version reconnaissance at minimum, and (belt and
+// suspenders, see the file comment above) anything else that ends up in it.
 func TestGetAptUpgradeStatusHidesTailFromNonAdmin(t *testing.T) {
 	pointAptUpgradeLogAt(t, aptUpgradeLogFixture)
 
@@ -60,7 +70,7 @@ func TestGetAptUpgradeStatusHidesTailFromNonAdmin(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (a non-admin should still get coarse status), body=%s", rec.Code, rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "s3cr3t") {
-		t.Fatalf("response to a non-admin caller leaked the raw log (and its embedded credential): %s", rec.Body.String())
+		t.Fatalf("response to a non-admin caller leaked the raw log: %s", rec.Body.String())
 	}
 	// Tail must be [] , not omitted/null: the JSON tag has no omitempty, and
 	// the Vue card does `upgrade.tail.length` with no optional chaining —
