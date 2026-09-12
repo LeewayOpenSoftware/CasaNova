@@ -581,3 +581,73 @@ func TestEnforcementDoesNotTouchTheFilesystem(t *testing.T) {
 		}
 	}
 }
+
+// A DEGRADE THAT HAPPENS AFTER BOOT MUST LEAVE SOMETHING TO FIND.
+//
+// The constructor reports the aggregate standing once (service/management.go),
+// but policy can degrade at RUNTIME: Set() is reachable from the management
+// API and goes through persistLocked, which degrades on a failed write. Before
+// this, that produced a single line about one failed write and nothing about
+// the resulting state — and the exported accessor built for exactly this was
+// wired to nothing but a test.
+//
+// WHAT THIS TEST CAN AND CANNOT ASSERT, stated plainly: there is no log-capture
+// helper in this package, so it does NOT assert the text of the journal line.
+// It asserts the two things underneath it that can actually break:
+//
+//  1. the aggregate state the logger reads is really there after a runtime
+//     degrade, naming the invariant — an empty state would make the new log
+//     line empty too;
+//  2. reading that aggregate from inside persistLocked does not DEADLOCK.
+//     persistLocked runs under the write lock and sync.RWMutex is not
+//     reentrant, so calling Health() there would block forever. This test
+//     drives exactly that path; if the lock-free variant regressed to Health()
+//     it would hang here rather than fail politely.
+func TestRuntimeDegradeLeavesTheAggregateStateBehind(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "route-policy.json")
+
+	store := newRoutePolicyStore(policyPath)
+	if h := store.Health(); !h.OK {
+		t.Fatalf("precondition: a fresh box should be healthy, got %+v", h)
+	}
+	if err := store.Set("/v1/files", []string{"192.168.1.0/24"}); err != nil {
+		t.Fatalf("precondition: first write should succeed: %v", err)
+	}
+
+	// Take write permission away from the directory so the atomic rewrite
+	// cannot create its temporary file. This is the runtime failure the
+	// aggregate was never reported for.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	err := store.Set("/v1/files", []string{"10.0.0.0/8"})
+	if err == nil {
+		t.Skip("the filesystem let us write to a read-only directory (running as root?); " +
+			"this test cannot produce a runtime persist failure here")
+	}
+
+	h := store.Health()
+	if h.OK {
+		t.Fatal("the store reported healthy after a failed runtime write; nothing would be journaled " +
+			"and an operator would never learn the policy is no longer durable")
+	}
+	if h.FailedInvariant != invRoutePolicyDurable {
+		t.Fatalf("failed invariant = %q, want %q — the journal line names this field",
+			h.FailedInvariant, invRoutePolicyDurable)
+	}
+	if h.Detail == "" {
+		t.Fatal("no detail recorded; the journal line would name an invariant with no cause")
+	}
+	if h.Path != policyPath {
+		t.Fatalf("health path = %q, want %q", h.Path, policyPath)
+	}
+
+	// The rollback in Set must have kept memory and disk in agreement, so the
+	// counts the journal line reports describe the policy actually in force.
+	if h.RestrictedRoutes != 1 {
+		t.Fatalf("restricted routes = %d, want 1 (the decision that is still in force)", h.RestrictedRoutes)
+	}
+}
