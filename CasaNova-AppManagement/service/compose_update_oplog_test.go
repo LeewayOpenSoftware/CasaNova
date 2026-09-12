@@ -68,6 +68,40 @@ func TestUpdateOpOutcomeNilSafe(t *testing.T) {
 	updateOpOutcome(nil, nil)
 }
 
+// The test above passes a literal nil, which the compiler turns into a truly
+// nil operationFinisher (nil type AND nil value). That is NOT what StartOp
+// actually produces when the oplog DB was never set (SetOpLoggerDB has zero
+// callers in this codebase today, so this is the permanent, current state):
+// StartOp returns a nil *oplog.Operation, a CONCRETE type. The moment that
+// concrete nil crosses into an operationFinisher-typed parameter — exactly
+// what happens at the `go func(ctx context.Context, op operationFinisher)`
+// boundary in Update(), and again at its `updateOpOutcome(op, err)` call —
+// the resulting interface value carries a non-nil type descriptor
+// (*oplog.Operation) with a nil pointer underneath. `op == nil` on THAT
+// value is false: this is Go's well-documented "typed nil in a non-nil
+// interface" pitfall. The literal-nil test above cannot see this because a
+// literal nil never goes through that conversion.
+func TestUpdateOpOutcomeSurvivesATypedNilFromStartOp(t *testing.T) {
+	// No test in this package calls SetOpLoggerDB, so opLogger is nil here —
+	// the same permanent state production is in.
+	op := StartOp("app.update", "probe")
+	if op != nil {
+		t.Fatal("test assumption violated: StartOp returned non-nil; opLogger must be nil for this test to mean anything")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("updateOpOutcome panicked on a StartOp-sourced nil operation: %v\n"+
+				"This is the exact crash Update()'s async goroutine hits on EVERY compose app "+
+				"update today, success or failure, because SetOpLoggerDB is never called: "+
+				"updateOpOutcome's op==nil guard cannot see a concrete *oplog.Operation nil "+
+				"once it has been implicitly converted to the operationFinisher interface.", r)
+		}
+	}()
+	updateOpOutcome(op, errors.New("some error"))
+	updateOpOutcome(op, nil)
+}
+
 // Wiring test: verifies at source level that Update does not complete the
 // operation in its synchronous prologue/defer, and that the detached goroutine
 // correctly owns and finishes the operation.
@@ -117,14 +151,32 @@ func TestUpdateOplogWiringIsActuallyWiredIn(t *testing.T) {
 		t.Errorf("compose_app.go detached goroutine does not call updateOpOutcome(op, err)")
 	}
 
-	// 5. Invariant: the goroutine's panic recovery must fail op
+	// 5. Invariant: the goroutine's panic recovery must fail op — routed
+	// through updateOpOutcome (or isNilFinisher-guarded), not a raw
+	// `op.Fail(...)`. A direct call on a StartOp-sourced nil panics a
+	// second time (a typed-nil-in-a-non-nil-interface, invisible to a plain
+	// `op != nil` check) inside a recover() that already fired once and
+	// crashes the daemon instead of just this update. Checking for the
+	// literal "op.Fail" here would be vacuous: a comment mentioning it
+	// would satisfy the check without the real call site being fixed.
 	goroutineBody := text[updateFuncStart+goroutineStart:]
 	updateFuncEnd := strings.Index(goroutineBody, "func (a *ComposeApp) App")
 	if updateFuncEnd != -1 {
 		goroutineBody = goroutineBody[:updateFuncEnd]
 	}
 
-	if !strings.Contains(goroutineBody, "op.Fail") {
-		t.Errorf("compose_app.go detached goroutine recover does not fail op on panic")
+	recoverStart := strings.Index(goroutineBody, "recover()")
+	if recoverStart == -1 {
+		t.Fatal("compose_app.go detached goroutine has no recover()")
+	}
+	recoverBody := goroutineBody[recoverStart:]
+	recoverBraceEnd := strings.Index(recoverBody, "}()")
+	if recoverBraceEnd != -1 {
+		recoverBody = recoverBody[:recoverBraceEnd]
+	}
+	if !strings.Contains(recoverBody, "updateOpOutcome(op") {
+		t.Errorf("compose_app.go detached goroutine's recover handler does not finish op " +
+			"via updateOpOutcome on panic — a direct op.Fail/op.Complete call here would " +
+			"panic a second time on a StartOp-sourced nil operationFinisher and crash the daemon")
 	}
 }
