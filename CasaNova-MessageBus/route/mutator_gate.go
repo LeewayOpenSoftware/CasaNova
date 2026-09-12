@@ -12,9 +12,29 @@ package route
 //
 // The rule: internal services publishing over the unix socket pass (their
 // identity is the ConnContext stamp, provable and unforgeable from TCP);
-// everyone else needs a role holding PermSystemConfig. Nothing legitimate
-// is narrower — the UI only subscribes, and every in-house publisher uses
-// the socket.
+// everyone else needs a role holding PermSystemConfig. Nothing legitimate is
+// narrower: every in-house publisher uses the socket (external.PublishEventInSocket
+// goes through SocketHTTPClient), and no first-party client publishes over TCP.
+//
+// WHAT THIS GATE DOES NOT COVER. The previous wording here said "the UI only
+// subscribes", and that is false: THE v2 UI DOES NOT SUBSCRIBE TO THIS BUS AT
+// ALL. It polls the YSK REST endpoints instead, and its own source says so
+// (CasaNova-UI-v2/src/stores/ysk.ts, "rather than a full bus WebSocket
+// subscription"; src/api/ysk.ts). There is no WS or Socket.IO subscription
+// anywhere in the v2 UI.
+//
+// The read surface is SubscribeEventWS, and it has authentication but NO
+// authorization: any authenticated principal, the guest role included, may
+// subscribe to any source, and omitting `names` subscribes to every name that
+// source has registered. That is the KNOWN state of this bus, recorded here so
+// the next reader can tell a deliberate absence from an oversight.
+//
+// The old sentence was a trap for one specific decision. Anyone weighing a gate
+// on the subscribe side would read "the UI only subscribes" as "gating subscribe
+// breaks the UI", and drop it. The truth is the reverse: no first-party caller
+// subscribes, so the first-party blast radius of such a gate is zero. The real
+// constraint is out-of-tree ZimaOS clients, which cannot be measured from this
+// repository — and "no first-party caller" is not "no caller".
 
 import (
 	"net/http"
