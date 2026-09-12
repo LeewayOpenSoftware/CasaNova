@@ -69,12 +69,44 @@ func fxNewHost(t *testing.T) *fxHost {
 	// other fact came from this fake root — the fixture writes a mountinfo
 	// into h.proc and then nobody read it.
 	blockdev.SetRoots(h.sys, h.proc, h.dev)
+	// THREE injection points, not one. Each was found separately, and each
+	// time the symptom was a test naming something real on the machine that
+	// ran it: blockdev's roots (the inventory), this package's own mount-table
+	// root, and the protected-mount prefixes. A fixture that sets a subset is
+	// isolated from exactly the parts it remembered.
 	SetSanitizeProcRoot(h.proc)
+	blockdev.SetProtectedMountPrefixes(protectedMountPrefixesExcluding(root))
 	t.Cleanup(func() {
 		blockdev.SetRoots("/sys", "/proc", "/dev")
 		SetSanitizeProcRoot("/proc")
+		blockdev.SetProtectedMountPrefixes(blockdev.DefaultProtectedMountPrefixes)
 	})
 	return h
+}
+
+// protectedMountPrefixesExcluding returns the default protected-mount list
+// with any prefix that is an ancestor of (or equal to) base removed. Fixtures
+// mount their fake partitions under real, test-chosen paths like "/srv/db" or
+// "/var/lib/casanova" ON PURPOSE, to prove the guard refuses them — that must
+// keep working regardless of where $TMPDIR resolves. But base itself is
+// real too (t.TempDir(), needed for real file I/O), and it resolves under
+// $TMPDIR: if $TMPDIR happens to sit under one of the default prefixes (e.g.
+// "/home"), every fixture mountpoint nested under base would falsely match
+// that prefix no matter what the test actually mounts there. Removing only
+// the prefixes that are ancestors of base leaves every other prefix (and any
+// literal, non-base-derived mountpoint a test uses) fully active.
+func protectedMountPrefixesExcluding(base string) []string {
+	var out []string
+	for _, p := range blockdev.DefaultProtectedMountPrefixes {
+		if base == p {
+			continue
+		}
+		if p != "/" && strings.HasPrefix(base, strings.TrimSuffix(p, "/")+"/") {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 type fxDisk struct {
