@@ -97,11 +97,20 @@ fi
 #   tools/            the update mechanism itself; a package without it leaves
 #                     the previous release's updater frozen on every box
 #
-# NOT listed, deliberately, because their absence is legitimate:
+#   manifest.json     apply-update.sh installs it as /var/lib/casanova/manifest.json,
+#                     which is what the updater reads to know what is installed;
+#                     shipping without it was one of the two clean-install bugs.
+#                     It is required on a LOWER bar than the rest, and the reason
+#                     is worth keeping: the Makefile GENERATES it (both
+#                     build/manifest.json and build/full/manifest.json), so it is
+#                     REGENERABLE. Demanding a regenerable artifact costs nobody
+#                     anything — you re-run make. Demanding a non-regenerable one
+#                     changes WHO CAN PACKAGE AT ALL. High bar for the nine above,
+#                     low bar for this one.
+#
+# NOT listed, deliberately, because its absence is legitimate:
 #   config/           SAMPLE configs, installed by upgrade.sh only when nothing
 #                     was migrated — a fallback, not a payload
-#   manifest.json     apply-update.sh guards its own read of it, and VERSION
-#                     falls back to `casanova -v`
 #
 # All of them are reported in ONE pass: failing on the first missing file sends
 # whoever is packaging round the loop once per artifact.
@@ -112,6 +121,10 @@ done
 for d in systemd www tmpfiles.d library tools; do
     [ -d "${BUILD_DIR}/${d}" ] || MISSING="${MISSING}\n  missing directory: ${BUILD_DIR}/${d}"
 done
+# Not under BUILD_DIR: the packager reads the manifest from the project root,
+# and `make full` writes it to both places.
+[ -f "${PROJECT_ROOT}/build/manifest.json" ] || \
+    MISSING="${MISSING}\n  missing file:      ${PROJECT_ROOT}/build/manifest.json (run \`make full\`; needs python3)"
 if [ -n "$MISSING" ]; then
     err "Build directory is not packageable: ${BUILD_DIR}"
     # shellcheck disable=SC2059
@@ -218,9 +231,8 @@ for sh in install.sh upgrade.sh migrate.sh apply-update.sh; do
 done
 
 # Copy manifest
-if [ -f "${PROJECT_ROOT}/build/manifest.json" ]; then
-    cp "${PROJECT_ROOT}/build/manifest.json" "${STAGE_DIR}/manifest.json"
-fi
+# Unconditional: the preflight already refused to get here without it.
+cp "${PROJECT_ROOT}/build/manifest.json" "${STAGE_DIR}/manifest.json"
 
 # ─── Generate checksums ─────────────────────────────────────────────────────
 info "Generating checksums..."
