@@ -211,8 +211,8 @@ changelog:
       - "^test:"
 release:
   github:
-    owner: IceWhaleTech
-    name: CasaOS-Gateway
+    owner: LeewayOpenSoftware
+    name: CasaNova-Gateway
   draft: false
   prerelease: auto
   mode: replace

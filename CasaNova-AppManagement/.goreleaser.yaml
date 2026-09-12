@@ -279,8 +279,8 @@ changelog:
       - "^test:"
 release:
   github:
-    owner: IceWhaleTech
-    name: CasaOS-AppManagement
+    owner: LeewayOpenSoftware
+    name: CasaNova-AppManagement
   draft: false
   prerelease: auto
   mode: replace
