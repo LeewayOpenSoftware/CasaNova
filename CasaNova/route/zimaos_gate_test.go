@@ -208,7 +208,7 @@ func TestZimaDiscovery_RateLimitsFloodFromOneSource(t *testing.T) {
 
 // Unit-level check of the subnet predicate, independent of sockets.
 func TestIPInNets(t *testing.T) {
-	_, own, err := net.ParseCIDR("192.168.1.0/24")
+	_, own, err := net.ParseCIDR("192.0.2.0/24")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +218,8 @@ func TestIPInNets(t *testing.T) {
 		ip   string
 		want bool
 	}{
-		{"192.168.1.188", true}, // the box's own segment: a real client
-		{"192.168.1.1", true},   // the LAN gateway
+		{"192.0.2.188", true}, // a client on this segment
+		{"192.0.2.1", true},   // the LAN gateway
 		{"192.168.2.5", false},  // routed neighbour, not directly connected
 		{"203.0.113.7", false},  // public victim of a forged-source probe
 		{"8.8.8.8", false},      // ditto
@@ -245,7 +245,7 @@ func TestProbeLimiter_BurstThenRefill(t *testing.T) {
 
 	allowed := 0
 	for i := 0; i < 20; i++ {
-		if l.allow("192.168.1.50") {
+		if l.allow("192.0.2.50") {
 			allowed++
 		}
 	}
@@ -254,16 +254,16 @@ func TestProbeLimiter_BurstThenRefill(t *testing.T) {
 	}
 
 	// A different source is unaffected by the first one's flood.
-	if !l.allow("192.168.1.51") {
+	if !l.allow("192.0.2.51") {
 		t.Error("second source denied; one flooder must not deny other clients")
 	}
 
 	// One second later the first source is served again.
 	now = now.Add(time.Second)
-	if !l.allow("192.168.1.50") {
+	if !l.allow("192.0.2.50") {
 		t.Error("bucket did not refill; a steady 1/s client would be starved")
 	}
-	if l.allow("192.168.1.50") {
+	if l.allow("192.0.2.50") {
 		t.Error("bucket refilled faster than the configured rate")
 	}
 }
@@ -431,7 +431,7 @@ func TestProbeLimiter_KnownNeighborSurvivesRotatingFlood(t *testing.T) {
 	l := newProbeLimiter()
 	l.now = func() time.Time { return now }
 
-	const neighbor = "192.168.1.50"
+	const neighbor = "192.0.2.50"
 	if !l.allow(neighbor) {
 		t.Fatal("neighbour denied on its very first probe")
 	}
@@ -548,7 +548,7 @@ func TestConnectedIPv4Nets_CachesFailurePaths(t *testing.T) {
 // flip the responder's policy for the sources it already knows about.
 func TestConnectedIPv4Nets_FailureKeepsLastGoodNets(t *testing.T) {
 	restoreNetInterfaces(t, func() ([]net.Interface, error) { return nil, errors.New("netlink down") })
-	pinNeighborNets(t, "192.168.1.0/24")
+	pinNeighborNets(t, "192.0.2.0/24")
 
 	// Force the TTL to have expired so the failing lookup actually runs.
 	neighborMu.Lock()
@@ -556,10 +556,10 @@ func TestConnectedIPv4Nets_FailureKeepsLastGoodNets(t *testing.T) {
 	neighborMu.Unlock()
 
 	nets := connectedIPv4Nets()
-	if len(nets) != 1 || !nets[0].Contains(net.ParseIP("192.168.1.188")) {
+	if len(nets) != 1 || !nets[0].Contains(net.ParseIP("192.0.2.188")) {
 		t.Fatalf("failed lookup dropped the last good subnet list: %v", nets)
 	}
-	if !isNeighborIPv4(net.ParseIP("192.168.1.188")) {
+	if !isNeighborIPv4(net.ParseIP("192.0.2.188")) {
 		t.Error("known neighbour rejected after a transient enumeration failure")
 	}
 }

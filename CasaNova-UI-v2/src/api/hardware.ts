@@ -120,7 +120,7 @@ export function isDmiPlaceholder(value: string | undefined | null): boolean {
 // as CasaNova gets deployed on more hardware.
 
 const KNOWN_BOARDS: Record<string, MotherboardProfile> = {
-  // Asus Prime A320M-K — our first test subject (neinrev8-server)
+  // Asus Prime A320M-K — our first test subject
   'PRIME A320M-K': {
     manufacturer: 'ASUS',
     model: 'PRIME A320M-K',
