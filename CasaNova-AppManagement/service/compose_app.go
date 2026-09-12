@@ -173,7 +173,6 @@ func (a *ComposeApp) SetTitle(title, lang string) {
 	}
 }
 
-
 type operationFinisher interface {
 	Complete(message string)
 	Fail(err error)
