@@ -131,6 +131,15 @@ function collectUsages(): Usage[] {
   return found
 }
 
+// Timeout: this suite builds and cross-checks the full icon maps, so it is the
+// only spec in the module that runs anywhere near a runner budget. It is not
+// slow because of a regression -- measured twice, the file takes 7.1s/8.5s and
+// its slowest single test 5.5s/7.1s, against Vitest's 5000ms default. What
+// moved is the environment: the suite grew from 20 to 21 spec files and the
+// build host runs 3-4x oversubscribed, so the default budget was measuring
+// machine load rather than this code. 11s is set from the measured maximum
+// (7148ms) plus ~54% headroom, and is scoped to this describe deliberately so
+// the other 20 specs keep the tight default.
 describe('icon registry', () => {
   it('maps the same key set in both packs', async () => {
     // Dynamic, because that is how the app loads it: the Phosphor map lives in
@@ -177,4 +186,4 @@ describe('icon registry', () => {
     const names = new Set(collectUsages().map((u) => u.name))
     expect(names.size).toBeGreaterThan(100)
   })
-})
+}, 11_000)
