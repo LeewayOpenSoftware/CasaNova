@@ -175,7 +175,9 @@ func writeSmbConfAndReload(cfg SmbConfig) error {
 	// Only reload if smbd is running.
 	if out, err := exec.Command("systemctl", "is-active", "smbd").Output(); err == nil {
 		if strings.TrimSpace(string(out)) == "active" {
-			exec.Command("systemctl", "reload", "smbd").Run()
+			if err := exec.Command("systemctl", "reload", "smbd").Run(); err != nil {
+				logger.Error("failed to reload smbd", zap.Error(err))
+			}
 		}
 	}
 	return nil
