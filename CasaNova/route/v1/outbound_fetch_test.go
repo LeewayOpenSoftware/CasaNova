@@ -265,7 +265,7 @@ func TestValidateOutboundURLRefusesInternalAndNonHTTP(t *testing.T) {
 		{"gopher://example.com/", http.StatusBadRequest},
 		{"http://127.0.0.1:85/ping", http.StatusForbidden},
 		{"http://0.0.0.0:85/ping", http.StatusForbidden},
-		{"http://192.168.1.188:85/ping", http.StatusForbidden},
+		{"http://192.168.1.1:85/ping", http.StatusForbidden},
 		{"http://[::1]:85/", http.StatusForbidden},
 	}
 	for _, tc := range cases {

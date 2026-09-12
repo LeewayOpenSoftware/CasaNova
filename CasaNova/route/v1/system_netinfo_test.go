@@ -38,7 +38,7 @@ func countingNetSources(vethCount int, physicalCalls, stateCalls, detailCalls *i
 		},
 		detail: func(name string) (string, string, int) {
 			*detailCalls++
-			return "192.168.1.188", "aa:bb:cc:dd:ee:ff", 1000
+			return "192.0.2.10", "aa:bb:cc:dd:ee:ff", 1000
 		},
 	}
 }
@@ -101,7 +101,7 @@ func TestBuildNetInfoPreservesPayloadShape(t *testing.T) {
 	if out[0].State != "up" {
 		t.Fatalf("State = %q, want the trimmed operstate", out[0].State)
 	}
-	if out[0].IPv4 != "192.168.1.188" || out[0].MAC != "aa:bb:cc:dd:ee:ff" || out[0].Speed != 1000 {
+	if out[0].IPv4 != "192.0.2.10" || out[0].MAC != "aa:bb:cc:dd:ee:ff" || out[0].Speed != 1000 {
 		t.Fatalf("detail fields not carried through: %+v", out[0])
 	}
 	if out[0].Time == 0 {
