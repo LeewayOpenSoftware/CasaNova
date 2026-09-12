@@ -178,8 +178,8 @@ changelog:
       - "^test:"
 # release:
 #   github:
-#     owner: IceWhaleTech
-#     name: CasaOS
+#     owner: LeewayOpenSoftware
+#     name: CasaNova
 #   draft: true
 #   prerelease: auto
 #   mode: replace
