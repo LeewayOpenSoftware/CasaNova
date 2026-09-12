@@ -9,9 +9,9 @@
 #   This script installs CasaOS to your system.
 #   Usage:
 #
-#   	$ curl -fsSL https://get.casaos.io | bash
+#   	$ curl -fsSL https://get.casanova.dev | bash
 #   	  or
-#   	$ wget -qO- https://get.casaos.io | bash
+#   	$ wget -qO- https://get.casanova.dev | bash
 #
 #   In automated environments, you may want to run as root.
 #   If using curl, we recommend using the -fsSL flags.
@@ -61,7 +61,7 @@ readonly UNAME_U="$(uname -s)"
 readonly NET_GETTER="curl -fsSLk"
 
 readonly CASA_VERSION_URL="https://api.casaos.io/casaos-api/version"
-readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/IceWhaleTech/get/main/uninstall.sh"
+readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/${CASANOVA_ORG:-LeewayOpenSoftware}/get/main/uninstall.sh"
 readonly CASA_UNINSTALL_PATH=/usr/bin/casaos-uninstall
 
 # REQUIREMENTS CONF PATH
@@ -83,7 +83,7 @@ readonly aCOLOUR=(
 TARGET_ARCH=""
 TARGET_DISTRO="debian"
 TARGET_OS="linux"
-CASA_TAG="v0.3.6"
+CASA_TAG="${CASA_TAG:-v0.5.0}"
 TMP_ROOT=/tmp/casaos-installer
 
 
@@ -92,9 +92,9 @@ TMP_ROOT=/tmp/casaos-installer
 
 
 CASA_SERVICES=(
-    "casaos-gateway.service"
-    "casaos-user-service.service"
-    "casaos.service"
+    "casanova-gateway.service"
+    "casanova-user-service.service"
+    "casanova.service"
 )
 
 trap 'onCtrlC' INT
@@ -201,7 +201,7 @@ Check_Arch() {
     "https://github.com/LeewayOpenSoftware/CasaNova/releases/download/${CASA_TAG}/linux-${TARGET_ARCH}-casaos-${CASA_TAG}.tar.gz"
 	"https://github.com/LeewayOpenSoftware/CasaNova-Gateway/releases/download/${CASA_TAG}/linux-${TARGET_ARCH}-casaos-gateway-${CASA_TAG}.tar.gz"
         "https://github.com/LeewayOpenSoftware/CasaNova-UserService/releases/download/${CASA_TAG}/linux-${TARGET_ARCH}-casaos-user-service-${CASA_TAG}.tar.gz"
-	"https://github.com/zhanghengxin/CasaOS-UI/releases/download/${CASA_TAG}/linux-all-casaos-${CASA_TAG}.tar.gz"
+	"https://github.com/LeewayOpenSoftware/CasaNova-UI/releases/download/${CASA_TAG}/linux-all-casaos-${CASA_TAG}.tar.gz"
 )
 }
 

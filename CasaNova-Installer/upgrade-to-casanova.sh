@@ -161,14 +161,14 @@ step "Downloading CasaNova ${CASANOVA_VERSION}"
 mkdir -p "$TMP_DIR"
 
 PACKAGES=(
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-Gateway/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-gateway-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-MessageBus/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-message-bus-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-UserService/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-user-service-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-LocalStorage/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-local-storage-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-AppManagement/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-app-management-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-CLI/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-cli-${CASANOVA_VERSION}.tar.gz"
-    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaOS-UI/releases/download/${CASANOVA_VERSION}/linux-all-casaos-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-Gateway/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-gateway-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-MessageBus/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-message-bus-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-UserService/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-user-service-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-LocalStorage/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-local-storage-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-AppManagement/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-app-management-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-CLI/releases/download/${CASANOVA_VERSION}/linux-${TARGET_ARCH}-casaos-cli-${CASANOVA_VERSION}.tar.gz"
+    "${DOWNLOAD_DOMAIN}${CASANOVA_ORG}/CasaNova-UI/releases/download/${CASANOVA_VERSION}/linux-all-casaos-${CASANOVA_VERSION}.tar.gz"
 )
 
 TOTAL=${#PACKAGES[@]}
@@ -197,6 +197,10 @@ step "Stopping CasaOS services"
 
 ROLLBACK_NEEDED=true
 
+# DELIBERATE: these are the OLD casaos-* unit names, not a typo or a missed
+# rename. This phase runs BEFORE the migration installs anything, so the
+# only units that can possibly be live here are the pre-upgrade CasaOS ones.
+# Do not "fix" this to casanova-*: PHASE 8 below is where the new names belong.
 SERVICES=(
     "casaos.service"
     "casaos-app-management.service"
@@ -259,12 +263,12 @@ step "Starting CasaNova services"
 $SUDO systemctl daemon-reload
 
 START_ORDER=(
-    "casaos-gateway.service"
-    "casaos-message-bus.service"
-    "casaos-user-service.service"
-    "casaos-local-storage.service"
-    "casaos-app-management.service"
-    "casaos.service"
+    "casanova-gateway.service"
+    "casanova-message-bus.service"
+    "casanova-user-service.service"
+    "casanova-local-storage.service"
+    "casanova-app-management.service"
+    "casanova.service"
 )
 
 FAILED=false
@@ -319,7 +323,7 @@ if [ "$ALL_OK" = true ]; then
     echo -e "  If anything goes wrong, run: ${BOLD}casanova-rollback${NC}"
     echo ""
 else
-    warn "Some services did not start. Check logs with: journalctl -u casaos-*.service"
+    warn "Some services did not start. Check logs with: journalctl -u casanova-*.service"
     warn "To rollback: bash /usr/share/casaos/rollback-casanova.sh"
 fi
 
