@@ -66,6 +66,19 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # Stop services
+# A failed upgrade may have already started some of the NEW casanova-*
+# units before failing; stop those first so a half-started unit isn't
+# still running (and fighting for ports/db locks) while we restore the
+# old CasaOS state below.
+CASANOVA_SERVICES=(
+    "casanova.service"
+    "casanova-app-management.service"
+    "casanova-local-storage.service"
+    "casanova-user-service.service"
+    "casanova-message-bus.service"
+    "casanova-gateway.service"
+)
+
 SERVICES=(
     "casaos.service"
     "casaos-app-management.service"
@@ -76,7 +89,7 @@ SERVICES=(
 )
 
 log "Stopping services..."
-for svc in "${SERVICES[@]}"; do
+for svc in "${CASANOVA_SERVICES[@]}" "${SERVICES[@]}"; do
     systemctl stop "$svc" 2>/dev/null || true
 done
 
