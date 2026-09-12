@@ -136,8 +136,11 @@ func PublishEventWrapper(ctx context.Context, eventType message_bus.EventType, p
 		properties = map[string]string{}
 	}
 
-	// merge with properties from context
-	for k, v := range common.PropertiesFromContext(timeoutCtx) {
+	// Merge with the properties from the context, over a SNAPSHOT: this ranges
+	// on a goroutine of its own at almost every call site, while handlers write
+	// into the context's map, and ranging a map someone else is writing is a
+	// fatal the daemon cannot recover from.
+	for k, v := range common.PropertiesSnapshot(timeoutCtx) {
 		properties[k] = v
 	}
 

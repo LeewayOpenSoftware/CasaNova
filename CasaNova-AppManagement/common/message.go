@@ -139,11 +139,10 @@ var EventTypes = []message_bus.EventType{
 //
 // Thirty-one of these events used to declare LESS than they put on the wire.
 // That is not thirty-one oversights, it is ONE mechanism seen from thirty-one
-// places: PropertiesFromContext returns the map STORED IN THE CONTEXT, not a
-// copy, so a handler that does
+// places: the property map lives IN THE CONTEXT and is shared, never copied,
+// so a handler that does
 //
-//	eventProperties := common.PropertiesFromContext(ctx)
-//	eventProperties[PropertyTypeAppName.Name] = app.Name
+//	common.SetProperty(ctx, PropertyTypeAppName.Name, app.Name)
 //
 // mutates the context's own map, and PublishEventWrapper then merges that map
 // OVER every later publish on the same ctx — including the many call sites that
@@ -301,7 +300,7 @@ var (
 
 	// Declared because these ARE published. The handler writes app:name onto the
 	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
-	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// app:title; the context property map is SHARED BY REFERENCE, so
 	// mutating it changes what every later publish on the same context carries.
 	// The list said {} while the wire carried three properties.
 	//
@@ -322,7 +321,7 @@ var (
 
 	// Declared because these ARE published. The handler writes app:name onto the
 	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
-	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// app:title; the context property map is SHARED BY REFERENCE, so
 	// mutating it changes what every later publish on the same context carries.
 	// The list said {} while the wire carried three properties.
 	//
@@ -356,7 +355,7 @@ var (
 
 	// Declared because these ARE published. The handler writes app:name onto the
 	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
-	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// app:title; the context property map is SHARED BY REFERENCE, so
 	// mutating it changes what every later publish on the same context carries.
 	// The list said {} while the wire carried three properties.
 	//
@@ -377,7 +376,7 @@ var (
 
 	// Declared because these ARE published. The handler writes app:name onto the
 	// context map and UpdateEventPropertiesFromStoreInfo adds app:icon and
-	// app:title; PropertiesFromContext hands back THAT MAP BY REFERENCE, so
+	// app:title; the context property map is SHARED BY REFERENCE, so
 	// mutating it changes what every later publish on the same context carries.
 	// The list said {} while the wire carried three properties.
 	//

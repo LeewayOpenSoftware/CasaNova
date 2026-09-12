@@ -323,8 +323,7 @@ func TestEveryPublishedKeyIsDeclared(t *testing.T) {
 
 			for _, s := range p.steps {
 				if s.mutate != nil {
-					// Mutate THROUGH the getter, exactly as production does.
-					s.mutate(t, common.PropertiesFromContext(ctx))
+					applyMutation(t, ctx, s)
 					continue
 				}
 
@@ -357,7 +356,7 @@ func TestEveryDeclaredKeyIsPublished(t *testing.T) {
 		ctx := common.WithProperties(context.Background(), map[string]string{})
 		for _, s := range p.steps {
 			if s.mutate != nil {
-				s.mutate(t, common.PropertiesFromContext(ctx))
+				applyMutation(t, ctx, s)
 				continue
 			}
 			name := s.publish.event.Name
@@ -428,7 +427,7 @@ func carriedBy(ctx context.Context, site *publishSite) []string {
 	for _, k := range site.explicit {
 		keys[k] = true
 	}
-	for k := range common.PropertiesFromContext(ctx) {
+	for k := range common.PropertiesSnapshot(ctx) {
 		keys[k] = true
 	}
 
@@ -438,6 +437,19 @@ func carriedBy(ctx context.Context, site *publishSite) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// applyMutation replays a handler's write the way handlers now do it: fill a
+// local map, then hand it to common.SetProperties, which merges it into the
+// context's own map under the lock. The keys that end up shared are the same
+// ones as before; what changed is that nothing ranges that map while it is
+// being written.
+func applyMutation(t *testing.T, ctx context.Context, s step) {
+	t.Helper()
+
+	local := map[string]string{}
+	s.mutate(t, local)
+	common.SetProperties(ctx, local)
 }
 
 func set(keys []string) map[string]bool {

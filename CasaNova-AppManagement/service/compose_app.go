@@ -306,12 +306,19 @@ func (a *ComposeApp) Update(ctx context.Context) (err error) {
 	}
 
 	// prepare for message bus events
-	eventProperties := common.PropertiesFromContext(ctx)
-	eventProperties[common.PropertyTypeAppName.Name] = a.Name
+	// Filled locally and written back as one atomic update, because the
+	// context's map is shared with every goroutine publishing on this context.
+	// The write-back happens EVEN IF UpdateEventPropertiesFromStoreInfo fails:
+	// it sets app:icon before it can fail on a missing title, callers only log
+	// and continue, so app:icon reaches the bus today on that path and must
+	// keep doing so.
+	eventProperties := map[string]string{common.PropertyTypeAppName.Name: a.Name}
 
 	if err := a.UpdateEventPropertiesFromStoreInfo(eventProperties); err != nil {
 		logger.Info("failed to update event properties from store info", zap.Error(err), zap.String("name", a.Name))
 	}
+
+	common.SetProperties(ctx, eventProperties)
 
 	goroutineStarted = true
 	go func(ctx context.Context, op operationFinisher) {
@@ -1145,13 +1152,19 @@ func (a *ComposeApp) Apply(ctx context.Context, newComposeYAML []byte) error {
 	}
 
 	// prepare for message bus events
-	eventProperties := common.PropertiesFromContext(ctx)
-	eventProperties[common.PropertyTypeAppName.Name] = a.Name
+	// Filled locally and written back as one atomic update, because the
+	// context's map is shared with every goroutine publishing on this context.
+	// The write-back happens EVEN IF UpdateEventPropertiesFromStoreInfo fails:
+	// it sets app:icon before it can fail on a missing title, callers only log
+	// and continue, so app:icon reaches the bus today on that path and must
+	// keep doing so.
+	eventProperties := map[string]string{common.PropertyTypeAppName.Name: a.Name}
 
-	// prepare for message bus events
 	if err := newComposeApp.UpdateEventPropertiesFromStoreInfo(eventProperties); err != nil {
 		logger.Info("failed to update event properties from store info", zap.Error(err), zap.String("name", a.Name))
 	}
+
+	common.SetProperties(ctx, eventProperties)
 
 	go func(ctx context.Context) {
 		// This work OUTLIVES the HTTP handler that started it. The handler
@@ -1344,8 +1357,7 @@ func (a *ComposeApp) SetStatus(ctx context.Context, status codegen.RequestCompos
 		}
 	}()
 
-	eventProperties := common.PropertiesFromContext(ctx)
-	eventProperties[common.PropertyTypeAppName.Name] = a.Name
+	common.SetProperty(ctx, common.PropertyTypeAppName.Name, a.Name)
 
 	switch status {
 	case codegen.RequestComposeAppStatusStart:
