@@ -589,3 +589,50 @@ func TestSerialStillOutranksThePartitionTable(t *testing.T) {
 		t.Fatalf("a strongly-identified external disk is not eligible: %+v", d.ProtectionReasons)
 	}
 }
+
+// The protection list became injectable (SetProtectedMountPrefixes) so a
+// fixture's own real t.TempDir() backing directory can never collide with a
+// real production safety path merely by coincidence of where $TMPDIR
+// resolves. Injectable means a caller CAN clear or shrink it — including,
+// by mistake, in production. This pins the built-in default so that ever
+// shipping with an empty or gutted list is a compile-time-visible test
+// failure, not a silent hole in the guard that decides what a destructive
+// operation may touch.
+func TestDefaultProtectedMountPrefixesCoverTheCriticalPaths(t *testing.T) {
+	if len(DefaultProtectedMountPrefixes) == 0 {
+		t.Fatal("DefaultProtectedMountPrefixes is empty — nothing would ever be refused as a mounted system path")
+	}
+	want := []string{
+		"/", "/boot", "/usr", "/var", "/etc", "/home",
+		"/var/lib/casanova", "/var/lib/docker",
+	}
+	have := map[string]bool{}
+	for _, p := range DefaultProtectedMountPrefixes {
+		have[p] = true
+	}
+	for _, w := range want {
+		if !have[w] {
+			t.Fatalf("DefaultProtectedMountPrefixes is missing %q — a destructive operation targeting it would not be refused", w)
+		}
+	}
+}
+
+// SetProtectedMountPrefixes must actually change what isProtectedMount does,
+// or the fixtures that rely on it to avoid the $TMPDIR collision are silently
+// still exposed to it.
+func TestSetProtectedMountPrefixesChangesClassification(t *testing.T) {
+	t.Cleanup(func() { SetProtectedMountPrefixes(DefaultProtectedMountPrefixes) })
+
+	SetProtectedMountPrefixes([]string{"/only/this"})
+	if isProtectedMount("/home") {
+		t.Fatal("/home was classified protected after the list was overridden to exclude it")
+	}
+	if !isProtectedMount("/only/this/nested") {
+		t.Fatal("a path beneath the overridden list's own prefix was not classified protected")
+	}
+
+	SetProtectedMountPrefixes(DefaultProtectedMountPrefixes)
+	if !isProtectedMount("/home") {
+		t.Fatal("/home was not classified protected after restoring the default list")
+	}
+}

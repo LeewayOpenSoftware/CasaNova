@@ -412,13 +412,41 @@ func Discover() (Inventory, error) {
 	return inv, nil
 }
 
-// protectedMountPrefixes are the mountpoints whose backing device must never be
-// destroyed. Matching is on the mountpoint itself and on anything beneath it.
-var protectedMountPrefixes = []string{
+// DefaultProtectedMountPrefixes is the production set of mountpoints whose
+// backing device must never be destroyed. Matching is on the mountpoint
+// itself and on anything beneath it. Exported as the single source of truth
+// for the default — a test that overrides SetProtectedMountPrefixes restores
+// this value rather than retyping the list, and TestDefaultProtectedMountPrefixesCoverTheCriticalPaths
+// pins its contents directly.
+var DefaultProtectedMountPrefixes = []string{
 	"/", "/boot", "/boot/efi", "/efi",
 	"/usr", "/var", "/etc", "/home",
 	"/var/lib/casanova", "/var/lib/casaos",
 	"/var/lib/docker", "/var/lib/containers",
+}
+
+var (
+	protectedMountPrefixes   = DefaultProtectedMountPrefixes
+	protectedMountPrefixesMu sync.RWMutex
+)
+
+// SetProtectedMountPrefixes redirects the protected-mount list, for tests and
+// fixtures — the same seam sysfsRoot/procRoot/devRoot already have via
+// SetRoots. A fixture whose fake device is backed by a real t.TempDir() (for
+// real file I/O) needs this: t.TempDir() resolves under $TMPDIR, and if
+// $TMPDIR happens to sit under one of the default prefixes (e.g. "/home"),
+// the fixture's own scratch directory collides with a real production
+// safety path it has nothing to do with.
+func SetProtectedMountPrefixes(prefixes []string) {
+	protectedMountPrefixesMu.Lock()
+	defer protectedMountPrefixesMu.Unlock()
+	protectedMountPrefixes = prefixes
+}
+
+func currentProtectedMountPrefixes() []string {
+	protectedMountPrefixesMu.RLock()
+	defer protectedMountPrefixesMu.RUnlock()
+	return protectedMountPrefixes
 }
 
 // classify decides protection, then propagates it through the topology in both
@@ -498,7 +526,7 @@ func isProtectedMount(mp string) bool {
 	if mp == "" {
 		return false
 	}
-	for _, p := range protectedMountPrefixes {
+	for _, p := range currentProtectedMountPrefixes() {
 		if mp == p {
 			return true
 		}

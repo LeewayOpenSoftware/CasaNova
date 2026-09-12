@@ -142,9 +142,11 @@ func newSanitizeFixture(t *testing.T, opts ...fixtureOpt) *sanitizeFixture {
 	write(t, filepath.Join(f.proc, "sys", "kernel", "random", "boot_id"), "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n")
 
 	blockdev.SetRoots(f.sys, f.proc, f.dev)
+	blockdev.SetProtectedMountPrefixes(protectedMountPrefixesExcluding(base))
 	SetSanitizeProcRoot(f.proc)
 	t.Cleanup(func() {
 		blockdev.SetRoots("/sys", "/proc", "/dev")
+		blockdev.SetProtectedMountPrefixes(blockdev.DefaultProtectedMountPrefixes)
 		SetSanitizeProcRoot("/proc")
 	})
 
