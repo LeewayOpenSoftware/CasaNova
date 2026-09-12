@@ -70,13 +70,31 @@ const (
 // state we can vouch for. OK=false names the invariant that failed rather
 // than only saying "error", so the failure is actionable from a log line.
 type RoutePolicyHealth struct {
-	OK               bool   `json:"ok"`
-	FailedInvariant  string `json:"failed_invariant,omitempty"`
-	Detail           string `json:"detail,omitempty"`
-	Path             string `json:"path"`
-	DeclaredRoutes   int    `json:"declared_routes"`
-	RestrictedRoutes int    `json:"restricted_routes"`
-	UnusableRoutes   int    `json:"unusable_routes"`
+	OK              bool   `json:"ok"`
+	FailedInvariant string `json:"failed_invariant,omitempty"`
+	Detail          string `json:"detail,omitempty"`
+	Path            string `json:"path"`
+
+	// UnreadContent distinguishes the two states that both arrive here as
+	// "zero declared routes, everyone allowed":
+	//
+	//	false -> nothing on disk. A fresh box has decided nothing yet, and
+	//	         allowing everyone is the correct answer to a question nobody
+	//	         asked. The store can record its first decision normally.
+	//	true  -> a policy file EXISTS that this process did not read, because
+	//	         it failed the trust check, could not be read, or did not
+	//	         parse. An administrator's decision is in force nowhere and
+	//	         visible to no one, and writes are refused so the bytes stay
+	//	         recoverable.
+	//
+	// Without it an operator reading this endpoint on a box that lost its
+	// whitelists sees the same "declared_routes: 0" as a box that never had
+	// any -- which is the whole reason the loss was silent.
+	UnreadContent bool `json:"unread_content"`
+
+	DeclaredRoutes   int `json:"declared_routes"`
+	RestrictedRoutes int `json:"restricted_routes"`
+	UnusableRoutes   int `json:"unusable_routes"`
 }
 
 // routeACL is one administrator decision about one route.
@@ -172,9 +190,10 @@ func (s *routePolicyStore) load() {
 			// cannot later replace it with the empty in-memory set.
 			s.unreadContent = true
 		}
-		logger.Error("route policy file failed its trust check; not loading it",
+		logger.Error("route policy file failed its trust check; per-route whitelists are NOT in force",
 			zap.String("invariant", invRoutePolicyFileTrusted),
 			zap.String("path", s.path),
+			zap.Bool("unread_content", s.unreadContent),
 			zap.Error(err))
 		return
 	}
@@ -185,20 +204,32 @@ func (s *routePolicyStore) load() {
 		return
 	}
 	if err != nil {
+		// The file is THERE -- ErrNotExist was handled above -- and we could
+		// not read it. Same standing as a failed trust check: an administrator
+		// decision exists that this process has not seen, so persistLocked
+		// must not replace it with the empty in-memory set.
 		s.degrade(invRoutePolicyDurable, err.Error())
-		logger.Error("failed to read route policy file",
+		s.unreadContent = true
+		logger.Error("route policy file exists but could not be read; per-route whitelists are NOT in force",
 			zap.String("invariant", invRoutePolicyDurable),
 			zap.String("path", s.path),
+			zap.Bool("unread_content", true),
 			zap.Error(err))
 		return
 	}
 
 	var doc routePolicyDoc
 	if err := json.Unmarshal(data, &doc); err != nil {
+		// These bytes came off disk, so the file exists beyond doubt. A
+		// truncated write or a hand-edit typo is recoverable BY THE OPERATOR
+		// -- but only while the bytes survive, so this must not be overwritten
+		// either.
 		s.degrade(invRoutePolicyDurable, err.Error())
+		s.unreadContent = true
 		logger.Error("route policy file is not parseable; per-route whitelists are NOT in force",
 			zap.String("invariant", invRoutePolicyDurable),
 			zap.String("path", s.path),
+			zap.Bool("unread_content", true),
 			zap.Error(err))
 		return
 	}
@@ -356,6 +387,7 @@ func (s *routePolicyStore) healthLocked() RoutePolicyHealth {
 		FailedInvariant: s.failedInvariant,
 		Detail:          s.failedDetail,
 		Path:            s.path,
+		UnreadContent:   s.unreadContent,
 		DeclaredRoutes:  len(s.acls),
 	}
 	for _, acl := range s.acls {
@@ -395,6 +427,7 @@ func (s *routePolicyStore) logDegradedLocked(occasion string) {
 		zap.String("detail", h.Detail),
 		zap.String("path", h.Path),
 		zap.String("occasion", occasion),
+		zap.Bool("unread_content", h.UnreadContent),
 		zap.Int("declared_routes", h.DeclaredRoutes),
 		zap.Int("restricted_routes", h.RestrictedRoutes),
 		zap.Int("unusable_routes", h.UnusableRoutes))
