@@ -73,6 +73,58 @@ if [ ! -d "$BUILD_DIR" ] || [ ! -f "${BUILD_DIR}/bin/casanova" ]; then
     exit 1
 fi
 
+# ─── Preflight: every artifact that must never be missing ────────────────────
+# The copies further down were each guarded by their own `if [ -f ]` / `if [ -d ]`,
+# so a build directory with no installer, no updater, no tmpfiles.d and no
+# bundled library produced a package and exited 0. That is the same shape as a
+# service manager that starts zero services and reports success: the artifact
+# is broken in exactly the way nobody looks at, and the exit code says it is fine.
+#
+# Every entry below is required because something DEREFERENCES it, not because
+# it looks important:
+#   apply-update.sh   the package cannot be applied at all without it
+#   install.sh        installs tools/ to /usr/share/casanova/tools, which is
+#                     where PostUpdateRollback executes casaos-to-casanova.sh
+#   upgrade.sh        in-place upgrade path used by casaos-to-casanova.sh
+#   migrate.sh        migration path shipped with the full payload
+#   www/ systemd/     apply-update.sh copies BOTH unguarded (`cp -r "$DIR"/www/*`
+#                     and `cp "$DIR"/systemd/*.service`) — missing here becomes a
+#                     failure on the USER'S box, mid-update, not here
+#   tmpfiles.d/       without it a fresh box never gets /run/casanova/internal
+#                     (trusted sockets) or /var/lib/casanova/updates
+#   library/          bundled Restic/compose plugin; offline installs need it,
+#                     and its absence silently halves the package
+#   tools/            the update mechanism itself; a package without it leaves
+#                     the previous release's updater frozen on every box
+#
+# NOT listed, deliberately, because their absence is legitimate:
+#   config/           SAMPLE configs, installed by upgrade.sh only when nothing
+#                     was migrated — a fallback, not a payload
+#   manifest.json     apply-update.sh guards its own read of it, and VERSION
+#                     falls back to `casanova -v`
+#
+# All of them are reported in ONE pass: failing on the first missing file sends
+# whoever is packaging round the loop once per artifact.
+MISSING=""
+for f in install.sh upgrade.sh migrate.sh apply-update.sh; do
+    [ -f "${BUILD_DIR}/${f}" ] || MISSING="${MISSING}\n  missing file:      ${BUILD_DIR}/${f}"
+done
+for d in systemd www tmpfiles.d library tools; do
+    [ -d "${BUILD_DIR}/${d}" ] || MISSING="${MISSING}\n  missing directory: ${BUILD_DIR}/${d}"
+done
+if [ -n "$MISSING" ]; then
+    err "Build directory is not packageable: ${BUILD_DIR}"
+    # shellcheck disable=SC2059
+    printf "${MISSING}\n" >&2
+    err "These are not optional. A package without them installs nothing, applies"
+    err "nothing, or silently ships the previous release's updater."
+    err "Note that install.sh / upgrade.sh / migrate.sh / apply-update.sh, tmpfiles.d/"
+    err "and library/ are NOT produced by \`make full\` and are NOT in git (see the"
+    err "clean: target's comment) — a worktree that never received them cannot build"
+    err "a package, and that is the condition this check exists to report."
+    exit 1
+fi
+
 # ─── Read version ────────────────────────────────────────────────────────────
 VERSION="unknown"
 if [ -f "${PROJECT_ROOT}/build/manifest.json" ]; then
@@ -160,10 +212,9 @@ fi
 # Copy install / upgrade / migrate / apply-update scripts shipped with the
 # full payload. casaos-to-casanova.sh and casanova-update.sh need these to
 # perform an in-place upgrade on the target host.
+# Unconditional: the preflight above already refused to get here without them.
 for sh in install.sh upgrade.sh migrate.sh apply-update.sh; do
-    if [ -f "${BUILD_DIR}/${sh}" ]; then
-        cp "${BUILD_DIR}/${sh}" "${STAGE_DIR}/${sh}"
-    fi
+    cp "${BUILD_DIR}/${sh}" "${STAGE_DIR}/${sh}"
 done
 
 # Copy manifest
