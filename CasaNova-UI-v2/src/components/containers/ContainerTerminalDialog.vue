@@ -85,7 +85,7 @@ function scheduleInit(tab: Tab, delay: number) {
   }
   pendingInit = setTimeout(() => {
     pendingInit = null
-    initXterm(tab)
+    void initXterm(tab).catch(() => { cleanupXterm() })
   }, delay)
 }
 

@@ -154,7 +154,7 @@ function scheduleInit(delay: number) {
   }
   pendingInit = setTimeout(() => {
     pendingInit = null
-    initXterm()
+    void initXterm().catch(() => { cleanupXterm(); connection.value = 'error'; sshError.value = 'Terminal initialization failed' })
   }, delay)
 }
 
