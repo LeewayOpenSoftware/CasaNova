@@ -283,7 +283,7 @@ function onToolbarAction(action: ToolbarAction, payload?: string) {
       pickFolder()
       break
     case 'search':
-      runSearch(payload ?? '')
+      void runSearch(payload ?? '')
       break
     case 'cut':
       if (files.selected.size > 0) files.clipboardCut([...files.selected])
@@ -383,8 +383,17 @@ async function runSearch(q: string) {
   searchBusy.value = true
   searchError.value = null
   const root = files.currentPath || '/'
-  const { filesApi } = await import('@/api')
-  const { safeCall } = await import('@/api/safeCall')
+  let filesApi: typeof import('@/api').filesApi
+  let safeCall: typeof import('@/api/safeCall').safeCall
+  try {
+    ;({ filesApi } = await import('@/api'))
+    ;({ safeCall } = await import('@/api/safeCall'))
+  } catch {
+    if (mine !== searchSeq) return
+    searchBusy.value = false
+    searchError.value = 'Failed to load search'
+    return
+  }
   const res = await safeCall(() => filesApi.fileSearch(root, q, { hidden: files.showHidden }))
   if (mine !== searchSeq) return // a newer search superseded this one
   searchBusy.value = false
