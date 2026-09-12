@@ -24,6 +24,30 @@ DOWNLOAD_DOMAIN="${DOWNLOAD_DOMAIN:-https://github.com/}"
 MINIMUM_SOURCE_VERSION="0.3.5"
 MINIMUM_DISK_MB=500
 
+# Dedicated to rollback() below. Deliberately NOT the SERVICES/START_ORDER
+# arrays used elsewhere in this script for the forward migration path: those
+# get renamed independently as the forward-path bug there gets fixed, and
+# reusing them here would silently flip rollback()'s behavior (start the
+# services that just failed instead of restoring the old ones) whenever that
+# happens, with no error to catch it. Same dedicated-array pattern as
+# CASANOVA_SERVICES_STOP in build/full/upgrade.sh.
+ROLLBACK_STOP_SERVICES=(
+    "casanova.service"
+    "casanova-app-management.service"
+    "casanova-local-storage.service"
+    "casanova-user-service.service"
+    "casanova-message-bus.service"
+    "casanova-gateway.service"
+)
+ROLLBACK_START_SERVICES=(
+    "casaos.service"
+    "casaos-app-management.service"
+    "casaos-local-storage.service"
+    "casaos-user-service.service"
+    "casaos-message-bus.service"
+    "casaos-gateway.service"
+)
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -330,7 +354,7 @@ rollback() {
     step "Rolling back to previous CasaOS installation"
 
     # Stop any running CasaNova services
-    for svc in "${SERVICES[@]}"; do
+    for svc in "${ROLLBACK_STOP_SERVICES[@]}"; do
         $SUDO systemctl stop "$svc" 2>/dev/null || true
     done
 
@@ -349,7 +373,7 @@ rollback() {
     $SUDO systemctl daemon-reload
 
     # Try to start old services
-    for svc in "${START_ORDER[@]}"; do
+    for svc in "${ROLLBACK_START_SERVICES[@]}"; do
         $SUDO systemctl start "$svc" 2>/dev/null || true
     done
 
