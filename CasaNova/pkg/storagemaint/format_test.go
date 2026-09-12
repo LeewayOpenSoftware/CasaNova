@@ -61,8 +61,19 @@ func fxNewHost(t *testing.T) *fxHost {
 	}
 	h.writeMounts()
 	h.writeSwaps()
+	// BOTH roots, not just blockdev's. This package keeps its own mount-table
+	// root (SetSanitizeProcRoot) because it reads /proc/self/mountinfo for a
+	// different question than the inventory answers, and the doc comment on
+	// SetSanitizeProcRoot says to pair them. Setting only blockdev's left
+	// readSanitizeMounts() opening the REAL /proc/self/mountinfo while every
+	// other fact came from this fake root — the fixture writes a mountinfo
+	// into h.proc and then nobody read it.
 	blockdev.SetRoots(h.sys, h.proc, h.dev)
-	t.Cleanup(func() { blockdev.SetRoots("/sys", "/proc", "/dev") })
+	SetSanitizeProcRoot(h.proc)
+	t.Cleanup(func() {
+		blockdev.SetRoots("/sys", "/proc", "/dev")
+		SetSanitizeProcRoot("/proc")
+	})
 	return h
 }
 
