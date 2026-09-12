@@ -51,7 +51,7 @@ import (
 )
 
 type RemoteHost struct {
-	// Hostname is the public name, e.g. "peliculas.neinrev8.work".
+	// Hostname is the public name, e.g. "movies.example.com".
 	Hostname string `json:"hostname"`
 	// TargetHost/TargetPort/TargetScheme describe where the rule finally
 	// lands after NPM chain resolution.
