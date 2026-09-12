@@ -108,9 +108,10 @@ func (a *AppManagement) PullImages(ctx echo.Context, params codegen.PullImagesPa
 				defer pullCancel()
 				pullCtx = common.WithProperties(pullCtx, props)
 
-				eventProperties := common.PropertiesFromContext(pullCtx)
-				eventProperties[common.PropertyTypeAppName.Name] = appName
-				eventProperties[common.PropertyTypeAppIcon.Name] = appIcon
+				common.SetProperties(pullCtx, map[string]string{
+					common.PropertyTypeAppName.Name: appName,
+					common.PropertyTypeAppIcon.Name: appIcon,
+				})
 
 				_, err := service.MyService.Docker().PullLatestImage(pullCtx, imageName)
 				if err != nil {

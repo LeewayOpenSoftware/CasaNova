@@ -68,9 +68,10 @@ func (a *AppManagement) RecreateContainerByID(ctx echo.Context, id codegen.Conta
 		force = *params.Force
 	}
 
-	eventProperties := common.PropertiesFromContext(backgroundCtx)
-	eventProperties[common.PropertyTypeAppName.Name] = v1.AppName(container)
-	eventProperties[common.PropertyTypeAppIcon.Name] = v1.AppIcon(container)
+	common.SetProperties(backgroundCtx, map[string]string{
+		common.PropertyTypeAppName.Name: v1.AppName(container),
+		common.PropertyTypeAppIcon.Name: v1.AppIcon(container),
+	})
 
 	go func() {
 		// Detached fire-and-forget worker. Without recover() a panic

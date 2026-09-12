@@ -24,6 +24,11 @@ import (
 // mutates the context's own map, and every later PublishEventWrapper on that
 // same ctx carries the keys — including calls that pass nil properties.
 //
+// That getter is now common.SetProperties / common.PropertiesSnapshot, because
+// handing out the live map let a publish goroutine range it while a handler
+// wrote to it — a fatal the daemon could not recover from. The SHARING is
+// unchanged and still the point; only the unsynchronised access is gone.
+//
 // This test does NOT hardcode the expected key list. It replays the real
 // population sequence against the real ComposeApp code and compares the result
 // to the declaration, so adding a property to that path fails here until the
@@ -37,15 +42,14 @@ func TestDeclaredPropertiesMatchWhatIsActuallyPublished(t *testing.T) {
 
 	// Exactly what UpdateComposeApp and ApplyChanges do before publishing.
 	ctx := common.WithProperties(context.Background(), map[string]string{})
-	eventProperties := common.PropertiesFromContext(ctx)
-	eventProperties[common.PropertyTypeAppName.Name] = "some-app"
+	eventProperties := map[string]string{common.PropertyTypeAppName.Name: "some-app"}
 	assert.NilError(t, storeComposeApp.UpdateEventPropertiesFromStoreInfo(eventProperties))
+	common.SetProperties(ctx, eventProperties)
 
 	// Read back THROUGH THE CONTEXT rather than from the local variable: that is
-	// what PublishEventWrapper merges, and it is the same map only because the
-	// getter returns it by reference. If that ever changes, this test should be
-	// the thing that notices.
-	carried := sortedKeys(common.PropertiesFromContext(ctx))
+	// what PublishEventWrapper merges. It arrives as a snapshot now, but it is
+	// still the context's own state, which is what this test is about.
+	carried := sortedKeys(common.PropertiesSnapshot(ctx))
 
 	for _, eventType := range []message_bus.EventType{
 		common.EventTypeAppUpdateBegin,

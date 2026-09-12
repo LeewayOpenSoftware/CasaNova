@@ -319,12 +319,19 @@ func (s *ComposeService) Install(ctx context.Context, composeApp *ComposeApp) (e
 	}
 
 	// prepare for message bus events
-	eventProperties := common.PropertiesFromContext(ctx)
-	eventProperties[common.PropertyTypeAppName.Name] = composeApp.Name
+	// Filled locally and written back as one atomic update, because the
+	// context's map is shared with every goroutine publishing on this context.
+	// The write-back happens EVEN IF UpdateEventPropertiesFromStoreInfo fails:
+	// it sets app:icon before it can fail on a missing title, callers only log
+	// and continue, so app:icon reaches the bus today on that path and must
+	// keep doing so.
+	eventProperties := map[string]string{common.PropertyTypeAppName.Name: composeApp.Name}
 
 	if err := composeApp.UpdateEventPropertiesFromStoreInfo(eventProperties); err != nil {
 		logger.Info("failed to update event properties from store info", zap.Error(err), zap.String("name", composeApp.Name))
 	}
+
+	common.SetProperties(ctx, eventProperties)
 
 	s.UpdateInstallProgress(composeApp.Name, "starting", 15, "Starting install")
 
@@ -338,7 +345,7 @@ func (s *ComposeService) Install(ctx context.Context, composeApp *ComposeApp) (e
 	// indefinitely and FailInstall never fires. 30min covers a multi-GB
 	// pull on slow links; anything longer is a real failure.
 	baseCtx, baseCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	bgCtx := common.WithProperties(baseCtx, eventProperties)
+	bgCtx := common.WithProperties(baseCtx, common.PropertiesSnapshot(ctx))
 
 	goroutineStarted = true
 	go func(ctx context.Context) {
@@ -400,12 +407,19 @@ func (s *ComposeService) Install(ctx context.Context, composeApp *ComposeApp) (e
 
 func (s *ComposeService) Uninstall(ctx context.Context, composeApp *ComposeApp, deleteConfigFolder bool) error {
 	// prepare for message bus events
-	eventProperties := common.PropertiesFromContext(ctx)
-	eventProperties[common.PropertyTypeAppName.Name] = composeApp.Name
+	// Filled locally and written back as one atomic update, because the
+	// context's map is shared with every goroutine publishing on this context.
+	// The write-back happens EVEN IF UpdateEventPropertiesFromStoreInfo fails:
+	// it sets app:icon before it can fail on a missing title, callers only log
+	// and continue, so app:icon reaches the bus today on that path and must
+	// keep doing so.
+	eventProperties := map[string]string{common.PropertyTypeAppName.Name: composeApp.Name}
 
 	if err := composeApp.UpdateEventPropertiesFromStoreInfo(eventProperties); err != nil {
 		logger.Info("failed to update event properties from store info", zap.Error(err), zap.String("name", composeApp.Name))
 	}
+
+	common.SetProperties(ctx, eventProperties)
 
 	// Create a background context so the goroutine is not cancelled when the
 	// HTTP request context ends.  Preserve event properties from the original
@@ -414,7 +428,7 @@ func (s *ComposeService) Uninstall(ctx context.Context, composeApp *ComposeApp, 
 	// Wave 35-X: 10-minute deadline — uninstall is bounded by container
 	// stop + volume cleanup, fast unless docker daemon is wedged.
 	baseCtx, baseCancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	bgCtx := common.WithProperties(baseCtx, eventProperties)
+	bgCtx := common.WithProperties(baseCtx, common.PropertiesSnapshot(ctx))
 
 	go func(ctx context.Context) {
 		defer baseCancel()

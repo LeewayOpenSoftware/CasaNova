@@ -85,8 +85,7 @@ func (ds *dockerService) PullLatestImage(ctx context.Context, imageName string) 
 
 	defer func() {
 		// write image updated information as a property back to context, so both current func and external caller can see it
-		properties := common.PropertiesFromContext(ctx)
-		properties[common.PropertyTypeImageUpdated.Name] = fmt.Sprint(isImageUpdated) // <- instead, do it here.
+		common.SetProperty(ctx, common.PropertyTypeImageUpdated.Name, fmt.Sprint(isImageUpdated)) // <- instead, do it here.
 	}()
 
 	if strings.HasPrefix(imageName, "sha256:") {
