@@ -96,6 +96,16 @@ warn() { echo -e "${YELLOW}[WARNING]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 step() { echo -e "\n${CYAN}${BOLD}==> $*${NC}"; }
 
+# Two dedicated arrays, deliberately never shared: the forward path starts
+# the real casanova-* units, and a failed start must roll back to the OLD
+# casaos-* units, not retry the ones that just failed. Reusing one array for
+# both makes the rollback path silently wrong the moment either list is
+# renamed on its own -- same dedicated-array pattern as CASANOVA_SERVICES_STOP
+# in build/full/upgrade.sh.
+CASANOVA_START_ORDER=(casanova-gateway casanova-message-bus casanova-user-service casanova-local-storage casanova-app-management casanova)
+ROLLBACK_STOP_SERVICES=(casanova-gateway casanova-message-bus casanova-user-service casanova-local-storage casanova-app-management casanova)
+ROLLBACK_START_ORDER=(casaos-gateway casaos-message-bus casaos-user-service casaos-local-storage casaos-app-management casaos)
+
 echo -e "${BOLD}"
 echo '   ____                _   _'
 echo '  / ___|__ _ ___  __ _| \ | | _____   ____ _'
@@ -164,9 +174,8 @@ log "Files installed"
 step "Starting CasaNova services"
 systemctl daemon-reload
 
-START_ORDER=(casaos-gateway casaos-message-bus casaos-user-service casaos-local-storage casaos-app-management casaos)
 FAILED=false
-for svc in "${START_ORDER[@]}"; do
+for svc in "${CASANOVA_START_ORDER[@]}"; do
     log "Starting ${svc}..."
     if ! systemctl start "${svc}.service" 2>/dev/null; then
         err "Failed to start ${svc}"
@@ -179,7 +188,7 @@ done
 # Verify
 step "Verifying"
 sleep 2
-for svc in "${START_ORDER[@]}"; do
+for svc in "${CASANOVA_START_ORDER[@]}"; do
     if systemctl is-active --quiet "${svc}.service" 2>/dev/null; then
         echo -e "  ${GREEN}[OK]${NC}   ${svc}"
     else
@@ -193,11 +202,17 @@ rm -rf "$EXTRACT_DIR"
 
 if [ "$FAILED" = true ]; then
     warn "Some services failed. Rolling back..."
+    # A partial start may have left one or more of the NEW units running;
+    # stop those before restoring, so they don't fight the OLD units below
+    # for ports/db locks.
+    for svc in "${ROLLBACK_STOP_SERVICES[@]}"; do
+        systemctl stop "${svc}.service" 2>/dev/null || true
+    done
     # Restore backup
     [ -d "$BACKUP_DIR/etc-casaos" ] && cp -af "$BACKUP_DIR/etc-casaos/"* /etc/casaos/ 2>/dev/null || true
     [ -d "$BACKUP_DIR/db" ] && cp -af "$BACKUP_DIR/db/"* /var/lib/casaos/db/ 2>/dev/null || true
     systemctl daemon-reload
-    for svc in "${START_ORDER[@]}"; do
+    for svc in "${ROLLBACK_START_ORDER[@]}"; do
         systemctl start "${svc}.service" 2>/dev/null || true
     done
     err "Rollback complete. Check: journalctl -u 'casaos-*'"
