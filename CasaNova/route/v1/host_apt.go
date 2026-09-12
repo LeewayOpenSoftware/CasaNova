@@ -161,9 +161,16 @@ func GetAptUpdates(ctx echo.Context) error {
 	// apt.packages.some(...) with no optional chaining on /app/settings/updates
 	// — a route that is NOT admin-only. A null there turns this security fix
 	// into a client-side crash for every non-admin viewer.
+	//
+	// RebootPackages goes with them. `linux-image-6.8.0-45-generic` is an
+	// installed version, i.e. a TARGET, by exactly the rule above — while the
+	// rebootRequired BOOLEAN is the alarm and stays readable for everyone.
+	// Knowing THAT the box needs a reboot is state; knowing WHICH packages are
+	// waiting on it is configuration detail.
 	if !rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
 		st.Packages = []AptPackage{}
 		st.FailedRepos = nil
+		st.RebootPackages = []string{}
 	}
 	return ctx.JSON(http.StatusOK, model.Result{
 		Success: common_err.SUCCESS,
@@ -392,8 +399,13 @@ func GetAptUpgradeStatus(ctx echo.Context) error {
 	// PermSystemRead this handler is gated on for its coarse status. A merely
 	// authenticated, non-admin caller still gets state/exit code/reboot info
 	// — enough for a "system needs attention" indicator — without the raw log.
+	// RebootPackages is gated here for the same reason, and in the same commit,
+	// as in GetAptUpdates: gating the identical field in only one of two twin
+	// handlers would leave the other one answering the question anyway.
 	if rbac.Allows(commonmw.RoleFromContext(ctx), rbac.PermSystemConfig) {
 		st.Tail = tailFile(aptUpgradeLog, 40)
+	} else {
+		st.RebootPackages = []string{}
 	}
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: st})
 }
@@ -429,13 +441,28 @@ func writeAptCache(st AptStatus) {
 	_ = os.Rename(tmp, aptCacheFile)
 }
 
+// rebootMarkerFiles / rebootPkgsFiles are vars (not inline literals) so a test
+// can point them at a temp dir instead of the real /run — the same reason
+// aptUpgradeLog and aptCacheFile are vars.
+var (
+	rebootMarkerFiles = []string{"/var/run/reboot-required", "/run/reboot-required"}
+	rebootPkgsFiles   = []string{"/var/run/reboot-required.pkgs", "/run/reboot-required.pkgs"}
+)
+
 // rebootRequired reads the Debian/Ubuntu marker files.
+//
+// The package slice is ALWAYS non-nil. `rebootPackages` has no omitempty, so a
+// nil return serialized as `"rebootPackages":null` on every box with nothing
+// pending — while CasaNova-UI-v2's api/host.ts declares the field as a
+// non-nullable `string[]` in both response types. Nothing reads it today, so
+// this was a type lie rather than a crash, but it is the same shape rule that
+// applies to any field a permission can empty: emit [], never null.
 func rebootRequired() (bool, []string) {
-	if !fileExists("/var/run/reboot-required") && !fileExists("/run/reboot-required") {
-		return false, nil
+	if !fileExists(rebootMarkerFiles[0]) && !fileExists(rebootMarkerFiles[1]) {
+		return false, []string{}
 	}
-	var pkgs []string
-	for _, p := range []string{"/var/run/reboot-required.pkgs", "/run/reboot-required.pkgs"} {
+	pkgs := []string{}
+	for _, p := range rebootPkgsFiles {
 		if raw, err := os.ReadFile(p); err == nil {
 			for _, l := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 				if l = strings.TrimSpace(l); l != "" {
