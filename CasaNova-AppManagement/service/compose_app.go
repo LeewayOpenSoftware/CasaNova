@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,8 +182,20 @@ type operationFinisher interface {
 // updateOpOutcome finishes an update operation op according to the outcome of PullAndApply.
 // If err is nil, it completes op as successful.
 // If err is non-nil, it fails op with the error.
+//
+// `op == nil` alone is not enough: StartOp returns a nil *oplog.Operation
+// (concrete type) whenever the oplog DB was never set via SetOpLoggerDB,
+// which is the permanent state today (zero callers in this codebase). The
+// moment that concrete nil crosses into this function's operationFinisher
+// parameter — as it does at every call site here — Go wraps it in an
+// interface value with a non-nil type descriptor, so `op == nil` is false
+// even though the underlying pointer is nil. That silently defeated guard
+// used to let every compose app update panic here (nil pointer dereference
+// inside Fail/Complete), which the recover() in Update's goroutine caught —
+// only to panic AGAIN calling op.Fail() a second time with the identical
+// bug, crashing the whole daemon. isNilFinisher catches both shapes of nil.
 func updateOpOutcome(op operationFinisher, err error) {
-	if op == nil {
+	if isNilFinisher(op) {
 		return
 	}
 	if err != nil {
@@ -190,6 +203,20 @@ func updateOpOutcome(op operationFinisher, err error) {
 	} else {
 		op.Complete("app updated successfully")
 	}
+}
+
+// isNilFinisher reports whether op is nil, INCLUDING a non-nil interface
+// wrapping a nil concrete pointer (the case a plain `op == nil` cannot see).
+// Every real implementer of operationFinisher in this codebase (*oplog.
+// Operation, *mockOperation in tests) is a pointer type, so this is safe:
+// reflect only inspects the interface's own dynamic type/value, it never
+// calls through the interface.
+func isNilFinisher(op operationFinisher) bool {
+	if op == nil {
+		return true
+	}
+	v := reflect.ValueOf(op)
+	return v.Kind() == reflect.Ptr && v.IsNil()
 }
 
 func (a *ComposeApp) Update(ctx context.Context) (err error) {
@@ -339,9 +366,13 @@ func (a *ComposeApp) Update(ctx context.Context) (err error) {
 			if r := recover(); r != nil {
 				logger.Error("panic in async app update",
 					zap.Any("panic", r), zap.String("name", a.Name))
-				if op != nil {
-					op.Fail(fmt.Errorf("panic in async app update: %v", r))
-				}
+				// Routed through updateOpOutcome, not a direct `if op != nil`
+				// check: op here is already operationFinisher-typed, so a
+				// StartOp-sourced nil would defeat a plain nil check and
+				// panic a second time on op.Fail (see updateOpOutcome's
+				// comment) — which a recover() already past its one panic
+				// cannot catch, crashing the daemon instead of just this op.
+				updateOpOutcome(op, fmt.Errorf("panic in async app update: %v", r))
 			}
 		}()
 		go PublishEventWrapper(ctx, common.EventTypeAppUpdateBegin, nil)
