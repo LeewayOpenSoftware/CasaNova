@@ -193,7 +193,14 @@ async function compressTarget(target: string) {
   const base = target.substring(target.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '') || 'archive'
   const destDir = target.substring(0, target.lastIndexOf('/')) || '/'
   archiveBusy.value = true
-  const { useInstallProgressStore } = await import('@/stores/installProgress')
+  let useInstallProgressStore: typeof import('@/stores/installProgress').useInstallProgressStore
+  try {
+    ;({ useInstallProgressStore } = await import('@/stores/installProgress'))
+  } catch (err) {
+    archiveBusy.value = false
+    console.error('FileBrowserView: failed to load install-progress store', err)
+    return
+  }
   const toasts = useInstallProgressStore()
   const res = await safeCall(() =>
     filesApi.compressFiles(sources, `${destDir}/${base}.zip`, 'zip'),
@@ -211,7 +218,14 @@ async function compressTarget(target: string) {
 async function extractTarget(target: string) {
   if (archiveBusy.value) return
   archiveBusy.value = true
-  const { useInstallProgressStore } = await import('@/stores/installProgress')
+  let useInstallProgressStore: typeof import('@/stores/installProgress').useInstallProgressStore
+  try {
+    ;({ useInstallProgressStore } = await import('@/stores/installProgress'))
+  } catch (err) {
+    archiveBusy.value = false
+    console.error('FileBrowserView: failed to load install-progress store', err)
+    return
+  }
   const toasts = useInstallProgressStore()
   const res = await safeCall(() => filesApi.extractArchive(target))
   archiveBusy.value = false

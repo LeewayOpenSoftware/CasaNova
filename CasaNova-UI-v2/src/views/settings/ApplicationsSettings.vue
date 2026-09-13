@@ -140,14 +140,21 @@ const menuItems = computed<MenuItem[]>(() => {
       ? { label: t('dashboard.app_menu.stop'), icon: 'Square', command: () => lifecycle(app, 'stop') }
       : { label: t('dashboard.app_menu.start'), icon: 'Play', command: () => lifecycle(app, 'start') },
     { label: t('dashboard.app_menu.restart'), icon: 'RotateCw', command: () => lifecycle(app, 'restart') },
-    { label: t('dashboard.app_menu.repair'), icon: 'Wrench', command: () => onRepair(app) },
+    { label: t('dashboard.app_menu.repair'), icon: 'Wrench', command: () => { void onRepair(app) } },
     { separator: true },
     { label: t('apps.uninstall'), icon: 'Trash2', command: () => onUninstall(app) },
   ]
 })
 async function onRepair(app: AppEntry) {
   busy.value[app.id] = true
-  const okr = await store.repairApp(app.id); busy.value[app.id] = false
+  let okr = false
+  try {
+    okr = await store.repairApp(app.id)
+  } catch {
+    okr = false
+  } finally {
+    busy.value[app.id] = false
+  }
   toast.add({ severity: okr ? 'success' : 'error', summary: okr ? t('settings.apps.repaired', { name: app.title }) : t('settings.apps.repair_failed'), life: 4000 })
 }
 async function onUninstall(app: AppEntry) {

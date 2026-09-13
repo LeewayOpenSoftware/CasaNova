@@ -112,8 +112,16 @@ async function submitSsh() {
   if (!canSubmitSsh.value) return
   sshSubmitting.value = true
   sshError.value = null
-  const { systemApi } = await import('@/api')
-  const { safeCall } = await import('@/api/safeCall')
+  let systemApi: typeof import('@/api').systemApi
+  let safeCall: typeof import('@/api/safeCall').safeCall
+  try {
+    ;({ systemApi } = await import('@/api'))
+    ;({ safeCall } = await import('@/api/safeCall'))
+  } catch {
+    sshSubmitting.value = false
+    sshError.value = 'Failed to load login'
+    return
+  }
   const result = await safeCall(
     () =>
       systemApi.sshLogin({

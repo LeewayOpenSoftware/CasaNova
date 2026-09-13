@@ -82,9 +82,15 @@ function openFolder(share: SharedFolder) {
   // Route the file browser to the shared path via the store once
   // the navigation settles. The browser reads currentPath from the
   // store so this is enough to land the user in the right folder.
-  setTimeout(async () => {
-    const { useFilesStore } = await import('@/stores/files')
-    useFilesStore().cd(share.path)
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const { useFilesStore } = await import('@/stores/files')
+        useFilesStore().cd(share.path)
+      } catch {
+        installs.pushToast('error', 'Failed to open folder')
+      }
+    })()
   }, 50)
 }
 
