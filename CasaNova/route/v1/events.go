@@ -65,13 +65,44 @@ func GetAuditEvents(ctx echo.Context) error {
 			Message: err.Error(),
 		})
 	}
+	// AN EMPTY RESULT AND AN UNRECORDED LOG ARE DIFFERENT ANSWERS.
+	//
+	// The read side of this log is wired (main.go calls
+	// InitAuditAndNotifications), so this handler answers 200 and returns the
+	// rows it finds. The WRITE side is not wired anywhere: the audit writers
+	// live in CasaNova-UserService, whose SetAuditLoggerDB has no caller, and
+	// this process has no audit writers of its own. So the table is empty BY
+	// CONSTRUCTION, and "[]" was being served as though it meant "no security
+	// events have occurred".
+	//
+	// That is a false all-clear on a security console -- an administrator opens
+	// the audit page, sees nothing, and concludes nothing happened. It is worse
+	// than an error, because an error gets investigated.
+	//
+	// It stays a 200 ON PURPOSE rather than becoming a 503. The only
+	// first-party consumer, CasaNova-UI-v2 AuditSettings.vue, calls safeCall()
+	// with NO fallback and then reads result.data.events without checking
+	// result.error -- on a 5xx, result.data is undefined and the page throws a
+	// TypeError on mount. Answering "the log is off" with a dead page tells the
+	// operator less than the false all-clear did. So the truth travels IN the
+	// payload, where a consumer can render it and an old consumer keeps working.
+	data := map[string]interface{}{
+		"events": events,
+		"count":  len(events),
+
+		// recording=false means an empty list proves nothing about what
+		// happened on this box.
+		"recording": service.AuditRecordingWired(),
+	}
+	if !service.AuditRecordingWired() {
+		data["recording_detail"] = "No audit writer is wired into this service, so no security " +
+			"event has ever been recorded here. An empty result means 'never recorded', NOT " +
+			"'nothing happened'."
+	}
 	return ctx.JSON(http.StatusOK, model.Result{
 		Success: common_err.SUCCESS,
 		Message: common_err.GetMsg(common_err.SUCCESS),
-		Data: map[string]interface{}{
-			"events": events,
-			"count":  len(events),
-		},
+		Data:    data,
 	})
 }
 

@@ -14,15 +14,57 @@ import (
 //
 // Each service process keeps its own SQLite-backed audit log. A future
 // aggregator could walk all services' logs for a unified view, but for
-// now each domain's events live with the service that emits them:
-//   - UserService: auth events (already wired)
+// now each domain's events would live with the service that emits them:
+//   - UserService: auth events
 //   - CasaNova:    file operations, system config, trash, shield bans
 //   - AppManagement: container lifecycle
+//
+// NONE OF THAT IS WIRED YET, and the list above used to say "(already wired)"
+// next to UserService, which is false: UserService's SetAuditLoggerDB has zero
+// callers, so every one of its audit call sites no-ops. THIS process has no
+// audit writers at all -- the only AuditLogger() use under CasaNova/ is the
+// read handler in route/v1/events.go. So this process's security_audit_log
+// table is empty BY CONSTRUCTION, not because nothing has happened yet.
 var (
 	auditLogger     *auditlog.Logger
 	notificationSvc *notifications.Service
 	instanceMu      sync.Mutex
+
+	// auditRecordingWired says whether anything in this process actually
+	// RECORDS into the audit store. It is deliberately separate from
+	// auditLogger being non-nil, because those answer different questions:
+	// the logger exists so the store can be READ, and reading is wired
+	// (main.go calls InitAuditAndNotifications). Recording is not.
+	//
+	// Nothing sets this today, and false is the honest answer. It exists as
+	// the single switch a future writer activation flips, so the read surface
+	// starts telling the truth the moment recording is real, instead of
+	// needing to be found and updated separately.
+	auditRecordingWired bool
 )
+
+// MarkAuditRecordingWired declares that this process records audit events.
+//
+// Call it from whatever activates the writers. It is NOT called today: the
+// audit writers live in CasaNova-UserService, whose SetAuditLoggerDB has no
+// caller, and they write to that service's own database rather than this one
+// -- so activating them is a cross-service change (shared or queried store),
+// not a line here. Until then the read surface must not imply otherwise.
+func MarkAuditRecordingWired() {
+	instanceMu.Lock()
+	defer instanceMu.Unlock()
+	auditRecordingWired = true
+}
+
+// AuditRecordingWired reports whether audit events are being recorded into
+// this process's store. When false, an EMPTY query result means "nothing was
+// ever written", not "nothing happened" -- a distinction the read endpoint has
+// to pass on to its caller.
+func AuditRecordingWired() bool {
+	instanceMu.Lock()
+	defer instanceMu.Unlock()
+	return auditRecordingWired
+}
 
 // InitAuditAndNotifications wires both the audit logger and notification
 // service to the given DB. Called once at startup after sqlite is ready.
