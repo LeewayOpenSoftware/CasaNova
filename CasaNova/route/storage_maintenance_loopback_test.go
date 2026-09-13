@@ -222,6 +222,7 @@ func newLoopbackStorageFixture(t *testing.T) *loopbackStorageFixture {
 		storagehealth.SetRoots("/sys", "/proc")
 		storagemaint.SetStateDir("/var/lib/casanova/storage-maintenance")
 		storagemaint.SetLookPath(exec.LookPath)
+		storagemaint.ResetCapabilityCache()
 		v1.SetStorageMaintenanceEngine(nil)
 	})
 	return fx

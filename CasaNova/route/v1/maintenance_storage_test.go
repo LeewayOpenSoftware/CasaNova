@@ -104,6 +104,7 @@ func newStorageFixture(t *testing.T, opts ...func(*storageFixture)) *storageFixt
 		storagehealth.SetRoots("/sys", "/proc")
 		storagemaint.SetStateDir("/var/lib/casanova/storage-maintenance")
 		storagemaint.SetLookPath(exec.LookPath)
+		storagemaint.ResetCapabilityCache()
 		SetStorageMaintenanceEngine(nil)
 	})
 	return f

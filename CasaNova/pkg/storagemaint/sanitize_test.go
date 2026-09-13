@@ -286,7 +286,7 @@ func (f *sanitizeFixture) installTools(paths map[Tool]string) {
 		}
 		return "", exec.ErrNotFound
 	})
-	f.t.Cleanup(func() { SetLookPath(exec.LookPath) })
+	f.t.Cleanup(func() { SetLookPath(exec.LookPath); ResetCapabilityCache() })
 	DiscoverCapabilities(context.Background())
 }
 

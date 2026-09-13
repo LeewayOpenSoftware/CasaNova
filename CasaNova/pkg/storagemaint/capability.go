@@ -138,10 +138,37 @@ var (
 )
 
 // SetLookPath overrides helper discovery. Tests only.
+//
+// CONTRACT: this invalidates capLoaded as a side effect. Five call sites
+// across this package, CasaNova/route and CasaNova/route/v1 rely on that —
+// see TestSetLookPathInvalidatesTheCapabilityCache — because it is what
+// makes a fresh SetLookPath call force a real re-probe instead of serving
+// back whatever the PREVIOUS lookPath's result was. Do not remove it as
+// "redundant" without checking that test first.
 func SetLookPath(f func(string) (string, error)) {
 	capMu.Lock()
 	defer capMu.Unlock()
 	lookPath = f
+	capLoaded = false
+}
+
+// ResetCapabilityCache clears the discovered-capabilities cache: both the
+// cached result and the loaded flag. Tests only.
+//
+// capCache/capLoaded are package-level, shared by every test that reaches
+// CurrentCapabilities/DiscoverCapabilities in the SAME test binary — which
+// includes every test in this package plus, through the exported
+// SetLookPath, every test in CasaNova/route and CasaNova/route/v1 that
+// exercises the storage-maintenance HTTP handlers. A test that primes the
+// cache via SetLookPath + Discover/CurrentCapabilities must call this in its
+// own t.Cleanup, or a later test in the same binary can inherit its fake —
+// or, worse, its real — tool set instead of getting a fresh probe of its
+// own host. Same set+restore shape as SetRoots/SetSanitizeProcRoot/
+// SetProtectedMountPrefixes.
+func ResetCapabilityCache() {
+	capMu.Lock()
+	defer capMu.Unlock()
+	capCache = Capabilities{}
 	capLoaded = false
 }
 

@@ -357,7 +357,7 @@ func fxNewLab(t *testing.T) *fxLab {
 	// Helper lookup is stubbed so every test presents the same host, and it is
 	// restored so the real-tool lab tests are unaffected.
 	SetLookPath(func(name string) (string, error) { return "/usr/sbin/" + name, nil })
-	t.Cleanup(func() { SetLookPath(exec.LookPath) })
+	t.Cleanup(func() { SetLookPath(exec.LookPath); ResetCapabilityCache() })
 
 	lab := &fxLab{
 		t: t, host: fxNewHost(t), runner: fxNewRunner(),
