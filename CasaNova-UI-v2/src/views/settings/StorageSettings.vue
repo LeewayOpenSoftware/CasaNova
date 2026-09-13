@@ -128,8 +128,12 @@ async function handleMount(disk: DiskEntry) {
   const mountResult = await safeCall(() => storageApi.mountDisk(disk.device))
   if (mountResult.error) {
     mountLoading.value = null
-    const { useInstallProgressStore } = await import('@/stores/installProgress')
-    useInstallProgressStore().pushToast('error', `Mount failed: ${mountResult.error}`)
+    try {
+      const { useInstallProgressStore } = await import('@/stores/installProgress')
+      useInstallProgressStore().pushToast('error', `Mount failed: ${mountResult.error}`)
+    } catch (err) {
+      console.error('StorageSettings: failed to load install-progress store', err)
+    }
     return
   }
   const result = await safeCall(() => storageApi.listDisks())
@@ -142,8 +146,12 @@ async function handleUnmount(disk: DiskEntry) {
   const unmountResult = await safeCall(() => storageApi.unmountDisk(disk.device))
   if (unmountResult.error) {
     mountLoading.value = null
-    const { useInstallProgressStore } = await import('@/stores/installProgress')
-    useInstallProgressStore().pushToast('error', `Unmount failed: ${unmountResult.error}`)
+    try {
+      const { useInstallProgressStore } = await import('@/stores/installProgress')
+      useInstallProgressStore().pushToast('error', `Unmount failed: ${unmountResult.error}`)
+    } catch (err) {
+      console.error('StorageSettings: failed to load install-progress store', err)
+    }
     return
   }
   const result = await safeCall(() => storageApi.listDisks())
@@ -251,8 +259,12 @@ async function confirmFormat() {
     () => storageApi.formatDisk(device, formatFs.value),
   )
   if (formatResult.error) {
-    const { useInstallProgressStore } = await import('@/stores/installProgress')
-    useInstallProgressStore().pushToast('error', `Format failed: ${formatResult.error}`)
+    try {
+      const { useInstallProgressStore } = await import('@/stores/installProgress')
+      useInstallProgressStore().pushToast('error', `Format failed: ${formatResult.error}`)
+    } catch (err) {
+      console.error('StorageSettings: failed to load install-progress store', err)
+    }
     return // Keep dialog open so user can retry or cancel
   }
   formatDialogVisible.value = false

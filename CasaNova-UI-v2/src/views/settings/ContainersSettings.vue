@@ -105,8 +105,17 @@ async function toggleAutoUpdate(app: AppEntry) {
   if (!target) return
   const nextVal = !target.autoUpdate
   target.autoUpdate = nextVal
-  const { containersApi } = await import('@/api')
-  const { safeCall } = await import('@/api/safeCall')
+  let containersApi: typeof import('@/api').containersApi
+  let safeCall: typeof import('@/api/safeCall').safeCall
+  try {
+    ;({ containersApi } = await import('@/api'))
+    ;({ safeCall } = await import('@/api/safeCall'))
+  } catch {
+    // A failed chunk load is exactly as much a failure as the API call
+    // below — the optimistic flip must roll back the same way either way.
+    target.autoUpdate = !nextVal
+    return
+  }
   const result = await safeCall(
     () => containersApi.updateApp(app.id, { autoUpdate: nextVal }),
     () => undefined,
