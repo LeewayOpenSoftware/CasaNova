@@ -13,9 +13,23 @@ import (
 
 // ─── The single deletion chokepoint (design rule 3) ─────────────────────────
 //
-// Every unlink this package performs goes through Guard: Check() decides
-// whether a path may be touched at all, Remove() (fsops.go) is the only code
-// that actually calls unlinkat. Nothing else here calls os.Remove.
+// Every unlink this package performs ON A SCANNED PATH goes through Guard:
+// Check() decides whether a path may be touched at all, Remove() (fsops.go) is
+// the only code that calls unlinkat on one.
+//
+// THE "ON A SCANNED PATH" QUALIFIER IS THE WHOLE RULE, and this comment used to
+// drop it — it said flatly "nothing else here calls os.Remove", which is false:
+// manifest.go calls it four times (:127, :132, :136, :140). Those are the temp
+// file of its own atomic write, never a path that came from a scan, so the
+// chokepoint is intact and the unqualified sentence was the only thing wrong.
+// doc.go states it correctly ("os.Remove/os.RemoveAll on a scanned path"); this
+// copy had lost the half that made it true.
+//
+// It mattered because of who reads it: someone auditing deletion safety greps
+// os.Remove across the package, finds the four hits, and concludes either that
+// the chokepoint is already bypassed — distrusting an invariant that does hold
+// — or that adding a fifth call "just for a temp file" matches existing
+// practice, without the qualifier that makes the rule checkable at all.
 //
 // Why one function instead of a check per category: the root cause of 2 of the
 // 3 criticals in bugs-4.md was blocklist DRIFT — three copies of "system
