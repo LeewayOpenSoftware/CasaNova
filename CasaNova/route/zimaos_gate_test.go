@@ -218,12 +218,12 @@ func TestIPInNets(t *testing.T) {
 		ip   string
 		want bool
 	}{
-		{"192.0.2.188", true}, // a client on this segment
-		{"192.0.2.1", true},   // the LAN gateway
-		{"192.168.2.5", false},  // routed neighbour, not directly connected
-		{"203.0.113.7", false},  // public victim of a forged-source probe
-		{"8.8.8.8", false},      // ditto
-		{"127.0.0.1", false},    // not in the pinned list
+		{"192.0.2.188", true},  // a client on this segment
+		{"192.0.2.1", true},    // the LAN gateway
+		{"192.168.2.5", false}, // routed neighbour, not directly connected
+		{"203.0.113.7", false}, // public victim of a forged-source probe
+		{"8.8.8.8", false},     // ditto
+		{"127.0.0.1", false},   // not in the pinned list
 	}
 	for _, c := range cases {
 		ip := net.ParseIP(c.ip)
