@@ -266,6 +266,12 @@ func TestLabReformatReplacesThePreviousFilesystem(t *testing.T) {
 // available must actually be creatable, and one it reports as unavailable must
 // not be offered.
 func TestLabCapabilityDiscoveryMatchesReality(t *testing.T) {
+	// This is the one deliberately real-machine probe in the package (see
+	// the file doc comment), and it is the leak this whole seam census
+	// started from: this test has no other reason to have a t.Cleanup, but
+	// without one it leaves this host's REAL capabilities cached with
+	// capLoaded=true for whatever test in this binary reads next.
+	t.Cleanup(ResetCapabilityCache)
 	caps := DiscoverCapabilities(context.Background())
 	for _, f := range caps.Filesystems {
 		_, err := exec.LookPath(string(f.Tool))
