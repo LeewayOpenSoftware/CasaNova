@@ -198,9 +198,8 @@ func registerNewRefreshFamily(userID int, ttl time.Duration, userAgent, ipAddres
 	return jti, nil
 }
 
-// rotateRefreshFamily validates `presentedJTI` against the store and, if
-// it is the family's current active jti, returns a freshly minted jti
-// that the caller bakes into the new refresh token.
+// rotateRefreshFamily atomically commits a replacement jti after the caller
+// has already completed its database lookup and signed both response tokens.
 //
 // Failure modes:
 //
@@ -211,23 +210,23 @@ func registerNewRefreshFamily(userID int, ttl time.Duration, userAgent, ipAddres
 //	"revoked" : the family was explicitly killed (logout, account delete,
 //	            or a prior reuse).
 //	"expired" : family TTL has lapsed.
-func rotateRefreshFamily(presentedJTI string, ttl time.Duration) (newJTI string, err error) {
+func rotateRefreshFamily(presentedJTI, nextJTI string) error {
 	refreshFamiliesMu.Lock()
 	defer refreshFamiliesMu.Unlock()
 	pruneExpiredFamiliesLocked()
 
 	familyID, ok := jtiToFamily[presentedJTI]
 	if !ok {
-		return "", errors.New("refresh: unknown token")
+		return errors.New("refresh: unknown token")
 	}
 	fam, ok := refreshFamilies[familyID]
 	if !ok || fam.revoked {
-		return "", errors.New("refresh: revoked token")
+		return errors.New("refresh: revoked token")
 	}
 	if time.Now().After(fam.expiresAt) {
 		// Drop the family from the store on its way out.
 		deleteFamilyLocked(familyID)
-		return "", errors.New("refresh: expired token")
+		return errors.New("refresh: expired token")
 	}
 
 	// Replay detection: if the presented jti has already been retired,
@@ -241,7 +240,7 @@ func rotateRefreshFamily(presentedJTI string, ttl time.Duration) (newJTI string,
 		logger.Error("refresh token reuse detected — revoking family",
 			zap.Int("user_id", fam.userID),
 			zap.String("jti_fp", jtiFingerprint(presentedJTI)))
-		return "", errors.New("refresh: token reuse detected, family revoked")
+		return errors.New("refresh: token reuse detected, family revoked")
 	}
 
 	// Strict freshness: only the *current* active jti is accepted. Any
@@ -253,14 +252,14 @@ func rotateRefreshFamily(presentedJTI string, ttl time.Duration) (newJTI string,
 			zap.Int("user_id", fam.userID),
 			zap.String("presented_fp", jtiFingerprint(presentedJTI)),
 			zap.String("active_fp", jtiFingerprint(fam.activeJTI)))
-		return "", errors.New("refresh: stale token, family revoked")
+		return errors.New("refresh: stale token, family revoked")
 	}
 
-	// Mint a new jti, retire the old one.
-	next, err := jwt.NewJTI()
-	if err != nil {
-		return "", err
+	if nextJTI == "" {
+		return errors.New("refresh: empty replacement token")
 	}
+	// Retire the old jti only after the caller has completed every fallible
+	// lookup and signature needed for the response.
 	// Wave 32: keep the old jti in jtiToFamily so a replay attempt
 	// finds the family and reaches the consumedJTIs check above
 	// (which is the branch that burns the family on reuse).
@@ -274,10 +273,10 @@ func rotateRefreshFamily(presentedJTI string, ttl time.Duration) (newJTI string,
 	// fam.consumedJTIs on family expiry / revocation, so leaving
 	// the entry here doesn't grow the map without bound.
 	fam.consumedJTIs[presentedJTI] = struct{}{}
-	fam.activeJTI = next
+	fam.activeJTI = nextJTI
 	fam.lastSeenAt = time.Now()
-	jtiToFamily[next] = familyID
-	return next, nil
+	jtiToFamily[nextJTI] = familyID
+	return nil
 }
 
 // SessionInfo is the trimmed-down view of a refresh family that the
@@ -1011,6 +1010,12 @@ func PutUserPassword(ctx echo.Context) error {
 	// every refresh-token family so a stolen refresh token can't keep minting
 	// fresh access tokens for the rest of the 7-day window (mirrors DeleteUser).
 	revokeAllRefreshFamiliesForUser(user.Id)
+	if err := tokenrevocation.RevokeID(user.Id); err != nil {
+		return ctx.JSON(common_err.SERVICE_ERROR, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "password changed but existing access sessions could not be revoked: " + err.Error(),
+		})
+	}
 	user.Password = ""
 	return ctx.JSON(common_err.SUCCESS, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: user})
 }
@@ -1618,17 +1623,6 @@ func PostUserRefreshToken(ctx echo.Context) error {
 	//   * any reuse or stale-jti presentation kills the entire family
 	// Tokens minted before this code shipped have an empty jti and will
 	// fail this check; the user must log in once to get a tracked one.
-	newRefreshJTI, rotateErr := rotateRefreshFamily(claims.RegisteredClaims.ID, 7*24*time.Hour)
-	if rotateErr != nil {
-		logger.Error("refresh token rotation failed",
-			zap.String("error", rotateErr.Error()),
-			zap.Int("user_id", claims.ID))
-		return ctx.JSON(http.StatusUnauthorized, model.Result{
-			Success: common_err.VERIFICATION_FAILURE,
-			Message: common_err.GetMsg(common_err.VERIFICATION_FAILURE),
-		})
-	}
-
 	// Wave 34-X: re-resolve role + username from the database, NOT from
 	// the parsed refresh token claims. The previous implementation
 	// passed `claims.Role` and `claims.Username` straight back into
@@ -1663,10 +1657,23 @@ func PostUserRefreshToken(ctx echo.Context) error {
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{Success: common_err.SERVICE_ERROR, Message: err.Error()})
 	}
+	newRefreshJTI, err := jwt.NewJTI()
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{Success: common_err.SERVICE_ERROR, Message: err.Error()})
+	}
 
 	newRefreshToken, err := jwt.GetRefreshTokenWithRoleAndJTI(effectiveUsername, privateKey, claims.ID, effectiveRole, newRefreshJTI)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{Success: common_err.SERVICE_ERROR, Message: err.Error()})
+	}
+	if rotateErr := rotateRefreshFamily(claims.RegisteredClaims.ID, newRefreshJTI); rotateErr != nil {
+		logger.Error("refresh token rotation failed",
+			zap.String("error", rotateErr.Error()),
+			zap.Int("user_id", claims.ID))
+		return ctx.JSON(http.StatusUnauthorized, model.Result{
+			Success: common_err.VERIFICATION_FAILURE,
+			Message: common_err.GetMsg(common_err.VERIFICATION_FAILURE),
+		})
 	}
 
 	verifyInfo := system_model.VerifyInformation{

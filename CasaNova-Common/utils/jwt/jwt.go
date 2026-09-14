@@ -156,6 +156,9 @@ func Validate(token string, publicKeyFunc func() (*ecdsa.PublicKey, error)) (boo
 	if claims.Issuer == "refresh" {
 		return false, nil, errRefreshNotAccess
 	}
+	if claims.Issuer == "oauth2-delegated" {
+		return false, nil, errDelegatedNotGeneralAccess
+	}
 
 	return true, claims, nil
 }
@@ -165,3 +168,22 @@ func Validate(token string, publicKeyFunc func() (*ecdsa.PublicKey, error)) (boo
 // middleware can distinguish "credential confusion attempt" from "expired
 // signature" in audit logs if it ever wants to.
 var errRefreshNotAccess = errors.New("jwt: refresh token rejected by access-token validator")
+
+// ValidateDelegated accepts only the OAuth2 access token minted for the OIDC
+// userinfo resource. Keeping this separate from Validate prevents an RP from
+// reusing that identity token against CasaNova's first-party APIs.
+func ValidateDelegated(token string, publicKeyFunc func() (*ecdsa.PublicKey, error)) (bool, *Claims, error) {
+	claims, err := ParseToken(token, publicKeyFunc)
+	if err != nil {
+		return false, nil, err
+	}
+	if claims == nil || claims.Issuer != "oauth2-delegated" {
+		return false, nil, errNotDelegatedAccess
+	}
+	return true, claims, nil
+}
+
+var (
+	errDelegatedNotGeneralAccess = errors.New("jwt: delegated OAuth2 token rejected by general access-token validator")
+	errNotDelegatedAccess        = errors.New("jwt: token is not delegated OAuth2 access")
+)

@@ -155,6 +155,19 @@ func InitRouter() http.Handler {
 			},
 		},
 	}
+	delegatedJWTConfig := jwtConfig
+	delegatedJWTConfig.ParseTokenFunc = func(token string, c echo.Context) (interface{}, error) {
+		valid, claims, err := jwt.ValidateDelegated(token, func() (*ecdsa.PublicKey, error) {
+			_, publicKey := service.MyService.User().GetKeyPair()
+			return publicKey, nil
+		})
+		if err != nil || !valid || jwt.RevokedForClaims(claims) {
+			return nil, echo.ErrUnauthorized
+		}
+		c.Request().Header.Set("user_id", strconv.Itoa(claims.ID))
+		commonmw.SetRoleInContext(c, "guest", claims.ID)
+		return claims, nil
+	}
 
 	v1UsersGroup := v1Group.Group("/users")
 	v1UsersGroup.Use(echo_middleware.JWTWithConfig(jwtConfig))
@@ -217,12 +230,13 @@ func InitRouter() http.Handler {
 	// caller via the access token, not via a client-supplied user_id
 	// header. Without this group an attacker could mint codes for any
 	// user simply by setting `user_id: 1` in the request.
-	v1OAuth2Protected := v1Group.Group("/oauth2")
-	v1OAuth2Protected.Use(echo_middleware.JWTWithConfig(jwtConfig))
-	{
-		v1OAuth2Protected.GET("/authorize", v1.GetOAuth2Authorize)
-		v1OAuth2Protected.GET("/userinfo", v1.GetOAuth2UserInfo)
-	}
+	v1OAuth2Authorize := v1Group.Group("/oauth2")
+	v1OAuth2Authorize.Use(echo_middleware.JWTWithConfig(jwtConfig))
+	v1OAuth2Authorize.GET("/authorize", v1.GetOAuth2Authorize)
+
+	v1OAuth2UserInfo := v1Group.Group("/oauth2")
+	v1OAuth2UserInfo.Use(echo_middleware.JWTWithConfig(delegatedJWTConfig))
+	v1OAuth2UserInfo.GET("/userinfo", v1.GetOAuth2UserInfo)
 
 	// Admin-only OAuth2 client management — MUST be inside the JWT
 	// middleware so RoleFromContext returns the actual authenticated
