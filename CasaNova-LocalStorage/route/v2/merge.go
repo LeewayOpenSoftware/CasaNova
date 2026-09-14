@@ -14,6 +14,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/codegen"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/common"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/config"
+	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/mount"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/pkg/utils/merge"
 	"github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service"
 	model2 "github.com/LeewayOpenSoftware/CasaNova-LocalStorage/service/model"
@@ -57,6 +58,14 @@ func (s *LocalStorage) SetMerge(ctx echo.Context) error {
 	}
 	var m codegen.Merge
 	if err := ctx.Bind(&m); err != nil {
+		message := err.Error()
+		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{Message: &message})
+	}
+
+	// Same containment as InitMerge: SetMerge creates or re-points a mergerfs
+	// pool at m.MountPoint, and a pool mounted over a system directory shadows
+	// it just as effectively as moving it away.
+	if err := mount.ValidateMergePoint(m.MountPoint); err != nil {
 		message := err.Error()
 		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{Message: &message})
 	}
@@ -206,6 +215,16 @@ func (s *LocalStorage) InitMerge(ctx echo.Context) error {
 
 	if m.MountPoint == "" {
 		message := "mount point is empty"
+		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{Message: &message})
+	}
+	// route/v2/mount.go gates every mount point through validateMountPoint;
+	// this file gated none of them, and it is the one that MOVES the directory
+	// it is given. With {"mount_point":"/etc"} the block below deletes
+	// /var/lib/casaos/files, SafeRenames the host's entire /etc tree into its
+	// place and leaves an empty /etc behind: PAM, DNS and every daemon die
+	// immediately and the box does not come back.
+	if err := mount.ValidateMergePoint(m.MountPoint); err != nil {
+		message := err.Error()
 		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{Message: &message})
 	}
 	if strings.ToLower(config.ServerInfo.EnableMergerFS) != "true" {

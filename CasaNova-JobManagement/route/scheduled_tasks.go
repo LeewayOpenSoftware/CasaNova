@@ -29,8 +29,37 @@ func actorUserID(c echo.Context) int {
 	return id
 }
 
-// validTaskID matches the format produced by task.go: "task_" + hex digits, max 50 chars.
+// validTaskID matches the format produced by newTaskID() in task.go:
+// "task_" + hex digits. It is what this API will MINT and, from now on, the
+// only shape it will ACCEPT from a client that supplies its own ID.
 var validTaskID = regexp.MustCompile(`^task_[0-9a-f]{1,16}$`)
+
+// addressableTaskID is what the management endpoints will accept in :id, and
+// it is deliberately WIDER than validTaskID.
+//
+// THE BUG THIS SPLIT FIXES. PutScheduledTask accepted any client-supplied ID
+// and TaskStore stored it verbatim, but GET/DELETE/run/runs all required
+// validTaskID. A task created as {"id":"backup_diario"} was scheduled, ran as
+// root via /bin/sh, and then could not be read, triggered or DELETED through
+// the API at all -- every management call answered 400. The only way out was
+// SSH and editing tasks.json by hand.
+//
+// Two changes are needed and only one of them is obvious. Rejecting free-form
+// IDs at creation closes the door, but on its own it makes things WORSE for
+// anyone who already has such a task: it would be unmanageable forever. So the
+// management side is widened to whatever a URL path segment can carry.
+//
+// That is safe because a task ID is ONLY a map key: ts.tasks[t.ID]. It is
+// never joined into a path (the sole path in the store is tasks.json itself),
+// so there is no traversal to reintroduce. The bound and the exclusion of
+// control characters are there to keep it sane in logs and JSON.
+//
+// DECLARED RESIDUE: a task whose stored ID contains "/" or a control character
+// stays unreachable through this API -- not because of this regexp, but
+// because such an ID cannot be a URL path segment in the first place. No new
+// one can be created now. An existing one still needs tasks.json edited by
+// hand, and nothing here touches a real tasks.json.
+var addressableTaskID = regexp.MustCompile(`^[^\x00-\x1f/]{1,128}$`)
 
 // DENY WITH echo.NewHTTPError, NEVER WITH c.JSON — the same rule the permission
 // gates below carry, and for the same reason.
@@ -48,7 +77,7 @@ var validTaskID = regexp.MustCompile(`^task_[0-9a-f]{1,16}$`)
 // The rule is about any error-returning helper, not about permissions.
 func validateTaskID(c echo.Context) (string, error) {
 	id := c.Param("id")
-	if !validTaskID.MatchString(id) {
+	if !addressableTaskID.MatchString(id) {
 		return "", echo.NewHTTPError(http.StatusBadRequest,
 			map[string]string{"message": "invalid task ID format"})
 	}
@@ -169,6 +198,19 @@ func PutScheduledTask(c echo.Context) error {
 	}
 	if err := t.Validate(); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
+	}
+	// An empty ID means "mint one" and is the normal create path. A supplied ID
+	// must be one this API could have minted; anything else used to be accepted
+	// here and then rejected by every endpoint that manages it. The check lives
+	// in the handler and NOT in Task.Validate() on purpose: TaskStore.load()
+	// does not validate, so a tasks.json that already holds a free-form ID
+	// keeps loading and keeps running. Tightening Validate() would have made
+	// those tasks vanish from the scheduler on the next restart, which is a
+	// worse failure than the one being fixed.
+	if t.ID != "" && !validTaskID.MatchString(t.ID) {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": "task ID must be of the form task_<hex> or be omitted so the server assigns one",
+		})
 	}
 	s := service.Scheduler()
 	if s == nil {
