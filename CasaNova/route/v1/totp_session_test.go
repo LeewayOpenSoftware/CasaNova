@@ -48,11 +48,15 @@ func TestEnablingTOTPRejectsAlreadyIssuedTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted := func() bool {
-		valid, claims, err := commonjwt.Validate(oldToken, func() (*ecdsa.PublicKey, error) { return &key.PublicKey, nil })
+	otherUserToken, err := commonjwt.GenerateToken("bob", key, 7, "user", "casaos", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := func(token string) bool {
+		valid, claims, err := commonjwt.Validate(token, func() (*ecdsa.PublicKey, error) { return &key.PublicKey, nil })
 		return err == nil && valid && !commonjwt.RevokedForClaims(claims)
 	}
-	if !accepted() {
+	if !accepted(oldToken) || !accepted(otherUserToken) {
 		t.Fatal("precondition: old token was rejected before 2FA activation")
 	}
 
@@ -69,7 +73,10 @@ func TestEnablingTOTPRejectsAlreadyIssuedTokens(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if accepted() {
+	if accepted(oldToken) {
 		t.Fatal("old token was still accepted after 2FA activation")
+	}
+	if accepted(otherUserToken) {
+		t.Fatal("another user's old token was still accepted after machine-wide 2FA activation")
 	}
 }
