@@ -36,6 +36,22 @@ func InitV1Router() http.Handler {
 		Format: `{"time":"${time_rfc3339}","method":"${method}","path":"${path}","status":${status},"latency_human":"${latency_human}"}` + "\n",
 	}))
 
+	// DISABLED ON PURPOSE — do not re-enable without fixing recover.go first.
+	//
+	// GetRecoverStorage builds its mount point as "/mnt/" + username, where
+	// username is what the OAuth PROVIDER returned for the account
+	// (route/v1/recover.go:96 and :99, after strings.Split(username, "@")[0]).
+	// Nothing checks it for separators or traversal elements, and the one call
+	// that looked like it would — fileutil.NameAccumulation — is itself
+	// commented out on the line above it. A provider-supplied identity
+	// containing "../" therefore places a mount outside /mnt.
+	//
+	// CasaNova/pkg/oauthflow/ledger.go is where that was solved for the other
+	// OAuth flow: SanitizeRemoteName reduces a provider identity to
+	// [A-Za-z0-9_-] and MountPointFor refuses anything not landing directly
+	// under MountRoot. This route needs the same treatment before it comes
+	// back; commenting it out is what is holding the line today, and a line
+	// commented without a reason is one housekeeping pass away from returning.
 	// r.GET("/v1/recover/:type", v1.GetRecoverStorage)
 	v1Group := e.Group("/v1")
 

@@ -168,6 +168,21 @@ func init() {
 
 	// service.MountLists = make(map[string]*mountlib.MountPoint)
 	// configfile.Install()
+	// DISABLED ON PURPOSE — do not re-enable without validating mount points.
+	//
+	// CheckAndMountAll (service/storage.go:178) walks every section of the
+	// rclone config and calls MountStorage(mountPoint, v) with the section's
+	// "mount_point" value verbatim. Nothing runs mount.ValidatePoint over it,
+	// so a mount_point of /etc or /usr is mounted over at boot — the exact
+	// containment that route/v1 and route/v2 enforce for every mount point that
+	// arrives through the API. The umount on the line above it is sanitized
+	// (shell.SanitizeArg); the mount path is not, so the sanitized call is not
+	// evidence that this one is safe.
+	//
+	// It runs at startup, which means there is no request to reject and no
+	// operator watching. Re-enabling it needs the mount_point values gated
+	// first; until then this line is the whole defence, and a line commented
+	// without a reason is one housekeeping pass away from returning.
 	// service.MyService.Storage().CheckAndMountAll()
 
 }
