@@ -50,3 +50,40 @@ func ValidatePoint(mp string) error {
 	}
 	return errors.New("mount point must live under /mnt, /media, or /DATA")
 }
+
+// ValidateMergePoint is ValidatePoint for a mergerfs pool, which differs in
+// exactly one way: a merge point MAY be an allowed root itself.
+//
+// WHY A SECOND FUNCTION AND NOT A SECOND CALL TO THE FIRST. /DATA is the merge
+// point -- common.DefaultMountPoint is literally "/DATA", GetMergeInitStatus
+// asks whether /DATA is already merged, and EnsureDefaultMergePoint creates it
+// there. ValidatePoint refuses an allowed root ("use a subdirectory"), so
+// wiring it straight into InitMerge/SetMerge -- the obvious one-line fix --
+// would reject the only mount point the feature is ever called with and break
+// merge initialisation outright. Measured, not assumed:
+//
+//	ValidatePoint("/DATA") = mount point cannot be the root itself
+//
+// The root exception is safe here because it is the DIRECTION that matters:
+// refusing everything outside /mnt, /media and /DATA is what stops
+// InitMerge from being handed /etc and moving the host's configuration tree
+// into /var/lib/casaos/files. Allowing the root itself does not widen that at
+// all -- /DATA was always going to be a legal merge point.
+func ValidateMergePoint(mp string) error {
+	if mp == "" {
+		return errors.New("mount point is required")
+	}
+	clean := filepath.Clean(mp)
+	if !filepath.IsAbs(clean) {
+		return errors.New("mount point must be absolute")
+	}
+	if strings.Contains(clean, "..") {
+		return errors.New("mount point must not contain ..")
+	}
+	for _, root := range AllowedRoots {
+		if clean == root || strings.HasPrefix(clean, root+string(filepath.Separator)) {
+			return nil
+		}
+	}
+	return errors.New("merge point must be /mnt, /media or /DATA, or live under one of them")
+}
