@@ -941,6 +941,78 @@ func RevokeID(principal int) error {
 	return Revoke(strconv.Itoa(principal))
 }
 
+// RevokeAll refuses every token issued at or before now, for every principal.
+// It is used when a machine-wide authentication boundary changes (for
+// example, when 2FA is enabled) and is persisted so every service and future
+// process observes the same cutoff.
+func RevokeAll() error {
+	return revokeAllAt(time.Now())
+}
+
+func revokeAllAt(at time.Time) error {
+	s := global
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	s.mu.RLock()
+	path := s.path
+	s.mu.RUnlock()
+	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
+		return fmt.Errorf("create revocation list dir: %w", err)
+	}
+
+	atDiskIO("revoke-all")
+	lk, err := filelock.Acquire(path, lockWait)
+	if err != nil {
+		return fmt.Errorf("serialize revocation list update: %w", err)
+	}
+	defer lk.Release()
+
+	current, err := readFile(path)
+	existed := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read revocation list before update: %w", err)
+	}
+	if current.entries == nil {
+		current.entries = map[string]time.Time{}
+	}
+	legacyCutoff := false
+	if existed && current.readerContract < minReaderVersion {
+		legacyCutoff = sanitizeLegacyList(&current)
+	}
+	current.readerContract = minReaderVersion
+	if current.before.Before(at) {
+		current.before = at
+	}
+	current.prune(at)
+
+	if err := writeFile(path, current); err != nil {
+		return err
+	}
+	mod, size := identity(path)
+	s.mu.Lock()
+	if s.path != path {
+		s.mu.Unlock()
+		return nil
+	}
+	s.adoptLocked(current, mod, size)
+	if legacyCutoff {
+		s.legacyCutoffApplied = true
+		s.legacyCutoffAt = current.before
+	}
+	if s.status == StatusDegraded {
+		s.status = StatusHealthy
+		s.invariant = ""
+		s.detail = ""
+	}
+	kept := countEntries(current.entries)
+	s.mu.Unlock()
+	if legacyCutoff {
+		announceLegacyCutoff(path, current.before, kept)
+	}
+	return nil
+}
+
 // revokeAt performs the update with NO state lock held: it takes the
 // cross-process lock, re-reads, edits, writes, and only then takes s.mu for as
 // long as it takes to publish the result. Holding the request-path lock across

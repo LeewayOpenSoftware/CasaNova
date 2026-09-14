@@ -25,6 +25,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/codegen/message_bus"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/common"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/pkg/config"
+	"github.com/LeewayOpenSoftware/CasaNova-UserService/pkg/sessionsecurity"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/pkg/sqlite"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/pkg/utils/encryption"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/pkg/utils/random"
@@ -98,7 +99,12 @@ func init() {
 			return
 		}
 		userData.Password = hashedPwd
-		service.MyService.User().UpdateUserPassword(userData)
+		if err := sessionsecurity.ResetPassword(userData.Id, func() {
+			service.MyService.User().UpdateUserPassword(userData)
+		}); err != nil {
+			fmt.Println("ERROR: password changed but existing sessions could not be revoked:", err)
+			return
+		}
 		fmt.Println("User password has been reset successfully.")
 		fmt.Println("Username: " + userData.Username)
 

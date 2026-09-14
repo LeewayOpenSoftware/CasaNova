@@ -19,6 +19,7 @@ import (
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/filelock"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/tokenrevocation"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	commonfile "github.com/LeewayOpenSoftware/CasaNova-Common/utils/file"
 	"github.com/labstack/echo/v4"
@@ -492,7 +493,6 @@ func PostTOTPSetup(ctx echo.Context) error {
 			Message: "Failed to save 2FA config: " + err.Error(),
 		})
 	}
-
 	return ctx.JSON(http.StatusOK, model.Result{
 		Success: common_err.SUCCESS,
 		Message: common_err.GetMsg(common_err.SUCCESS),
@@ -595,6 +595,12 @@ func PostTOTPVerify(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, model.Result{
 			Success: common_err.SERVICE_ERROR,
 			Message: "Failed to save 2FA config: " + err.Error(),
+		})
+	}
+	if err := tokenrevocation.RevokeAll(); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "2FA was enabled, but existing sessions could not be revoked: " + err.Error(),
 		})
 	}
 
