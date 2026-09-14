@@ -113,9 +113,9 @@ func (s *DomainService) CancelISODownload(name string) error {
 	if s.diskDir == "" {
 		return fmt.Errorf("no disk dir configured")
 	}
-	base := filepath.Base(strings.TrimSpace(name))
-	if base == "" || base == "." || base == ".." || base != strings.TrimSpace(name) {
-		return fmt.Errorf("invalid ISO name")
+	base, err := safeDiskDirName(s.diskDir, name, "ISO name")
+	if err != nil {
+		return err
 	}
 	s.isoMu.Lock()
 	d, ok := s.isoDownloads[filepath.Join(s.diskDir, base)]
@@ -179,6 +179,15 @@ func (s *DomainService) Get(name string) (*model.Domain, error) {
 // provisioned first via qemu-img (the oracle likewise shelled out for image
 // provisioning).
 func (s *DomainService) Define(cfg *model.VirtualMachineConfiguration) (*model.Domain, error) {
+	// cfg.Name reaches the filesystem three times from here -- the qcow2 path
+	// below, the cloud-init seed ISO in makeCloudInitSeed, and the MkDirAll
+	// ensureQcow2 does on the parent of both. The route handler checked it
+	// against "" and nothing else. Refuse before dialling libvirt: an invalid
+	// request should not cost a connection.
+	if _, err := safeDiskDirName(s.diskDir, cfg.Name, "domain name"); err != nil {
+		return nil, err
+	}
+
 	l, err := s.conn.Conn()
 	if err != nil {
 		return nil, err
@@ -723,6 +732,40 @@ func uuidString(u libvirt.UUID) string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", h[0:8], h[8:12], h[12:16], h[16:20], h[20:32])
 }
 
+// safeDiskDirName accepts a caller-supplied name only if it is a bare filename
+// component that stays inside diskDir, and returns it.
+//
+// This is the guard DeleteISO already carried, lifted out so it can be applied
+// to the one input that never had it: cfg.Name. A domain name arrives in an
+// HTTP body, is joined into diskDir to build "<name>-<i>.qcow2" and
+// "<name>-seed.iso", and ensureQcow2 does os.MkdirAll(filepath.Dir(path))
+// before creating the image -- so a name carrying "../" did not merely write a
+// file elsewhere, it CREATED THE DIRECTORIES to write it in.
+//
+// Every clause earns its place: filepath.Base strips a directory component,
+// the empty/"."/".." checks refuse what Base cannot fix, `base != trimmed`
+// refuses anything Base had to change (which is what turns this from a
+// normalizer into a refusal), and the filepath.Rel containment catches
+// whatever the name-level checks miss.
+//
+// It REFUSES rather than normalizing on purpose. Silently rewriting
+// "../../vm" to "vm" would put the disk somewhere the caller did not ask for
+// and report success, which is the failure mode this whole batch is about.
+func safeDiskDirName(diskDir, name string, what string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	base := filepath.Base(trimmed)
+	if base == "" || base == "." || base == ".." || base != trimmed {
+		return "", fmt.Errorf("invalid %s", what)
+	}
+	if diskDir != "" {
+		full := filepath.Join(diskDir, base)
+		if rel, err := filepath.Rel(diskDir, full); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("invalid %s", what)
+		}
+	}
+	return base, nil
+}
+
 // DeleteISO removes an installation image from the ISO directory.
 //
 // The name is treated as a bare filename and nothing else. It arrives from an
@@ -739,18 +782,15 @@ func (s *DomainService) DeleteISO(name string) error {
 	if s.diskDir == "" {
 		return fmt.Errorf("no disk dir configured")
 	}
-	base := filepath.Base(strings.TrimSpace(name))
-	if base == "" || base == "." || base == ".." || base != strings.TrimSpace(name) {
-		return fmt.Errorf("invalid ISO name")
+	base, err := safeDiskDirName(s.diskDir, name, "ISO name")
+	if err != nil {
+		return err
 	}
 	if !strings.HasSuffix(strings.ToLower(base), ".iso") {
 		return fmt.Errorf("not an ISO")
 	}
 
 	full := filepath.Join(s.diskDir, base)
-	if rel, err := filepath.Rel(s.diskDir, full); err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("invalid ISO name")
-	}
 
 	if users, err := s.domainsUsingISO(full); err == nil && len(users) > 0 {
 		return fmt.Errorf("in use by %s", strings.Join(users, ", "))
