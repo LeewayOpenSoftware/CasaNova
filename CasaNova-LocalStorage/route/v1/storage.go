@@ -421,15 +421,25 @@ func PutFormatStorage(ctx echo.Context) error {
 
 	defer service.MyService.Disk().RemoveLSBLKCache()
 	defer diskMap.Delete(path)
-	diskInfo := service.MyService.Disk().GetDiskInfo(path)
-	if err := service.MyService.Disk().UmountPointAndRemoveDir(diskInfo); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, model.Result{Success: common_err.REMOVE_MOUNT_POINT_ERROR, Message: err.Error()})
-	}
-
-	// Check if device is the system (boot) disk
+	// Check if device is the system (boot) disk.
+	//
+	// This check used to sit AFTER UmountPointAndRemoveDir below, so the 403 was
+	// written to a box whose /boot/efi had already been unmounted and whose
+	// mount-point directory had already been os.RemoveAll'd. The answer was
+	// "refused"; the machine was unbootable. UmountPointAndRemoveDir now
+	// refuses anything outside /mnt, /media and /DATA on its own, which is what
+	// actually stops the disaster -- but asking the cheap, non-destructive
+	// question first is what lets this handler still answer 403 instead of a
+	// generic 500, and keeps it from needlessly unmounting a data partition
+	// that happens to share the system disk before refusing anyway.
 	rootDev, _ := devid.RootDevice()
 	if devid.IsSameOrChild(rootDev, path) {
 		return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format system disk"})
+	}
+
+	diskInfo := service.MyService.Disk().GetDiskInfo(path)
+	if err := service.MyService.Disk().UmountPointAndRemoveDir(diskInfo); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, model.Result{Success: common_err.REMOVE_MOUNT_POINT_ERROR, Message: err.Error()})
 	}
 
 	if err := service.MyService.Disk().FormatDiskAs(path, fsType); err != nil {
