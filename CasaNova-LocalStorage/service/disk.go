@@ -239,27 +239,60 @@ func (d *diskService) FormatDiskAs(path, fsType string) error {
 	return nil
 }
 
+// ErrMountPointNotOurs is returned when UmountPointAndRemoveDir is asked to
+// unmount and delete a directory that CasaNova could not have created as a
+// mount point. Exported so a handler can answer 403 instead of 500.
+var ErrMountPointNotOurs = errors.New("refusing to unmount and delete a mount point outside /mnt, /media and /DATA")
+
+// umountOneAndRemove unmounts a single mount point and removes its directory,
+// but only after proving the directory is one CasaNova could own.
+//
+// WHY THE CHECK IS HERE AND NOT IN THE HANDLERS. This function is the only
+// thing in the tree that calls os.RemoveAll on a mount point, and it had no
+// idea which mount point it was deleting. PutFormatStorage did check for the
+// boot disk -- AFTER calling this, so /boot/efi was already unmounted and its
+// directory already gone by the time the 403 was written. A guard in the wrong
+// order is worse than an absent one, because it looks like it is there.
+//
+// Moving the guard up into that one handler would have left the other callers
+// open: there are FIVE call sites (PostAddStorage twice, PutFormatStorage,
+// DeleteStorage, DeleteDisksUmount), and only two of them check anything. One
+// refusal here covers every caller, including the next one somebody writes.
+//
+// The policy is mount.ValidatePoint -- the SAME allow-list (/mnt, /media,
+// /DATA, never the root itself) that already decides where the API may MOUNT.
+// That symmetry is the point: CasaNova can only create a mount point inside
+// those roots, so it can never need to delete one outside them, and every
+// system path this destroyed -- /boot/efi, /boot, /usr, / -- is outside by
+// construction. No new threshold is invented and no legitimate caller loses a
+// path it could have created.
+func umountOneAndRemove(path, mountPoint string) error {
+	if err := mount.ValidatePoint(mountPoint); err != nil {
+		logger.Error("refusing to unmount and delete a mount point outside the allowed roots",
+			zap.String("path", path), zap.String("mount point", mountPoint), zap.Error(err))
+		return fmt.Errorf("%w: %s", ErrMountPointNotOurs, mountPoint)
+	}
+	if err := mount.UmountByMountPoint(mountPoint); err != nil {
+		logger.Error("error when umounting partition", zap.Error(err), zap.String("path", path), zap.String("mount point", mountPoint))
+		return err
+	}
+	if err := file.RMDir(mountPoint); err != nil {
+		logger.Error("error when removing mount point directory", zap.Error(err), zap.String("path", path), zap.String("mount point", mountPoint))
+		return err
+	}
+	return nil
+}
+
 // ,
 func (d *diskService) UmountPointAndRemoveDir(m model.LSBLKModel) error {
 	if len(m.MountPoint) > 0 {
-		if err := mount.UmountByMountPoint(m.MountPoint); err != nil {
-			logger.Error("error when umounting partition", zap.Error(err), zap.String("path", m.Path), zap.String("mount point", m.MountPoint))
-			return err
-		}
-		if err := file.RMDir(m.MountPoint); err != nil {
-			logger.Error("error when removing mount point directory", zap.Error(err), zap.String("path", m.Path), zap.String("mount point", m.MountPoint))
+		if err := umountOneAndRemove(m.Path, m.MountPoint); err != nil {
 			return err
 		}
 	}
 	for _, p := range m.Children {
 		if len(p.MountPoint) > 0 {
-
-			if err := mount.UmountByMountPoint(p.MountPoint); err != nil {
-				logger.Error("error when umounting partition", zap.Error(err), zap.String("path", p.Path), zap.String("mount point", p.MountPoint))
-				return err
-			}
-			if err := file.RMDir(p.MountPoint); err != nil {
-				logger.Error("error when removing mount point directory", zap.Error(err), zap.String("path", p.Path), zap.String("mount point", p.MountPoint))
+			if err := umountOneAndRemove(p.Path, p.MountPoint); err != nil {
 				return err
 			}
 		}
