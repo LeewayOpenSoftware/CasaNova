@@ -1,11 +1,15 @@
 package sessionsecurity
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/tokenrevocation"
+	commonjwt "github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
 )
 
 func TestResetPasswordRejectsAlreadyIssuedToken(t *testing.T) {
@@ -13,8 +17,19 @@ func TestResetPasswordRejectsAlreadyIssuedToken(t *testing.T) {
 	t.Cleanup(func() { tokenrevocation.SetPath(tokenrevocation.DefaultPath) })
 
 	const userID = 42
-	issuedBeforeReset := time.Now().Add(-time.Minute)
-	if tokenrevocation.IsRevokedID(userID, issuedBeforeReset) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldToken, err := commonjwt.GenerateToken("alice", key, userID, "admin", "casaos", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := func() bool {
+		valid, claims, err := commonjwt.Validate(oldToken, func() (*ecdsa.PublicKey, error) { return &key.PublicKey, nil })
+		return err == nil && valid && !commonjwt.RevokedForClaims(claims)
+	}
+	if !accepted() {
 		t.Fatal("precondition: old token was rejected before password reset")
 	}
 
@@ -25,7 +40,7 @@ func TestResetPasswordRejectsAlreadyIssuedToken(t *testing.T) {
 	if !updated {
 		t.Fatal("password update was not applied")
 	}
-	if !tokenrevocation.IsRevokedID(userID, issuedBeforeReset) {
+	if accepted() {
 		t.Fatal("old token was still accepted after CLI password reset")
 	}
 }

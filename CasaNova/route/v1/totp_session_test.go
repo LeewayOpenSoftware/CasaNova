@@ -1,6 +1,9 @@
 package v1
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/base32"
 	"encoding/json"
 	"net/http"
@@ -14,6 +17,7 @@ import (
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/tokenrevocation"
+	commonjwt "github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
 	"github.com/labstack/echo/v4"
 )
 
@@ -36,8 +40,19 @@ func TestEnablingTOTPRejectsAlreadyIssuedTokens(t *testing.T) {
 	}
 
 	const userID = 42
-	issuedBeforeEnable := time.Now().Add(-time.Minute)
-	if tokenrevocation.IsRevokedID(userID, issuedBeforeEnable) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldToken, err := commonjwt.GenerateToken("alice", key, userID, "admin", "casaos", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := func() bool {
+		valid, claims, err := commonjwt.Validate(oldToken, func() (*ecdsa.PublicKey, error) { return &key.PublicKey, nil })
+		return err == nil && valid && !commonjwt.RevokedForClaims(claims)
+	}
+	if !accepted() {
 		t.Fatal("precondition: old token was rejected before 2FA activation")
 	}
 
@@ -54,7 +69,7 @@ func TestEnablingTOTPRejectsAlreadyIssuedTokens(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !tokenrevocation.IsRevokedID(userID, issuedBeforeEnable) {
+	if accepted() {
 		t.Fatal("old token was still accepted after 2FA activation")
 	}
 }

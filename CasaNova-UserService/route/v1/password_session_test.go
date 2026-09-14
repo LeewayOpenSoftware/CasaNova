@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/tokenrevocation"
+	commonjwt "github.com/LeewayOpenSoftware/CasaNova-Common/utils/jwt"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/service"
 	model2 "github.com/LeewayOpenSoftware/CasaNova-UserService/service/model"
 	"github.com/labstack/echo/v4"
@@ -40,8 +41,15 @@ func TestHTTPPasswordChangeRejectsAlreadyIssuedAccessToken(t *testing.T) {
 	service.MyService = &mockParityRepo{userSvc: fake}
 	t.Cleanup(func() { service.MyService = previous })
 
-	issuedBeforeChange := time.Now().Add(-time.Minute)
-	if tokenrevocation.IsRevokedID(user.Id, issuedBeforeChange) {
+	oldToken, err := commonjwt.GenerateToken("alice", key, user.Id, "user", "casaos", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := func() bool {
+		valid, claims, err := commonjwt.Validate(oldToken, func() (*ecdsa.PublicKey, error) { return &key.PublicKey, nil })
+		return err == nil && valid && !commonjwt.RevokedForClaims(claims)
+	}
+	if !accepted() {
 		t.Fatal("precondition: old access token was rejected before password change")
 	}
 	e := echo.New()
@@ -55,7 +63,7 @@ func TestHTTPPasswordChangeRejectsAlreadyIssuedAccessToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !tokenrevocation.IsRevokedID(user.Id, issuedBeforeChange) {
+	if accepted() {
 		t.Fatal("old access token was still accepted after HTTP password change")
 	}
 }
