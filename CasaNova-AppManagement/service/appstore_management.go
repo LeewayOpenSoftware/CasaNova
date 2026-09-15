@@ -73,52 +73,65 @@ func (a *AppStoreManagement) OnAppStoreUnregister(fn func(string) error) {
 	a.onAppStoreUnregister = append(a.onAppStoreUnregister, fn)
 }
 
+// ChangeGlobal sets a global setting and PERSISTS IT BEFORE RETURNING.
+//
+// It used to mutate the map and hand the write to a detached goroutine whose
+// only failure channel was a log line — while returning nil to a handler that
+// had therefore already answered 200. The setting was live in memory, so the
+// UI re-read it and showed it applied; the next restart reloaded from the file
+// that was never written and the setting was gone. That is the "my setting
+// reverts by itself" report, and nothing in the product could see it: the API
+// said success, the screen agreed, and only the daemon log knew.
+//
+// The write is a few hundred bytes to a local file, so doing it on the request
+// path costs a millisecond and buys the caller a true answer. The handler in
+// route/v2/global.go already has `if err := ...ChangeGlobal(...); err != nil`
+// — it was simply never given a non-nil error to act on.
+//
+// On failure the in-memory value is PUT BACK. Otherwise memory and disk
+// disagree in exactly the way the bug was about, only now with an error
+// message on top of it.
 func (a *AppStoreManagement) ChangeGlobal(key string, value string) error {
 	config.GlobalMu.Lock()
+	previous, existed := config.Global[key]
 	config.Global[key] = value
 	config.GlobalMu.Unlock()
 
-	go func() {
-		// Wave 31: recover() so a panic inside config.SaveGlobal (e.g.
-		// the YAML marshaller hitting an unexpected type) does not
-		// crash the entire AppManagement daemon. The handler that
-		// fired this goroutine has already returned 200 to the user,
-		// so an unhandled panic in here would only manifest as a
-		// daemon-wide outage with no actionable log line.
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("ChangeGlobal save goroutine panicked",
-					zap.Any("panic", r), zap.String("key", key))
-			}
-		}()
-		if err := config.SaveGlobal(); err != nil {
-			// Do NOT log the value — it may contain secrets (API keys, passwords).
-			logger.Error("failed to save global env", zap.Error(err), zap.String("key", key))
-			return
+	if err := config.SaveGlobal(); err != nil {
+		config.GlobalMu.Lock()
+		if existed {
+			config.Global[key] = previous
+		} else {
+			delete(config.Global, key)
 		}
-	}()
+		config.GlobalMu.Unlock()
+		// Do NOT log the value — it may contain secrets (API keys, passwords).
+		logger.Error("failed to save global env", zap.Error(err), zap.String("key", key))
+		return fmt.Errorf("global setting %q was not saved: %w", key, err)
+	}
 
 	return nil
 }
 
+// DeleteGlobal removes a global setting and persists before returning.
+// Same reasoning as ChangeGlobal above, including putting the value back when
+// the write fails — a setting that is gone from memory and still on disk comes
+// back at the next restart, which is the same lie pointing the other way.
 func (a *AppStoreManagement) DeleteGlobal(key string) error {
 	config.GlobalMu.Lock()
+	previous, existed := config.Global[key]
 	delete(config.Global, key)
 	config.GlobalMu.Unlock()
 
-	go func() {
-		// Wave 31: recover() — see ChangeGlobal for rationale.
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("DeleteGlobal save goroutine panicked",
-					zap.Any("panic", r), zap.String("key", key))
-			}
-		}()
-		if err := config.SaveGlobal(); err != nil {
-			logger.Error("failed to delete global env", zap.Error(err), zap.String("key", key))
-			return
+	if err := config.SaveGlobal(); err != nil {
+		if existed {
+			config.GlobalMu.Lock()
+			config.Global[key] = previous
+			config.GlobalMu.Unlock()
 		}
-	}()
+		logger.Error("failed to delete global env", zap.Error(err), zap.String("key", key))
+		return fmt.Errorf("global setting %q was not deleted: %w", key, err)
+	}
 
 	return nil
 }
