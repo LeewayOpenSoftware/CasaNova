@@ -248,6 +248,17 @@ func (a *AppManagement) PostComposeImportCli(ctx echo.Context) error {
 // `newTag` is left empty until a real registry digest/tag comparison lands.
 
 func (a *AppManagement) PostComposeCheckUpdates(ctx echo.Context) error {
+	// Wave 34 (ported from 27.04, docs/design/per-app-grants.md §7): this
+	// handler had NO authorization gate at all — not the wrong bit, none.
+	// The router's JWT middleware still refused an anonymous caller, so it
+	// was AUTHENTICATED but UNAUTHORIZED: every logged-in account reached
+	// it, and so did any context that resolved to guest without a principal
+	// behind it. PermAppView is the bit the whole family gets — guest
+	// already holds it, so no role loses anything it has today.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	id := ctx.Param("id")
 	if id == "" {
 		return ctx.JSON(http.StatusBadRequest, map[string]interface{}{
@@ -311,6 +322,11 @@ func (a *AppManagement) PostComposeCheckUpdates(ctx echo.Context) error {
 // with the docker compose pull/up pipeline.
 
 func (a *AppManagement) GetComposeInstallProgress(ctx echo.Context) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	id := ctx.Param("id")
 	if id == "" {
 		return ctx.JSON(http.StatusBadRequest, map[string]interface{}{
