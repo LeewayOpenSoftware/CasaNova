@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -236,27 +237,91 @@ func serviceFindings(svc types.ServiceConfig) []securityFinding {
 // is the strict path used for untrusted compose files being scheduled for the
 // first time.
 func ValidateComposeSecurity(project *ComposeApp) error {
+	// ponytail: collects all findings then returns the first, O(settings) not
+	// O(1). Negligible for real compose files; short-circuit inside
+	// projectFindings only if a project ever carries hundreds of fields.
+	if f := projectFindings(project); len(f) > 0 {
+		return errors.New(f[0].Message)
+	}
+	return nil
+}
+
+// projectFindings returns EVERY dangerous setting in a project — the whole rule
+// set, in one place, for BOTH gates.
+//
+// It exists because the rules had drifted apart between the two. The
+// named-volume-bind check lived inline in ValidateComposeSecurity and was
+// simply absent from ValidateComposeSecurityForUpdate, so a user with
+// PermAppConfigure could add a top-level `o=bind device=/etc` volume through
+// ApplyComposeAppSettings — which routes to the update gate only — and it
+// passed, while the identical volume was rejected at install. The rule was
+// never wrong; it was only in one of the two places that needed it. Having one
+// collection function means the next rule cannot be half-added the same way.
+//
+// The other half of the same defect was a channel nobody walked at all:
+// neither gate looked at project.Secrets or project.Configs, both of which
+// take a `file:` host path that Docker mounts into the container. That is the
+// same host bind the volume rule exists to stop, three fields further along in
+// the same document — so it is checked with the same denylist rather than a
+// second policy that could disagree with the first.
+//
+// Findings from the three project-level maps are sorted by name so the
+// reported violation is stable; service findings keep their existing order.
+func projectFindings(project *ComposeApp) []securityFinding {
 	if project == nil {
 		return nil
 	}
+	var out []securityFinding
+
 	// Project-level named volumes: a `local` driver with driver_opts o=bind /
 	// type=none is a HOST BIND MOUNT in disguise. A service references it by
 	// name (non-absolute source), so the per-service bind check skips it as
 	// "safe named volume" — but the volume's device is an arbitrary host path.
-	for name, vol := range project.Volumes {
-		if src := bindVolumeDevice(vol); src != "" && isDangerousBindSource(src) {
-			return fmt.Errorf("compose security: named volume %q bind-mounts host path %q (denied)", name, src)
+	for _, name := range sortedKeys(project.Volumes) {
+		if src := bindVolumeDevice(project.Volumes[name]); src != "" && isDangerousBindSource(src) {
+			out = append(out, securityFinding{
+				Key:     "volume|" + name + "|" + filepath.Clean(src),
+				Message: fmt.Sprintf("compose security: named volume %q bind-mounts host path %q (denied)", name, src),
+			})
 		}
 	}
-	// ponytail: collects all findings per service then returns the first,
-	// O(settings) not O(1). Negligible for real compose files; short-circuit
-	// inside serviceFindings only if a service ever carries hundreds of fields.
+
+	// A file-backed secret or config is a host bind wearing a different key.
+	// `secrets: {s: {file: /etc/shadow}}` hands the container the host file at
+	// /run/secrets/s; a config does the same at its target. Docker honours
+	// both through the API path and through `docker compose -f … up -d`.
+	for _, name := range sortedKeys(project.Secrets) {
+		if src := strings.TrimSpace(project.Secrets[name].File); src != "" && isDangerousBindSource(src) {
+			out = append(out, securityFinding{
+				Key:     "secret|" + name + "|" + filepath.Clean(src),
+				Message: fmt.Sprintf("compose security: secret %q reads host file %q (denied)", name, src),
+			})
+		}
+	}
+	for _, name := range sortedKeys(project.Configs) {
+		if src := strings.TrimSpace(project.Configs[name].File); src != "" && isDangerousBindSource(src) {
+			out = append(out, securityFinding{
+				Key:     "config|" + name + "|" + filepath.Clean(src),
+				Message: fmt.Sprintf("compose security: config %q reads host file %q (denied)", name, src),
+			})
+		}
+	}
+
 	for _, svc := range project.Services {
-		if f := serviceFindings(svc); len(f) > 0 {
-			return errors.New(f[0].Message)
-		}
+		out = append(out, serviceFindings(svc)...)
 	}
-	return nil
+	return out
+}
+
+// sortedKeys orders a project-level map's names so that which violation gets
+// reported does not depend on Go's map iteration order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // bindVolumeDevice returns the host device path of a top-level `local` bind
@@ -285,19 +350,18 @@ func ValidateComposeSecurityForUpdate(newProject, oldProject *ComposeApp) error 
 	if newProject == nil {
 		return nil
 	}
+	// Both sides come from projectFindings, so this gate sees exactly the rules
+	// the strict one does. It used to walk only Services, which is why a
+	// top-level bind volume added through ApplyComposeAppSettings — the path
+	// that runs this gate and skips the strict one — went straight through
+	// while being rejected at install.
 	existing := map[string]struct{}{}
-	if oldProject != nil {
-		for _, svc := range oldProject.Services {
-			for _, f := range serviceFindings(svc) {
-				existing[f.Key] = struct{}{}
-			}
-		}
+	for _, f := range projectFindings(oldProject) {
+		existing[f.Key] = struct{}{}
 	}
-	for _, svc := range newProject.Services {
-		for _, f := range serviceFindings(svc) {
-			if _, ok := existing[f.Key]; !ok {
-				return fmt.Errorf("%s — newly added on edit; not permitted unless explicitly allowed", f.Message)
-			}
+	for _, f := range projectFindings(newProject) {
+		if _, ok := existing[f.Key]; !ok {
+			return fmt.Errorf("%s — newly added on edit; not permitted unless explicitly allowed", f.Message)
 		}
 	}
 	return nil
