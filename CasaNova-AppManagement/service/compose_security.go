@@ -65,9 +65,16 @@ func isHealthCheckHostnameSafe(host string) bool {
 	return true
 }
 
-// dangerousCapabilities are Linux capabilities that grant
-// container-to-host escape primitives. ALL is included because some compose
-// files use it as a shorthand.
+// dangerousCapabilities are Linux capabilities a container must not be granted
+// ON TOP of Docker's default set. ALL is included because some compose files
+// use it as a shorthand.
+//
+// Only capabilities ABOVE the default belong here. Docker already grants CHOWN,
+// DAC_OVERRIDE, FOWNER, FSETID, KILL, MKNOD, NET_BIND_SERVICE, NET_RAW, SETFCAP,
+// SETGID, SETPCAP, SETUID, SYS_CHROOT and AUDIT_WRITE to every container without
+// being asked, so listing one of those would refuse a cap_add the container was
+// going to hold anyway — a denial that reads like protection and grants none.
+// Their absence below is correct and deliberate.
 var dangerousCapabilities = map[string]struct{}{
 	"ALL":             {},
 	"SYS_ADMIN":       {}, // mount, namespaces, cgroups
@@ -80,6 +87,14 @@ var dangerousCapabilities = map[string]struct{}{
 	"DAC_READ_SEARCH": {}, // bypass file read perms
 	"MAC_ADMIN":       {},
 	"MAC_OVERRIDE":    {},
+
+	// The three above the default set that leak the KERNEL rather than reach
+	// the host directly. None of them is root in one step, which is why they
+	// were easy to leave out; each hands over kernel addresses, and kASLR is
+	// what stands between a memory-corruption bug and a working exploit.
+	"BPF":     {}, // load BPF programs; with PERFMON, read kernel memory
+	"PERFMON": {}, // perf_event_open on the kernel: symbols and addresses
+	"SYSLOG":  {}, // syslog(2): kernel log incl. raw pointers, defeating kptr_restrict
 }
 
 // dangerousSecurityOpts are security_opt values that disable the kernel
