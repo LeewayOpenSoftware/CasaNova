@@ -446,10 +446,27 @@ func foreignContainerNamespace(mode string) string {
 }
 
 // isDangerousBindSource canonicalizes the source path and checks whether it
-// matches or descends into any forbidden host directory. Symlink resolution
-// is intentionally NOT done here — the path comes from a YAML literal and we
-// want to block both literal and prefix matches; symlink games at start time
-// are caught by the install path's filepath.Clean before mkdir.
+// matches or descends into any forbidden host directory, lexically AND through
+// the symlinks the path actually follows.
+//
+// The paragraph that used to stand here said the opposite — that symlink
+// resolution was intentionally skipped, because "symlink games at start time
+// are caught by the install path's filepath.Clean before mkdir". Resolution was
+// added below without that header being rewritten, so the file described a
+// weaker gate than it had. The claim was also wrong on its own terms:
+// filepath.Clean is a string operation and resolves no links at all, so a
+// reader who trusted it would conclude the window below was already covered
+// somewhere else. It is not.
+//
+// WHAT THIS DOES NOT COVER, stated so the next reader does not have to
+// rediscover it. Resolution happens when the project is VALIDATED; Docker
+// resolves again when it MOUNTS, later. A link planted at an allowed path
+// between those two moments is followed by Docker and never seen here. Closing
+// that needs a check at mount time, which is a different change in a different
+// place, and is carded separately rather than half-done here. The reachable
+// half — a link that already exists when the project is validated, including
+// one whose tail has not been created yet — is resolved and denied, and
+// compose_bind_symlink_test.go pins both.
 func isDangerousBindSource(src string) bool {
 	clean := filepath.Clean(src)
 	if matchesDangerousBind(clean) {
