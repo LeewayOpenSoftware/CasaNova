@@ -128,7 +128,23 @@ func GetDigest(ctx context.Context, url string, token string) (string, error) {
 		}
 		return "", fmt.Errorf("registry responded to head request with %q, auth: %q", res.Status, wwwAuthHeader)
 	}
-	return res.Header.Get(ContentDigestHeader), nil
+
+	// A 200 WITHOUT THE DIGEST HEADER IS NOT AN EMPTY DIGEST.
+	//
+	// Some registries and most caching proxies answer a HEAD with 200 and no
+	// Docker-Content-Digest (pull-through caches, some Harbor and Nexus
+	// configurations). This used to return ("", nil): a digest that matches
+	// nothing. CompareDigest then compared "" against well-formed RepoDigests,
+	// never matched, and answered false with no error — and its consumer reads
+	// that as `!match`, i.e. "an update is available". Permanently. The app
+	// wore an update badge forever and the nightly auto-update re-pulled the
+	// same image every night, because the registry never actually answered the
+	// question and nothing said so.
+	digest := res.Header.Get(ContentDigestHeader)
+	if digest == "" {
+		return "", fmt.Errorf("registry answered %q without a %s header, so the image digest is unknown", res.Status, ContentDigestHeader)
+	}
+	return digest, nil
 }
 
 func GetManifest(ctx context.Context, imageName string) (interface{}, string, error) {

@@ -658,8 +658,24 @@ func (a *AppStoreManagement) isUpdateAvailable(ctx context.Context, composeApp *
 	// handle no tag logic and for easy to test
 	storeInfo, err := composeApp.StoreInfo(false)
 	if err != nil {
-		logger.Error("failed to get store info of compose app, thus no update available", zap.Error(err))
-		return false, nil
+		// A FAILURE TO CHECK IS NOT "UP TO DATE".
+		//
+		// This returned (false, nil), and the caller only declines to cache
+		// when the error is non-nil — so a transient failure here was written
+		// into isAppUpgradable as a measured `false` and stayed there for the
+		// cache's whole lifetime. The app reported "up to date" for something
+		// nobody had managed to check, and the only way out was a restart or
+		// the cache expiring. Propagating the error costs the caller one
+		// uncached retry and costs the user nothing.
+		logger.Error("failed to get store info of compose app, cannot tell whether an update exists", zap.Error(err))
+		return false, err
+	}
+
+	// Nil check BEFORE the first dereference. It used to sit below
+	// storeInfo.IsUncontrolled, where it could only ever run after a nil
+	// storeInfo had already panicked — a guard placed where it cannot guard.
+	if storeInfo == nil {
+		return false, ErrStoreInfoNotFound
 	}
 
 	// if app is uncontrolled, no update available
@@ -667,8 +683,13 @@ func (a *AppStoreManagement) isUpdateAvailable(ctx context.Context, composeApp *
 		return false, nil
 	}
 
-	if storeInfo == nil || storeInfo.StoreAppID == nil || *storeInfo.StoreAppID == "" {
-		return false, err
+	if storeInfo.StoreAppID == nil || *storeInfo.StoreAppID == "" {
+		// Genuinely "no update", not a failure: an app with no store app ID
+		// has no upstream to compare against, so there is nothing to check and
+		// caching the answer is correct. Written as an explicit nil because it
+		// used to `return false, err` with err already known to be nil, which
+		// reads like a propagated failure and is not one.
+		return false, nil
 	}
 
 	storeComposeApp, err := a.ComposeApp(*storeInfo.StoreAppID)
