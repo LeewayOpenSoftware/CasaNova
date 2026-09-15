@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -135,6 +136,13 @@ func RunBackupNow(ctx echo.Context) error {
 	bgCtx, cancel := context.WithTimeout(ctx.Request().Context(), 2*time.Hour)
 	defer cancel()
 	if err := sched.RunNow(bgCtx, app); err != nil {
+		// "Already running" is not a failed backup, it is the absence of one:
+		// the request was declined, nothing ran, and answering 200 "backup
+		// complete" here was how a run that never started got reported as a
+		// finished one.
+		if errors.Is(err, service.ErrBackupAlreadyRunning) {
+			return ctx.JSON(http.StatusConflict, map[string]string{"message": err.Error()})
+		}
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
 	}
 	return ctx.JSON(http.StatusOK, map[string]string{"message": "backup complete"})

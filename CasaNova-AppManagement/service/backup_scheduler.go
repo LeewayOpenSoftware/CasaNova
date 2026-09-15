@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -149,14 +150,19 @@ func (s *backupScheduler) RunNow(ctx context.Context, appName string) error {
 	if !ok {
 		return errNoSchedule(appName)
 	}
-	s.runOnce(ctx, sch)
-	// Re-read after runOnce so the caller can see the updated LastError.
-	if updated, ok := s.store.Get(appName); ok {
-		if updated.LastError != "" {
-			return errFromString(updated.LastError)
-		}
-	}
-	return nil
+	// The outcome comes back from the run itself, not from re-reading the
+	// persisted state afterwards.
+	//
+	// Re-reading looked equivalent and was not. runOnce returns early when a
+	// backup for the same app is already in flight, so the LastError read
+	// back belonged to the PREVIOUS run: a manual trigger during a running
+	// backup answered "backup complete" for a backup that never started, or
+	// surfaced a stale failure for one that never happened. And when
+	// schedules.json could not be written, the failure never reached the
+	// store at all, so a FAILED backup read back as success. Both times the
+	// screen could not tell "it ran and came out like this" from "it did not
+	// run at all".
+	return s.runOnce(ctx, sch)
 }
 
 // register adds a cron entry for the schedule. Caller must hold s.mu.
@@ -170,7 +176,10 @@ func (s *backupScheduler) register(sch backup.Schedule) error {
 		// (which would block all future cron triggers for the same app).
 		runCtx, runCancel := context.WithTimeout(context.Background(), 1*time.Hour)
 		defer runCancel()
-		s.runOnce(runCtx, sch)
+		// Nothing to return to on a cron tick; runOnce has already logged
+		// and recorded the outcome. Discarded explicitly so it stays visible
+		// that an error exists here and is dropped on purpose.
+		_ = s.runOnce(runCtx, sch)
 	})
 	if err != nil {
 		return err
@@ -183,12 +192,12 @@ func (s *backupScheduler) register(sch backup.Schedule) error {
 // outcome on the schedule. Emits user-facing notifications for both
 // success (info) and failure (error) so the user sees backup status
 // without having to open the logs.
-func (s *backupScheduler) runOnce(ctx context.Context, sch backup.Schedule) {
+func (s *backupScheduler) runOnce(ctx context.Context, sch backup.Schedule) error {
 	// Prevent concurrent backups for the same app.
 	if _, loaded := s.running.LoadOrStore(sch.AppName, true); loaded {
 		logger.Info("backup already in progress, skipping",
 			zap.String("app", sch.AppName))
-		return
+		return ErrBackupAlreadyRunning
 	}
 	defer s.running.Delete(sch.AppName)
 
@@ -205,20 +214,17 @@ func (s *backupScheduler) runOnce(ctx context.Context, sch backup.Schedule) {
 	// and say which repository could not be reached.
 	exists, err := mgr.Exists(ctx)
 	if err != nil {
-		s.recordFailure(sch.AppName, fmt.Errorf("cannot determine whether backup repository %s exists, refusing to initialise a new one: %w", sch.Repo.URL, err))
-		return
+		return s.recordFailure(sch.AppName, fmt.Errorf("cannot determine whether backup repository %s exists, refusing to initialise a new one: %w", sch.Repo.URL, err))
 	}
 	if !exists {
 		if err := mgr.Init(ctx); err != nil {
-			s.recordFailure(sch.AppName, err)
-			return
+			return s.recordFailure(sch.AppName, err)
 		}
 	}
 
 	snap, err := mgr.BackupPaths(ctx, sch.Paths, "app:"+sch.AppName, "kind:scheduled")
 	if err != nil {
-		s.recordFailure(sch.AppName, err)
-		return
+		return s.recordFailure(sch.AppName, err)
 	}
 
 	// Apply retention after a successful backup — doing it before would
@@ -231,16 +237,40 @@ func (s *backupScheduler) runOnce(ctx context.Context, sch backup.Schedule) {
 			zap.String("app", sch.AppName), zap.Error(retErr))
 	}
 
-	_ = s.store.UpdateLast(sch.AppName, time.Now(), snap.ShortID, "")
+	// A result nobody could write down is a result nobody can be shown. The
+	// snapshot is real, but from here on every screen reads the previous
+	// run's outcome, so the caller is told rather than left to assume.
+	if err := s.store.UpdateLast(sch.AppName, time.Now(), snap.ShortID, ""); err != nil {
+		logger.Error("backup succeeded but its result could not be recorded",
+			zap.String("app", sch.AppName),
+			zap.String("snapshot", snap.ShortID), zap.Error(err))
+		return fmt.Errorf("backup of %s completed (snapshot %s) but the result could not be recorded: %w", sch.AppName, snap.ShortID, err)
+	}
+
 	logger.Info("backup run complete",
 		zap.String("app", sch.AppName),
 		zap.String("snapshot", snap.ShortID))
+	return nil
 }
 
-func (s *backupScheduler) recordFailure(appName string, err error) {
-	_ = s.store.UpdateLast(appName, time.Now(), "", err.Error())
+// recordFailure persists a failed run and hands the failure back, so a caller
+// waiting on the answer gets the same one the store gets.
+//
+// The write used to be `_ = s.store.UpdateLast(...)`. With schedules.json
+// unwritable, that discarded error meant the failure never landed anywhere the
+// caller looked, and RunNow — which read the outcome back out of the store —
+// reported the run as a success. A failure that could not be recorded is still
+// a failure, and now says so twice.
+func (s *backupScheduler) recordFailure(appName string, err error) error {
 	logger.Error("backup run failed",
 		zap.String("app", appName), zap.Error(err))
+
+	if writeErr := s.store.UpdateLast(appName, time.Now(), "", err.Error()); writeErr != nil {
+		logger.Error("backup failure could not be recorded",
+			zap.String("app", appName), zap.Error(writeErr))
+		return fmt.Errorf("%w (and the failure could not be recorded: %v)", err, writeErr)
+	}
+	return err
 }
 
 // small helpers for these one-off error messages. (They predate the use of
@@ -253,8 +283,13 @@ func (e schedNotFoundError) Error() string { return "no backup schedule configur
 
 func errNoSchedule(app string) error { return schedNotFoundError{app: app} }
 
-type stringErr string
-
-func (e stringErr) Error() string { return string(e) }
-
-func errFromString(s string) error { return stringErr(s) }
+// ErrBackupAlreadyRunning is returned when a backup for the app is already in
+// flight, so the requested run did not happen.
+//
+// It exists because "skipped" had no way to reach the caller: runOnce returned
+// nothing, and RunNow inferred the outcome from persisted state that still
+// described the previous run. A manual trigger during a running backup
+// therefore answered "backup complete". This is not an error in the run — it
+// is the absence of a run, and it has to be distinguishable from both success
+// and failure.
+var ErrBackupAlreadyRunning = errors.New("a backup for this app is already running; the requested run did not start")
