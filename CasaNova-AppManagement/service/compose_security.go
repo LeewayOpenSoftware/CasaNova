@@ -189,9 +189,14 @@ func serviceFindings(svc types.ServiceConfig) []securityFinding {
 	if isHostNamespace(svc.Uts) {
 		add("uts", fmt.Sprintf("compose security: service %q uses uts: %s (denied)", svc.Name, svc.Uts))
 	}
-	if isHostNamespace(svc.CgroupParent) && strings.Contains(svc.CgroupParent, "host") {
-		add("cgroup_parent", fmt.Sprintf("compose security: service %q uses cgroup_parent referencing host (denied)", svc.Name))
-	}
+	// `cgroup_parent` is an arbitrary parent cgroup name/path, not a namespace
+	// selector: "host" has no reserved meaning here. Rejecting that spelling
+	// only blocked a legitimate name and did not prevent access to the host's
+	// hierarchy. Compose documents the field and Moby passes it through when it
+	// builds the OCI cgroups path:
+	// https://docs.docker.com/reference/compose-file/services/#cgroup_parent
+	// https://github.com/moby/moby/blob/master/daemon/oci_linux.go
+	// The distinct `cgroup:` namespace selector is checked immediately below.
 	// `cgroup:` is a DIFFERENT field from `cgroup_parent:` — compose-go declares
 	// them on adjacent lines (types/types.go:43-44) and this gate read only the
 	// first. `cgroup: host` is docker's --cgroupns=host: the container sees the
