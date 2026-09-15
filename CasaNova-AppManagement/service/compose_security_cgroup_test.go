@@ -40,6 +40,16 @@ func TestComposeSecurity_AllowsPrivateAndUnsetCgroup(t *testing.T) {
 	}
 }
 
+// cgroup_parent is an arbitrary parent cgroup name/path, not the cgroup
+// namespace selector above. In particular, "host" has no reserved meaning in
+// this field and must remain usable as a legitimate parent name.
+func TestComposeSecurity_AllowsHostNamedCgroupParent(t *testing.T) {
+	svc := types.ServiceConfig{Name: "x", Image: "i", CgroupParent: "host"}
+	if err := service.ValidateComposeSecurity(mkApp("p", svc)); err != nil {
+		t.Fatalf("cgroup_parent: host is a legitimate parent name and must be allowed, got: %v", err)
+	}
+}
+
 // The update gate takes its rules from the same collection function, so the new
 // check reaches it too: pre-existing stays, newly added does not.
 func TestComposeSecurity_Update_CgroupHostFollowsTheBaselineRule(t *testing.T) {
