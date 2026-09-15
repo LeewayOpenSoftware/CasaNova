@@ -104,7 +104,10 @@ func LoadStoreRegistry() *StoreRegistry {
 			}
 		} else {
 			registry.Stores = defaultStores()
-			registry.save()
+			// Cannot propagate: LoadStoreRegistry returns only the registry,
+			// and the in-memory defaults are usable either way. Logged inside
+			// save(); discarded here on purpose, not by omission.
+			_ = registry.save()
 		}
 	})
 	return registry
@@ -160,12 +163,24 @@ func defaultStores() []StoreEntry {
 // wins on a per-write basis" — atomic writes mean each side either
 // sees the new full content or the previous full content, never a
 // torn intermediate state.
-func (r *StoreRegistry) save() {
+// save writes the registry to disk AND REPORTS WHETHER IT WORKED.
+//
+// It used to return nothing. A marshal failure or a read-only/full disk was
+// logged and forgotten, so RegisterStore, UnregisterStore and UpdateStore —
+// each of which already returns an error to an HTTP handler — answered success
+// for a change that existed only in this process's memory and disappeared at
+// the next restart. Nobody could find out: not the API, not the UI, only the
+// daemon log.
+//
+// The two callers that genuinely cannot propagate now discard the error
+// EXPLICITLY, with a reason, so a reader can tell a considered discard from a
+// forgotten one.
+func (r *StoreRegistry) save() error {
 	storesFile := filepath.Join(config.AppInfo.AppStorePath, common.StoresFileName)
 	buf, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		logger.Error("failed to marshal stores.json", zap.Error(err))
-		return
+		return fmt.Errorf("marshal stores.json: %w", err)
 	}
 	// Snapshot to .bak (best effort) for the next LoadStoreRegistry to
 	// recover from if this write somehow corrupts despite the atomic
@@ -175,7 +190,9 @@ func (r *StoreRegistry) save() {
 	}
 	if err := file.WriteFileAtomic(storesFile, buf, 0o640); err != nil {
 		logger.Error("failed to write stores.json", zap.Error(err))
+		return fmt.Errorf("write stores.json: %w", err)
 	}
+	return nil
 }
 
 // copyFileBestEffort makes a snapshot copy of src at dst. Errors are
@@ -225,8 +242,15 @@ func (r *StoreRegistry) RegisterStore(entry StoreEntry) error {
 	if err := os.MkdirAll(absPath, 0755); err != nil {
 		return fmt.Errorf("failed to create store directory: %w", err)
 	}
+	before := append([]StoreEntry(nil), r.Stores...)
 	r.Stores = append(r.Stores, entry)
-	r.save()
+	if err := r.save(); err != nil {
+		// Put the registry back. A store that is "registered" until the next
+		// restart is the same defect as one that reports success and was never
+		// written — it just takes longer to notice.
+		r.Stores = before
+		return err
+	}
 	return nil
 }
 
@@ -240,8 +264,12 @@ func (r *StoreRegistry) UnregisterStore(id string) error {
 			if id == "default" {
 				return fmt.Errorf("cannot unregister the default store")
 			}
+			before := append([]StoreEntry(nil), r.Stores...)
 			r.Stores = append(r.Stores[:i], r.Stores[i+1:]...)
-			r.save()
+			if err := r.save(); err != nil {
+				r.Stores = before
+				return err
+			}
 			return nil
 		}
 	}
@@ -256,6 +284,9 @@ func (r *StoreRegistry) UpdateStore(id string, update StoreEntry) error {
 	defer r.mu.Unlock()
 	for i, s := range r.Stores {
 		if s.ID == id {
+			// Snapshot before the in-place field edits, so a failed write can
+			// put the entry back instead of leaving memory ahead of disk.
+			before := append([]StoreEntry(nil), r.Stores...)
 			if update.Name != "" {
 				r.Stores[i].Name = update.Name
 			}
@@ -266,7 +297,10 @@ func (r *StoreRegistry) UpdateStore(id string, update StoreEntry) error {
 			if update.SyncIntervalHours > 0 {
 				r.Stores[i].SyncIntervalHours = update.SyncIntervalHours
 			}
-			r.save()
+			if err := r.save(); err != nil {
+				r.Stores = before
+				return err
+			}
 			return nil
 		}
 	}
@@ -282,7 +316,10 @@ func (r *StoreRegistry) MarkSynced(id string) {
 		if s.ID == id {
 			now := time.Now().UTC().Format(time.RFC3339)
 			r.Stores[i].LastSynced = &now
-			r.save()
+			// Cannot propagate: MarkSynced reports nothing to anyone, and a
+			// lost timestamp costs one extra sync rather than a wrong answer.
+			// Logged inside save(); discarded here on purpose.
+			_ = r.save()
 			return
 		}
 	}

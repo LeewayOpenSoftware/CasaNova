@@ -23,12 +23,24 @@ func (m *migrationTool050) IsMigrationNeeded() (bool, error) {
 
 	// Check migration status file
 	statusPath := "/var/lib/casaos/migration/app-management.status"
-	if data, err := os.ReadFile(statusPath); err == nil {
+	data, err := os.ReadFile(statusPath)
+	switch {
+	case err == nil:
 		currentStatus := strings.TrimSpace(string(data))
 		if currentStatus == "v0.5.0" || currentStatus >= "v0.5" {
 			_logger.Info("Already migrated to v0.5.0 or newer.")
 			return false, nil
 		}
+	case os.IsNotExist(err):
+		// Never migrated on this box. Nothing to report.
+	default:
+		// The status file is there and could not be read. "I could not check"
+		// is not "not migrated", and it is not "already migrated" either — so
+		// say so, and let the caller decide. Answering true here still runs
+		// the migration, which is the safe direction (it is idempotent), but
+		// the caller needs to know the answer was a fallback and not a
+		// measurement.
+		return true, fmt.Errorf("could not read migration status at %s: %w", statusPath, err)
 	}
 
 	return true, nil
@@ -61,9 +73,25 @@ func (m *migrationTool050) Migrate() error {
 
 	file, err := os.OpenFile(config.AppManagementConfigFilePath, os.O_RDWR, 0644)
 	if err != nil {
-		// Config file doesn't exist yet - will be created by service on first run
-		_logger.Info("Config file not found, will be created on first run: %s", err)
-		return nil
+		// ONLY "IT IS NOT THERE" MEANS THERE IS NOTHING TO MIGRATE.
+		//
+		// This used to take the not-found branch for ANY error — EACCES on a
+		// config owned by another user, EROFS on a read-only rootfs, EIO on a
+		// failing disk, ENOTDIR on a broken path — and return nil. main() then
+		// ran PostMigrate, which stamps "v0.5.0" into the status file, and
+		// IsMigrationNeeded answers false from that moment on. A SINGLE FAILED
+		// RUN BECAME PERMANENT: the config was never migrated, nothing said
+		// so, and no later run would ever try again.
+		//
+		// A genuinely absent config is still fine — the service writes it on
+		// first start, and there is nothing to convert. Everything else is a
+		// failure, and returning it stops main() before the stamp, so the next
+		// run retries.
+		if os.IsNotExist(err) {
+			_logger.Info("Config file not found, will be created on first run: %s", err)
+			return nil
+		}
+		return fmt.Errorf("failed to open config for migration: %w", err)
 	}
 	defer file.Close()
 

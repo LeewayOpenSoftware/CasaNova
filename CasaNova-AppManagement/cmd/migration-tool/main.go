@@ -75,8 +75,18 @@ func main() {
 	var selectedMigrationTool interfaces.MigrationTool
 
 	// look for the right migration tool matching current version
+	//
+	// The error used to be discarded. A tool that could not tell whether it was
+	// needed answered false, and the run printed "No migration to proceed." and
+	// exited 0 — indistinguishable, to an operator and to a packaging script,
+	// from a box that was genuinely up to date. It is logged now; the tools
+	// answer "needed" when they cannot check, because running an idempotent
+	// migration again is the safe direction, but the reason has to be visible.
 	for _, tool := range migrationTools {
-		migrationNeeded, _ := tool.IsMigrationNeeded()
+		migrationNeeded, err := tool.IsMigrationNeeded()
+		if err != nil {
+			_logger.Error("could not determine whether a migration is needed, assuming it is: %s", err)
+		}
 
 		if migrationNeeded {
 			selectedMigrationTool = tool

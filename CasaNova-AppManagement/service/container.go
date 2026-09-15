@@ -864,18 +864,37 @@ func (ds *dockerService) RecreateContainer(ctx context.Context, id string, pull 
 	}
 
 	isImageUpdated := false
+	var pullErr error
 	if pull {
 		imageName := docker.ImageName(containerInfo)
 		if imageName != "" {
 			_isImageUpdated, err := ds.PullLatestImage(ctx, imageName) // image update result will be included in ctx properties
 			if err != nil {
+				pullErr = err
 				logger.Error("pull new image failed", zap.Error(err), zap.String("image", imageName))
 			}
 			isImageUpdated = _isImageUpdated
 		}
 	}
 
-	if !force && !isImageUpdated {
+	// A FAILED PULL AND AN UP-TO-DATE IMAGE ARE NOT THE SAME ANSWER.
+	//
+	// Both used to leave isImageUpdated false and fall into `return nil`, so a
+	// registry that was unreachable, rate-limiting, or refusing credentials
+	// produced the same silence as "you are already on the latest image". The
+	// caller in route/v2/docker.go answers 200 immediately and reports the
+	// outcome over the event bus, publishing AppUpdateError only when this
+	// function returns an error — so with nil returned the user watched
+	// "Update" complete and stay on the old image, with nothing anywhere
+	// saying the pull never happened.
+	//
+	// See recreateOutcome for the decision itself; it is a separate function
+	// so the three cases can be tested without a Docker daemon.
+	proceed, err := recreateOutcome(pull, force, isImageUpdated, pullErr)
+	if err != nil {
+		return err
+	}
+	if !proceed {
 		return nil
 	}
 
