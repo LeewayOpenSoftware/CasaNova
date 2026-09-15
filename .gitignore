@@ -57,10 +57,17 @@
 # (5.7 GB of a third party's binaries — provenance, not our code).
 /GIFTABLES/
 
-# LEGACY: third-party projects kept for reading (Cosmos, the v1 UI, …).
-# Their licenses and history are their own; they do not belong in ours.
+# LEGACY: reference material kept on disk (a deliberate decision to keep, not
+# prune). MIXED provenance — the earlier "third-party only" wording was wrong
+# and that half-truth is what nearly got our own work deleted:
+#   - Third-party, read-only: reference-server-os, umbrel, Cosmos, the portainer
+#     zip. Their licenses and history are their own; they do not belong in ours.
+#   - OURS, NOT third-party: CasaNova-UI-v1 — the v1 UI, including 533 files that
+#     were never committed anywhere else. A verified copy is preserved at
+#     "P-CasaNova OS/resources/rescates/CasaNova-UI-v1-dirty-worktree-2026-09-14.tar.zst";
+#     the rescued design docs are committed under
+#     "P-CasaNova OS/proyecto/labs/docs-material-proyecto/".
 /LEGACY/
-/portainer-develop/
 
 # CasaNova-AppLibrary is a sibling project with its own upstream history
 # and release cycle (app catalog, fork of CasaOS-AppStore). It remains an
