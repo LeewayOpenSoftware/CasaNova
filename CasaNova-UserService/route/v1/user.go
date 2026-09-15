@@ -1468,7 +1468,7 @@ func PutUserImage(ctx echo.Context) error {
 	data := make(map[string]string, 3)
 	data["path"] = filePath
 	data["file_name"] = key + ext
-	data["online_path"] = "/v1/users/image?path=" + filePath
+	data["online_path"] = "/v1/users/image?id=" + strconv.Itoa(user.Id) + "&key=" + key
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: data})
 }
 
@@ -1514,38 +1514,77 @@ func PostUserUploadImage(ctx echo.Context) error {
 	data := make(map[string]string, 3)
 	data["path"] = path
 	data["file_name"] = key + ext
-	data["online_path"] = "/v1/users/image?path=" + path
+	data["online_path"] = "/v1/users/image?id=" + strconv.Itoa(user.Id) + "&key=" + key
 	return ctx.JSON(common_err.SUCCESS, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: data})
 }
 
-/**
- * @description: get current user's image
- * @method:GET
- * @router:/user/image/:id
- */
+// userImageKeyPattern restricts an image key to characters that cannot
+// smuggle a path separator or "..": the key is concatenated directly into
+// a filesystem path below, so it is validated BEFORE that concatenation,
+// never cleaned after being combined with one.
+var userImageKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// GET /v1/users/image?id=<user id>&key=<image key> — serves one user's
+// image (avatar, background, ...), for example "?id=42&key=avatar".
+//
+// This route is reached before anyone has a token: it is registered on the
+// echo instance itself in InitRouter, outside v1Group, because the login
+// screen shows every account's avatar before anyone has authenticated.
+// That reachability is deliberate, not the bug this closes.
+//
+// The bug: the OLD contract took an arbitrary `path` query param and only
+// checked that it fell somewhere under config.AppInfo.UserDataPath — the
+// data directory of EVERY user, not the caller's, and there is no caller
+// to scope to (no token reaches this handler at all). PostUserCustomConf
+// and DeleteUserCustomConf write each user's own config as
+// <UserDataPath>/<id>/<name>.json in that same tree, so a caller who could
+// guess an id and a config name read it with zero authentication — not
+// just avatars.
+//
+// The fix: the server BUILDS the path from an id (digits only, via
+// strconv.Atoi) and a key (userImageKeyPattern, no separators) instead of
+// validating a path the caller supplies — a path the server assembles from
+// already-safe parts needs no separate containment check afterward. The
+// extension is deliberately not part of the input either: it is
+// discovered from whatever file the earlier upload actually wrote
+// (PutUserImage / PostUserUploadImage don't know the extension up front),
+// and file.GetImageExtByName rejects anything the match resolves to that
+// isn't a recognized image type — this is what actually stops
+// <id>/<name>.json (or any other non-image file dropped in the same
+// directory) from being read by guessing its key, since id+key alone
+// cannot reach outside the per-user directory in the first place.
+//
+// Not fixed here (named, not closed — no EvalSymlinks anywhere on this
+// path): a symlink planted inside a user's own directory would still be
+// followed by ctx.File. That requires prior write access to the box, so
+// it's defense in depth, not the hole this card closes.
 func GetUserImage(ctx echo.Context) error {
-	filePath := ctx.QueryParam("path")
-	if len(filePath) == 0 {
+	idParam := ctx.QueryParam("id")
+	key := ctx.QueryParam("key")
+	if len(idParam) == 0 || len(key) == 0 {
 		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.INVALID_PARAMS, Message: common_err.GetMsg(common_err.INVALID_PARAMS)})
 	}
-	absFilePath, err := filepath.Abs(filepath.Clean(filePath))
-	if err != nil {
+	uid, err := strconv.Atoi(idParam)
+	if err != nil || uid <= 0 {
 		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.INVALID_PARAMS, Message: common_err.GetMsg(common_err.INVALID_PARAMS)})
 	}
-	if !file.Exists(absFilePath) {
-		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.FILE_DOES_NOT_EXIST, Message: common_err.GetMsg(common_err.FILE_DOES_NOT_EXIST)})
-	}
-	expectedPrefix := filepath.Clean(config.AppInfo.UserDataPath)
-	if !strings.HasPrefix(absFilePath, expectedPrefix+"/") {
-		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.INSUFFICIENT_PERMISSIONS, Message: common_err.GetMsg(common_err.INSUFFICIENT_PERMISSIONS)})
+	if !userImageKeyPattern.MatchString(key) {
+		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.INVALID_PARAMS, Message: common_err.GetMsg(common_err.INVALID_PARAMS)})
 	}
 
-	matched, err := regexp.MatchString(`^/var/lib/casaos/\d`, absFilePath)
-	if err != nil {
-		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.INSUFFICIENT_PERMISSIONS, Message: common_err.GetMsg(common_err.INSUFFICIENT_PERMISSIONS)})
+	userDir := filepath.Join(filepath.Clean(config.AppInfo.UserDataPath), strconv.Itoa(uid))
+	matches, err := filepath.Glob(filepath.Join(userDir, key+".*"))
+	if err != nil || len(matches) == 0 {
+		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.FILE_DOES_NOT_EXIST, Message: common_err.GetMsg(common_err.FILE_DOES_NOT_EXIST)})
 	}
-	if !matched {
-		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.INSUFFICIENT_PERMISSIONS, Message: common_err.GetMsg(common_err.INSUFFICIENT_PERMISSIONS)})
+	absFilePath := matches[0]
+	// Belt-and-suspenders on top of the id/key allowlists above: the match
+	// must be a direct child of userDir, never a level deeper or shallower.
+	if filepath.Dir(absFilePath) != userDir {
+		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.FILE_DOES_NOT_EXIST, Message: common_err.GetMsg(common_err.FILE_DOES_NOT_EXIST)})
+	}
+	if _, err := file.GetImageExtByName(absFilePath); err != nil {
+		return ctx.JSON(http.StatusNotFound, model.Result{Success: common_err.FILE_DOES_NOT_EXIST, Message: common_err.GetMsg(common_err.FILE_DOES_NOT_EXIST)})
 	}
 
 	fileName := path.Base(absFilePath)
