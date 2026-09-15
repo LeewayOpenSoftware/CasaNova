@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
@@ -196,7 +197,18 @@ func (s *backupScheduler) runOnce(ctx context.Context, sch backup.Schedule) {
 		zap.Strings("paths", sch.Paths))
 
 	mgr := backup.NewRestic(sch.Repo)
-	if !mgr.Exists(ctx) {
+	// "Is the repository there?" has three answers, and only two of them are
+	// yes and no. Initialising on the third — an unreachable repo, a disk
+	// that was not mounted, a password that stopped working — creates an
+	// empty repository at the mountpoint and sends every nightly run into it,
+	// reporting success while the real history goes invisible. Stop instead,
+	// and say which repository could not be reached.
+	exists, err := mgr.Exists(ctx)
+	if err != nil {
+		s.recordFailure(sch.AppName, fmt.Errorf("cannot determine whether backup repository %s exists, refusing to initialise a new one: %w", sch.Repo.URL, err))
+		return
+	}
+	if !exists {
 		if err := mgr.Init(ctx); err != nil {
 			s.recordFailure(sch.AppName, err)
 			return
@@ -231,7 +243,9 @@ func (s *backupScheduler) recordFailure(appName string, err error) {
 		zap.String("app", appName), zap.Error(err))
 }
 
-// small helpers to avoid pulling in fmt for these one-off error messages
+// small helpers for these one-off error messages. (They predate the use of
+// fmt above; kept because the typed error is what callers compare against,
+// not because the package avoids fmt.)
 
 type schedNotFoundError struct{ app string }
 

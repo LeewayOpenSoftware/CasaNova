@@ -92,10 +92,17 @@ func NewRestic(repo ResticRepo) *ResticManager {
 	return &ResticManager{repo: repo}
 }
 
+// resticBinary is the name of the binary every operation shells out to.
+// Kept indirect so a test can point it at a stub and exercise this file's
+// exit-code classification without a real repository — the alternative is a
+// test that silently passes on any box where restic is not installed, which
+// is the same class of lie this file is being fixed for.
+var resticBinary = "restic"
+
 // available reports whether the restic binary exists on PATH.
 // Called as a pre-flight for every operation so the error is deterministic.
 func available() error {
-	if _, err := exec.LookPath("restic"); err != nil {
+	if _, err := exec.LookPath(resticBinary); err != nil {
 		return ErrResticNotInstalled
 	}
 	return nil
@@ -118,15 +125,55 @@ func (r *ResticManager) Init(ctx context.Context) error {
 	return nil
 }
 
-// Exists returns true if the repository is reachable and initialized.
-// Implemented as `restic cat config` which is the cheapest round-trip
-// that distinguishes "missing" from "wrong password" from "unreachable".
-func (r *ResticManager) Exists(ctx context.Context) bool {
-	if available() != nil {
-		return false
+// resticRepoMissing matches the ways restic says "there is no repository
+// here yet", across the versions we support. Restic 0.17 introduced exit
+// code 10 for exactly this; older builds only say it in the message, so both
+// are recognised and anything else is explicitly NOT recognised.
+var resticRepoMissing = regexp.MustCompile(`(?i)(repository does not exist|no repository config file|unable to open config file)`)
+
+// resticExitRepoDoesNotExist is restic >= 0.17's exit code for "repository
+// does not exist". Its siblings (11 = cannot lock, 12 = wrong password) are
+// deliberately NOT treated as absence.
+const resticExitRepoDoesNotExist = 10
+
+// Exists reports whether the repository is present and initialized.
+//
+// The bool is only meaningful when the error is nil. This shape is the whole
+// point of the function: the previous version was `return cmd.Run() == nil`,
+// which collapsed an unreachable repo, a wrong password, a network timeout
+// and an unmounted disk all into the same `false` that means "not created
+// yet" — while the doc-comment above it claimed it distinguished exactly
+// those cases.
+//
+// That mattered because of the one caller. backupScheduler.runOnce asks this
+// to decide whether to Init, and Init on a false negative creates a brand new
+// empty repository at the mountpoint of a disk that simply was not mounted.
+// From then on the nightly runs "succeed" into the rootfs, the real history
+// is invisible to ListSnapshots, and retention prunes the phantom. The right
+// answer to "I could not tell" is to stop, so this now says so out loud
+// instead of guessing "no".
+//
+// Absence is reported only on a POSITIVE identification of absence: restic's
+// dedicated exit code, or its own wording. Everything else is an error.
+func (r *ResticManager) Exists(ctx context.Context) (bool, error) {
+	if err := available(); err != nil {
+		return false, err
 	}
 	cmd := r.command(ctx, "cat", "config")
-	return cmd.Run() == nil
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+
+	text := strings.TrimSpace(string(out))
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == resticExitRepoDoesNotExist {
+		return false, nil
+	}
+	if resticRepoMissing.MatchString(text) {
+		return false, nil
+	}
+	return false, fmt.Errorf("restic cat config: %w (output: %s)", err, text)
 }
 
 // BackupPaths runs a backup of the given filesystem paths into the repo.
@@ -173,9 +220,16 @@ func (r *ResticManager) BackupPaths(ctx context.Context, paths []string, tags ..
 			}, nil
 		}
 	}
-	// Backup succeeded but we couldn't parse the summary — return a
-	// minimal snapshot so the caller knows the operation worked.
-	return &Snapshot{Time: time.Now(), Paths: paths, Tags: tags}, nil
+	// restic exited 0 but emitted no parseable summary, so the snapshot
+	// exists and we do not know its ID.
+	//
+	// This used to return a Snapshot with an empty ID "so the caller knows
+	// the operation worked". The caller — backupScheduler.runOnce — persists
+	// that ID as the app's last snapshot, and an empty one later reads back
+	// as "restore the latest snapshot in the repository", which with several
+	// apps sharing a repo is somebody else's data. An ID we never learned is
+	// not a snapshot we can offer to restore, so this is an error.
+	return nil, fmt.Errorf("restic backup: completed but emitted no parseable summary, so the snapshot ID is unknown (output: %s)", strings.TrimSpace(string(out)))
 }
 
 // Snapshots lists every snapshot in the repo. Optional tag filters narrow
@@ -206,30 +260,87 @@ func (r *ResticManager) Snapshots(ctx context.Context, tags ...string) ([]Snapsh
 
 // Restore extracts a snapshot to a target filesystem path. Target must
 // be writable; Restic will create missing directories. The snapshot ID
-// can be a short ID (first 8 chars) or "latest" for the most recent.
+// can be a short ID (first 8 chars) or "latest" for the most recent
+// snapshot CARRYING THE GIVEN TAGS.
+//
+// The tags are not optional decoration: they are the only thing that scopes
+// a repository to one app. CasaNova tags every scheduled snapshot
+// "app:<name>", several apps share one repository, and Snapshots() has
+// always filtered by tag. Restore did not — it ran `restore <id> --target`
+// with no filter at all, so "latest" meant the newest snapshot in the whole
+// repository. Restoring app A could therefore unpack app B's data over A's
+// directory and answer "restore complete". That asymmetry between the two
+// functions is what gives the bug away as an oversight rather than a design.
+//
+// An empty ID is no longer quietly promoted to "latest". It used to be, and
+// combined with BackupPaths persisting an empty ID after an unparseable
+// summary, that promotion was the whole path from "we lost track of one
+// snapshot" to "we restored the wrong app's data".
+//
 // validResticSnapshotID matches restic snapshot IDs (hex) or "latest".
 var validResticSnapshotID = regexp.MustCompile(`^(?:latest|[a-f0-9]{8,64})$`)
 
-func (r *ResticManager) Restore(ctx context.Context, snapshotID, target string) error {
+func (r *ResticManager) Restore(ctx context.Context, snapshotID, target string, tags ...string) error {
 	if err := available(); err != nil {
 		return err
 	}
 	if snapshotID == "" {
-		snapshotID = "latest"
+		return errors.New("restic restore: no snapshot ID given (refusing to guess: the newest snapshot in a shared repository may belong to another app)")
 	}
 	// Validate snapshotID to prevent argument injection via crafted IDs.
 	if !validResticSnapshotID.MatchString(snapshotID) {
 		return fmt.Errorf("invalid snapshot ID: %q", snapshotID)
 	}
-	cmd := r.command(ctx, "restore", snapshotID, "--target", target)
+
+	args := []string{"restore", snapshotID}
+	if snapshotID == "latest" {
+		// --tag is restic's documented filter for resolving "latest", and it
+		// is accepted ONLY together with "latest": passing it alongside an
+		// explicit ID is a fatal error on restic >= 0.17. Hence the split:
+		// filter here, verify below.
+		for _, t := range tags {
+			args = append(args, "--tag", t)
+		}
+	} else if len(tags) > 0 {
+		// An explicit ID bypasses any filter restic would apply, so the
+		// scoping has to happen before the command runs: an ID belonging to
+		// another app is exactly the confusion being fixed, and it is just as
+		// destructive when a caller supplies it by hand.
+		if err := r.assertSnapshotHasTags(ctx, snapshotID, tags); err != nil {
+			return err
+		}
+	}
+	args = append(args, "--target", target)
+
+	cmd := r.command(ctx, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("restic restore: %w (output: %s)", err, strings.TrimSpace(string(out)))
 	}
 	logger.Info("restic restore complete",
 		zap.String("snapshot", snapshotID),
+		zap.Strings("tags", tags),
 		zap.String("target", target))
 	return nil
+}
+
+// assertSnapshotHasTags refuses a restore whose snapshot does not carry every
+// one of the given tags.
+//
+// A lookup that fails is a refusal, not a pass: "I could not check whether
+// this snapshot belongs to this app" must not read the same as "it does",
+// which is the mistake Exists() made one function up.
+func (r *ResticManager) assertSnapshotHasTags(ctx context.Context, snapshotID string, tags []string) error {
+	snaps, err := r.Snapshots(ctx, tags...)
+	if err != nil {
+		return fmt.Errorf("restic restore: cannot verify that snapshot %s belongs to %s: %w", snapshotID, strings.Join(tags, ","), err)
+	}
+	for _, s := range snaps {
+		if s.ID == snapshotID || s.ShortID == snapshotID || strings.HasPrefix(s.ID, snapshotID) {
+			return nil
+		}
+	}
+	return fmt.Errorf("restic restore: snapshot %s does not carry %s; refusing to restore another app's data over this target", snapshotID, strings.Join(tags, ","))
 }
 
 // Forget applies a retention policy and prunes freed data. This is the
@@ -297,7 +408,7 @@ func (r *ResticManager) Stats(ctx context.Context) (*Stats, error) {
 // environment variables. Using env vars (not argv) keeps the password out
 // of `ps` listings visible to other local users.
 func (r *ResticManager) command(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "restic", args...)
+	cmd := exec.CommandContext(ctx, resticBinary, args...)
 	cmd.Env = append(os.Environ(),
 		"RESTIC_REPOSITORY="+r.repo.URL,
 		"RESTIC_PASSWORD="+r.repo.Password,
