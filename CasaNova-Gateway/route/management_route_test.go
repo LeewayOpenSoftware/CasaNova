@@ -34,6 +34,11 @@ func init() {
 // the way CasaNova-Common/external/gateway.go does.
 var _internalHdr map[string]string
 
+// _management is the same service instance the router serves from, so a test
+// can read back what a request wrote without going through an endpoint whose
+// authorization it is not trying to exercise.
+var _management *service.Management
+
 func setup(t *testing.T) func(t *testing.T) {
 	tmpdir, _ := os.MkdirTemp("", "casaos-gateway-route-test")
 
@@ -50,6 +55,7 @@ func setup(t *testing.T) func(t *testing.T) {
 	}
 
 	management := service.NewManagementService(_state)
+	_management = management
 	managementRoute := NewManagementRoute(management)
 	_router = managementRoute.GetRoute()
 
@@ -94,20 +100,22 @@ func TestCreateRoute(t *testing.T) {
 	_router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusCreated, w.Code)
 
+	// Registering is a peer's job; reading the whole routing table is not.
+	// The internal secret proves "a process on this box", not "an
+	// administrator", and GET /routes is admin-only — so the same header that
+	// just created a route does not get to enumerate them.
 	req, _ = http.NewRequest(http.MethodGet, "/v1/gateway/routes", nil)
 	for k, v := range _internalHdr {
 		req.Header.Set(k, v)
 	}
 	w = httptest.NewRecorder()
 	_router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 
-	var routes []*model.Route
-
-	decoder := json.NewDecoder(w.Body)
-
-	err = decoder.Decode(&routes)
-	assert.NilError(t, err)
+	// What this test is actually about — that the POST persisted the route —
+	// read from the service the router serves from, rather than through an
+	// endpoint whose authorization is pinned elsewhere.
+	routes := _management.GetRoutes()
 	assert.Equal(t, 1, len(routes))
 	assert.Equal(t, route.Path, routes[0].Path)
 	assert.Equal(t, route.Target, routes[0].Target)
