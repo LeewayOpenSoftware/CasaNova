@@ -54,6 +54,18 @@ func composeAppConflict(err error, appID string) (string, bool) {
 }
 
 func (a *AppManagement) MyComposeAppList(ctx echo.Context) error {
+	// Wave 34 (ported from 27.04, docs/design/per-app-grants.md §7): this
+	// had NO authorization gate at all, and it is the widest read in the
+	// module — the full compose payload, environment variables and host
+	// volume paths included. It answered any logged-in account, and any
+	// context that resolved to guest without a principal. Gated first,
+	// before any work: a denied caller must not cost a Docker listing.
+	// PermAppView is the family's bit — guest holds it, so no role loses
+	// anything it has today.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	// Use a bounded context so a slow Docker daemon or registry can't
 	// stall the entire response indefinitely.
 	listCtx, cancel := context.WithTimeout(ctx.Request().Context(), 15*time.Second)
@@ -801,6 +813,17 @@ func (a *AppManagement) ComposeAppLogs(ctx echo.Context, id codegen.ComposeAppID
 }
 
 func (a *AppManagement) ComposeAppContainers(ctx echo.Context, id codegen.ComposeAppID) error {
+	// Wave 34 (ported from 27.04, docs/design/per-app-grants.md §7): no gate
+	// at all until now. 27.04 also runs requireAppVisible after this, to
+	// close per-app-grant enumeration (an account narrowed to one app could
+	// still list another app's containers by ID) — that machinery does not
+	// exist in 26.10, so only the permission gate ports. Any account with
+	// PermAppView (which is every logged-in account) can still address any
+	// app ID through this route; that is the same shape it always had here.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	if id == "" {
 		message := ErrComposeAppIDNotProvided.Error()
 		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{
@@ -863,6 +886,15 @@ func (a *AppManagement) ComposeAppContainers(ctx echo.Context, id codegen.Compos
 }
 
 func (a *AppManagement) CheckComposeAppHealthByID(ctx echo.Context, id codegen.ComposeAppID) error {
+	// Wave 34 (ported from 27.04, docs/design/per-app-grants.md §7): same
+	// family, same history as ComposeAppContainers above. 27.04 also runs
+	// requireAppVisible here (health is an existence oracle for a per-app
+	// grant); that machinery does not exist in 26.10, so only the
+	// permission gate ports.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	if id == "" {
 		message := ErrComposeAppIDNotProvided.Error()
 		return ctx.JSON(http.StatusBadRequest, codegen.ResponseBadRequest{

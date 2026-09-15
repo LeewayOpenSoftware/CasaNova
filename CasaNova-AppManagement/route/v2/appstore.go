@@ -25,6 +25,18 @@ import (
 )
 
 func (a *AppManagement) AppStoreList(ctx echo.Context) error {
+	// Wave 34 (ported from 27.04, docs/design/per-app-grants.md §7): this
+	// handler had NO authorization gate at all — not the wrong bit, none.
+	// The router's JWT middleware still refused an anonymous caller, so it
+	// was AUTHENTICATED but UNAUTHORIZED: every logged-in account reached
+	// it, and so did any context that resolved to guest without a principal
+	// behind it. PermAppView is the bit the whole family gets — guest
+	// already holds it, so no role loses anything it has today; what closes
+	// is the tokenless context.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	appStoreList := service.MyService.AppStoreManagement().AppStoreList()
 
 	return ctx.JSON(http.StatusOK, codegen.AppStoreListOK{
@@ -136,6 +148,10 @@ func (a *AppManagement) UnregisterAppStore(ctx echo.Context, id codegen.AppStore
 }
 
 func (a *AppManagement) ComposeAppStoreInfoList(ctx echo.Context, params codegen.ComposeAppStoreInfoListParams) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
 
 	catalog, err := service.MyService.AppStoreManagement().Catalog()
 	if err != nil {
@@ -229,6 +245,11 @@ func (a *AppManagement) ComposeAppStoreInfoList(ctx echo.Context, params codegen
 }
 
 func (a *AppManagement) ComposeAppStoreInfo(ctx echo.Context, id codegen.StoreAppIDString) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	composeApp, err := service.MyService.AppStoreManagement().ComposeApp(id)
 	if err != nil {
 		message := err.Error()
@@ -254,6 +275,11 @@ func (a *AppManagement) ComposeAppStoreInfo(ctx echo.Context, id codegen.StoreAp
 }
 
 func (a *AppManagement) ComposeAppMainStableTag(ctx echo.Context, id codegen.StoreAppIDString) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	composeApp, err := service.MyService.AppStoreManagement().ComposeApp(id)
 	if err != nil {
 		message := err.Error()
@@ -283,6 +309,11 @@ func (a *AppManagement) ComposeAppMainStableTag(ctx echo.Context, id codegen.Sto
 }
 
 func (a *AppManagement) ComposeAppServiceStableTag(ctx echo.Context, id codegen.StoreAppIDString, serviceName string) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	composeApp, err := service.MyService.AppStoreManagement().ComposeApp(id)
 	if err != nil {
 		message := err.Error()
@@ -312,6 +343,11 @@ func (a *AppManagement) ComposeAppServiceStableTag(ctx echo.Context, id codegen.
 }
 
 func (a *AppManagement) ComposeApp(ctx echo.Context, id codegen.StoreAppIDString) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	composeApp, err := service.MyService.AppStoreManagement().ComposeApp(id)
 	if err != nil {
 		message := err.Error()
@@ -357,6 +393,11 @@ func (a *AppManagement) ComposeApp(ctx echo.Context, id codegen.StoreAppIDString
 }
 
 func (a *AppManagement) CategoryList(ctx echo.Context) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	categoryMap, err := service.MyService.AppStoreManagement().CategoryMap()
 	if err != nil {
 		message := err.Error()
@@ -438,6 +479,11 @@ func FilterCatalogByAppStoreID(catalog map[string]*service.ComposeApp, appStoreI
 const upgradableSweepBudget = 100 * time.Second
 
 func (a *AppManagement) UpgradableAppList(ctx echo.Context) error {
+	// Same family, same reasoning as the gate above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
+
 	composeApps, err := service.MyService.Compose().List(ctx.Request().Context())
 
 	var upgradableAppList []codegen.UpgradableAppInfo = []codegen.UpgradableAppInfo{}
