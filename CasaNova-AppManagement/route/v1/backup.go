@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -135,6 +136,13 @@ func RunBackupNow(ctx echo.Context) error {
 	bgCtx, cancel := context.WithTimeout(ctx.Request().Context(), 2*time.Hour)
 	defer cancel()
 	if err := sched.RunNow(bgCtx, app); err != nil {
+		// "Already running" is not a failed backup, it is the absence of one:
+		// the request was declined, nothing ran, and answering 200 "backup
+		// complete" here was how a run that never started got reported as a
+		// finished one.
+		if errors.Is(err, service.ErrBackupAlreadyRunning) {
+			return ctx.JSON(http.StatusConflict, map[string]string{"message": err.Error()})
+		}
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
 	}
 	return ctx.JSON(http.StatusOK, map[string]string{"message": "backup complete"})
@@ -197,8 +205,12 @@ func RestoreSnapshot(ctx echo.Context) error {
 	if !ok {
 		return ctx.JSON(http.StatusNotFound, map[string]string{"message": "no schedule configured for app"})
 	}
-	// Validate snapshot ID — must be hex or "latest" to prevent argument injection.
-	if req.SnapshotID != "" && !validSnapshotID.MatchString(req.SnapshotID) {
+	// Validate snapshot ID — must be hex or "latest" to prevent argument
+	// injection. The empty string used to be exempt from this check and was
+	// then promoted to "latest" deeper down, which in a repository shared by
+	// several apps means "whichever app backed up most recently". Absent is
+	// now as invalid as malformed.
+	if !validSnapshotID.MatchString(req.SnapshotID) {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"message": "invalid snapshot_id: must be hex or 'latest'"})
 	}
 
@@ -228,8 +240,11 @@ func RestoreSnapshot(ctx echo.Context) error {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"message": "restore target cannot be /"})
 	}
 
+	// Scope the restore to this app's own snapshots. The tag is the same one
+	// runOnce stamps on every scheduled backup, and without it "latest"
+	// resolves across every app sharing the repository.
 	mgr := backup.NewRestic(sch.Repo)
-	if err := mgr.Restore(ctx.Request().Context(), req.SnapshotID, cleanTarget); err != nil {
+	if err := mgr.Restore(ctx.Request().Context(), req.SnapshotID, cleanTarget, "app:"+app); err != nil {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
 	}
 	return ctx.JSON(http.StatusOK, map[string]string{"message": "restore complete"})
