@@ -6,7 +6,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/internalauth"
 )
 
 // countingWriter counts Write calls and records whether Flush was asked for.
@@ -133,3 +136,31 @@ func TestStreamingResponsesAreStillFlushedImmediately(t *testing.T) {
 type devZero struct{}
 
 func (devZero) Read(p []byte) (int, error) { return len(p), nil }
+
+// The internal header is accepted by requirePermInternal as a peer identity;
+// a public gateway request must therefore lose it before it can reach a
+// backend's internal gate. Use non-canonical map keys deliberately: a client
+// may choose any header casing on the wire.
+func TestProxyDirectorStripsForgedInternalPeerHeader(t *testing.T) {
+	target, err := url.Parse("http://backend.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, casing := range []string{
+		internalauth.HeaderName,
+		"x-casanova-internal",
+		"X-CASANOVA-INTERNAL",
+	} {
+		t.Run(casing, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://gateway.invalid/private", nil)
+			req.Header = http.Header{casing: {"forged-peer-secret"}}
+			newConfiguredProxy(target).Director(req)
+			for key, values := range req.Header {
+				if strings.EqualFold(key, internalauth.HeaderName) {
+					t.Fatalf("forged internal identity reached backend header map as %q: %q", key, values)
+				}
+			}
+		})
+	}
+}
