@@ -177,6 +177,18 @@ func serviceFindings(svc types.ServiceConfig) []securityFinding {
 	if isHostNamespace(svc.CgroupParent) && strings.Contains(svc.CgroupParent, "host") {
 		add("cgroup_parent", fmt.Sprintf("compose security: service %q uses cgroup_parent referencing host (denied)", svc.Name))
 	}
+	// `cgroup:` is a DIFFERENT field from `cgroup_parent:` — compose-go declares
+	// them on adjacent lines (types/types.go:43-44) and this gate read only the
+	// first. `cgroup: host` is docker's --cgroupns=host: the container sees the
+	// host's whole cgroup hierarchy under its real paths instead of a rooted
+	// private view. That is the namespace half of the release_agent escape; the
+	// other half, a writable /sys/fs/cgroup bind, is already denied above — which
+	// is why this is the sixth host namespace on a list that enumerated five, not
+	// an escape on its own. Nothing else in the module looked at svc.Cgroup
+	// either, so the field travelled from YAML to Docker unread.
+	if isHostNamespace(svc.Cgroup) {
+		add("cgroup", fmt.Sprintf("compose security: service %q uses cgroup: %s (denied)", svc.Name, svc.Cgroup))
+	}
 
 	for _, cap := range svc.CapAdd {
 		// ToUpper BEFORE TrimPrefix — a lowercase "cap_sys_admin" would
