@@ -87,6 +87,15 @@ var mutatingManagementRoutes = []struct {
 	{http.MethodPut, "/v1/gateway/tls", false},       // the pre-existing gate, pinned with the rest
 	{http.MethodGet, "/v1/gateway/tls", false},       // read counterpart: no gate at all until this fix
 	{http.MethodGet, "/v1/gateway/whitelist", false}, // read counterpart of POST/DELETE: no gate at all until this fix
+	// The last two ungated handlers in the group. GET /routes is admin-only
+	// even though its POST sibling is peer-allowed: registering a route is a
+	// peer's job, reading the whole table is not, and the shared client in
+	// CasaNova-Common/external/gateway.go has no GetRoutes at all.
+	{http.MethodGet, "/v1/gateway/routes", false},
+	// GET /port IS peer-allowed, unlike its read sibling above: zimaos_gate.go
+	// and service/system.go read it tokenless through that client's GetPort,
+	// which presents the per-boot internal secret.
+	{http.MethodGet, "/v1/gateway/port", true},
 }
 
 // The whitelist and TLS routes must refuse a non-admin EVEN WHEN the caller
@@ -185,15 +194,15 @@ func TestPeerAllowedRoutesStillCarryTheAdminBranch(t *testing.T) {
 	text := string(src)
 
 	gate := regexp.MustCompile(`!managementAdmin\(ctx\) && !managementPeer\(ctx\)`)
-	if n := len(gate.FindAllString(text, -1)); n != 2 {
-		t.Errorf("found %d admin-or-peer gates, want exactly 2 (POST /routes and "+
-			"PUT /port). A mutating route either lost its gate or gained a peer "+
-			"exemption it has no caller for.", n)
+	if n := len(gate.FindAllString(text, -1)); n != 3 {
+		t.Errorf("found %d admin-or-peer gates, want exactly 3 (POST /routes, "+
+			"PUT /port and GET /port). A route either lost its gate or gained a "+
+			"peer exemption it has no caller for.", n)
 	}
 	adminOnly := regexp.MustCompile(`if !managementAdmin\(ctx\) \{`)
-	if n := len(adminOnly.FindAllString(text, -1)); n != 3 {
-		t.Errorf("found %d admin-only gates, want exactly 3 (GET, POST and DELETE "+
-			"/whitelist)", n)
+	if n := len(adminOnly.FindAllString(text, -1)); n != 4 {
+		t.Errorf("found %d admin-only gates, want exactly 4 (GET /routes, and GET, "+
+			"POST and DELETE /whitelist)", n)
 	}
 	// Count, not Contains: a boolean check on the bare string stays true even
 	// if one of the two /tls gates is deleted, because managementAdmin's own

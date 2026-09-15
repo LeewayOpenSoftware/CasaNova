@@ -226,7 +226,28 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 	// user token, but only when they carry the internal peer secret.
 	v1GatewayGroup.Use(echo_middleware.JWTWithConfig(m.managementJWTConfig()))
 	{
+		// The routing table is the internal service topology: every service's
+		// path prefix and its loopback target. managementJWTConfig's own
+		// comment above already says this handler "leaked the entire internal
+		// service topology" — that was written as motivation for putting the
+		// group JWT in front of it, and the JWT only proves the caller is
+		// authenticated. The gate that turns "authenticated" into "allowed"
+		// was never added, so every role including guest could still read it.
+		//
+		// ADMIN ONLY, NO PEER ALLOWANCE — verified rather than mirrored from
+		// POST /routes below, which IS peer-allowed because that is how each
+		// service registers at boot. Reading is not registering: the shared
+		// client in CasaNova-Common/external/gateway.go exposes CreateRoute
+		// and no GetRoutes at all, and the only caller of this GET in the tree
+		// is NetworkSettings.vue, which carries a real user token. An
+		// exemption with no caller is an exemption waiting to be misused.
 		v1GatewayGroup.GET("/routes", func(ctx echo.Context) error {
+			if !managementAdmin(ctx) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
+			}
 			return ctx.JSON(http.StatusOK, m.management.GetRoutes())
 		})
 
@@ -272,7 +293,25 @@ func (m *ManagementRoute) buildV1RouteGroup(v1Group *echo.Group) {
 		// non-loopback request and was the only place still pulling
 		// the JWT from `?token=…`. Group middleware is sufficient.
 
+		// The active listen port, named in managementJWTConfig's comment above
+		// alongside GET /routes as the other thing this surface leaked. Same
+		// story: the group JWT authenticates and nothing authorized, so any
+		// role including guest could read it.
+		//
+		// Admin OR peer, unlike GET /routes — and that difference is measured,
+		// not inherited from PUT /port sitting below. There are real tokenless
+		// peer callers: CasaNova/route/zimaos_gate.go:158 and
+		// CasaNova/service/system.go:81 both go through
+		// external/gateway.go's GetPort, which presents the per-boot internal
+		// secret. Denying peers here would break the daemon's own discovery of
+		// the port the UI is served on.
 		v1GatewayGroup.GET("/port", func(ctx echo.Context) error {
+			if !managementAdmin(ctx) && !managementPeer(ctx) {
+				return ctx.JSON(http.StatusForbidden, model.Result{
+					Success: common_err.CLIENT_ERROR,
+					Message: "admin role required",
+				})
+			}
 			return ctx.JSON(http.StatusOK, model.Result{
 				Success: common_err.SUCCESS,
 				Message: common_err.GetMsg(common_err.SUCCESS),
