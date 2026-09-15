@@ -65,9 +65,16 @@ func isHealthCheckHostnameSafe(host string) bool {
 	return true
 }
 
-// dangerousCapabilities are Linux capabilities that grant
-// container-to-host escape primitives. ALL is included because some compose
-// files use it as a shorthand.
+// dangerousCapabilities are Linux capabilities a container must not be granted
+// ON TOP of Docker's default set. ALL is included because some compose files
+// use it as a shorthand.
+//
+// Only capabilities ABOVE the default belong here. Docker already grants CHOWN,
+// DAC_OVERRIDE, FOWNER, FSETID, KILL, MKNOD, NET_BIND_SERVICE, NET_RAW, SETFCAP,
+// SETGID, SETPCAP, SETUID, SYS_CHROOT and AUDIT_WRITE to every container without
+// being asked, so listing one of those would refuse a cap_add the container was
+// going to hold anyway — a denial that reads like protection and grants none.
+// Their absence below is correct and deliberate.
 var dangerousCapabilities = map[string]struct{}{
 	"ALL":             {},
 	"SYS_ADMIN":       {}, // mount, namespaces, cgroups
@@ -80,6 +87,14 @@ var dangerousCapabilities = map[string]struct{}{
 	"DAC_READ_SEARCH": {}, // bypass file read perms
 	"MAC_ADMIN":       {},
 	"MAC_OVERRIDE":    {},
+
+	// The three above the default set that leak the KERNEL rather than reach
+	// the host directly. None of them is root in one step, which is why they
+	// were easy to leave out; each hands over kernel addresses, and kASLR is
+	// what stands between a memory-corruption bug and a working exploit.
+	"BPF":     {}, // load BPF programs; with PERFMON, read kernel memory
+	"PERFMON": {}, // perf_event_open on the kernel: symbols and addresses
+	"SYSLOG":  {}, // syslog(2): kernel log incl. raw pointers, defeating kptr_restrict
 }
 
 // dangerousSecurityOpts are security_opt values that disable the kernel
@@ -176,6 +191,39 @@ func serviceFindings(svc types.ServiceConfig) []securityFinding {
 	}
 	if isHostNamespace(svc.CgroupParent) && strings.Contains(svc.CgroupParent, "host") {
 		add("cgroup_parent", fmt.Sprintf("compose security: service %q uses cgroup_parent referencing host (denied)", svc.Name))
+	}
+	// `cgroup:` is a DIFFERENT field from `cgroup_parent:` — compose-go declares
+	// them on adjacent lines (types/types.go:43-44) and this gate read only the
+	// first. `cgroup: host` is docker's --cgroupns=host: the container sees the
+	// host's whole cgroup hierarchy under its real paths instead of a rooted
+	// private view. That is the namespace half of the release_agent escape; the
+	// other half, a writable /sys/fs/cgroup bind, is already denied above — which
+	// is why this is the sixth host namespace on a list that enumerated five, not
+	// an escape on its own. Nothing else in the module looked at svc.Cgroup
+	// either, so the field travelled from YAML to Docker unread.
+	if isHostNamespace(svc.Cgroup) {
+		add("cgroup", fmt.Sprintf("compose security: service %q uses cgroup: %s (denied)", svc.Name, svc.Cgroup))
+	}
+
+	// The five checks above ask "is this the HOST's namespace". The other way a
+	// service leaves its own namespace is `container:<name|id>`, which joins a
+	// namespace belonging to a container this project does not own — another
+	// installed app, or one of CasaNova's own services, whose container names are
+	// predictable. network_mode, pid and ipc all accept that form.
+	//
+	// `service:<name>` is deliberately NOT refused: it names a service in the
+	// SAME project, so it shares a namespace the app already owns end to end.
+	// The prefix comes from compose-go's own constant rather than a literal, so
+	// the two cannot drift apart.
+	for _, ns := range []struct{ field, value string }{
+		{"network_mode", svc.NetworkMode},
+		{"pid", svc.Pid},
+		{"ipc", svc.Ipc},
+	} {
+		if ref := foreignContainerNamespace(ns.value); ref != "" {
+			add(ns.field+":container:"+ref,
+				fmt.Sprintf("compose security: service %q uses %s: %s, joining a container outside this project (denied)", svc.Name, ns.field, ns.value))
+		}
 	}
 
 	for _, cap := range svc.CapAdd {
@@ -371,11 +419,54 @@ func isHostNamespace(mode string) bool {
 	return strings.EqualFold(strings.TrimSpace(mode), "host")
 }
 
+// foreignContainerNamespace returns the container named by a
+// `container:<name|id>` namespace reference, or "" for every other form.
+//
+// The v1 CreateContainer path (service/container.go) also recognises this
+// shape, and it was checked before writing this one — but it cannot be reused,
+// because it reaches the OPPOSITE verdict: it is an allowlist of network modes
+// whose whole purpose is to ADMIT `container:` alongside bridge/host/none. The
+// shape is the same, the policy is not, and the divergence between the two
+// engines is a decision rather than a bug, so nothing there was touched. What
+// is reused instead is compose-go's own types.ContainerPrefix, so this check
+// and the parser cannot drift.
+//
+// The prefix is matched case-insensitively. Docker itself is case-sensitive
+// here, so an odd-cased value would be read by Docker as a plain network name —
+// matching loosely can only ever deny something that would not have worked.
+func foreignContainerNamespace(mode string) string {
+	trimmed := strings.TrimSpace(mode)
+	if len(trimmed) <= len(types.ContainerPrefix) {
+		return ""
+	}
+	if !strings.EqualFold(trimmed[:len(types.ContainerPrefix)], types.ContainerPrefix) {
+		return ""
+	}
+	return strings.TrimSpace(trimmed[len(types.ContainerPrefix):])
+}
+
 // isDangerousBindSource canonicalizes the source path and checks whether it
-// matches or descends into any forbidden host directory. Symlink resolution
-// is intentionally NOT done here — the path comes from a YAML literal and we
-// want to block both literal and prefix matches; symlink games at start time
-// are caught by the install path's filepath.Clean before mkdir.
+// matches or descends into any forbidden host directory, lexically AND through
+// the symlinks the path actually follows.
+//
+// The paragraph that used to stand here said the opposite — that symlink
+// resolution was intentionally skipped, because "symlink games at start time
+// are caught by the install path's filepath.Clean before mkdir". Resolution was
+// added below without that header being rewritten, so the file described a
+// weaker gate than it had. The claim was also wrong on its own terms:
+// filepath.Clean is a string operation and resolves no links at all, so a
+// reader who trusted it would conclude the window below was already covered
+// somewhere else. It is not.
+//
+// WHAT THIS DOES NOT COVER, stated so the next reader does not have to
+// rediscover it. Resolution happens when the project is VALIDATED; Docker
+// resolves again when it MOUNTS, later. A link planted at an allowed path
+// between those two moments is followed by Docker and never seen here. Closing
+// that needs a check at mount time, which is a different change in a different
+// place, and is carded separately rather than half-done here. The reachable
+// half — a link that already exists when the project is validated, including
+// one whose tail has not been created yet — is resolved and denied, and
+// compose_bind_symlink_test.go pins both.
 func isDangerousBindSource(src string) bool {
 	clean := filepath.Clean(src)
 	if matchesDangerousBind(clean) {
