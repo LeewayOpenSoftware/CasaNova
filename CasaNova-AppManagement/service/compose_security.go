@@ -190,6 +190,27 @@ func serviceFindings(svc types.ServiceConfig) []securityFinding {
 		add("cgroup", fmt.Sprintf("compose security: service %q uses cgroup: %s (denied)", svc.Name, svc.Cgroup))
 	}
 
+	// The five checks above ask "is this the HOST's namespace". The other way a
+	// service leaves its own namespace is `container:<name|id>`, which joins a
+	// namespace belonging to a container this project does not own — another
+	// installed app, or one of CasaNova's own services, whose container names are
+	// predictable. network_mode, pid and ipc all accept that form.
+	//
+	// `service:<name>` is deliberately NOT refused: it names a service in the
+	// SAME project, so it shares a namespace the app already owns end to end.
+	// The prefix comes from compose-go's own constant rather than a literal, so
+	// the two cannot drift apart.
+	for _, ns := range []struct{ field, value string }{
+		{"network_mode", svc.NetworkMode},
+		{"pid", svc.Pid},
+		{"ipc", svc.Ipc},
+	} {
+		if ref := foreignContainerNamespace(ns.value); ref != "" {
+			add(ns.field+":container:"+ref,
+				fmt.Sprintf("compose security: service %q uses %s: %s, joining a container outside this project (denied)", svc.Name, ns.field, ns.value))
+		}
+	}
+
 	for _, cap := range svc.CapAdd {
 		// ToUpper BEFORE TrimPrefix — a lowercase "cap_sys_admin" would
 		// otherwise skip the case-sensitive TrimPrefix("CAP_") and stay
@@ -381,6 +402,32 @@ func ValidateComposeSecurityForUpdate(newProject, oldProject *ComposeApp) error 
 
 func isHostNamespace(mode string) bool {
 	return strings.EqualFold(strings.TrimSpace(mode), "host")
+}
+
+// foreignContainerNamespace returns the container named by a
+// `container:<name|id>` namespace reference, or "" for every other form.
+//
+// The v1 CreateContainer path (service/container.go) also recognises this
+// shape, and it was checked before writing this one — but it cannot be reused,
+// because it reaches the OPPOSITE verdict: it is an allowlist of network modes
+// whose whole purpose is to ADMIT `container:` alongside bridge/host/none. The
+// shape is the same, the policy is not, and the divergence between the two
+// engines is a decision rather than a bug, so nothing there was touched. What
+// is reused instead is compose-go's own types.ContainerPrefix, so this check
+// and the parser cannot drift.
+//
+// The prefix is matched case-insensitively. Docker itself is case-sensitive
+// here, so an odd-cased value would be read by Docker as a plain network name —
+// matching loosely can only ever deny something that would not have worked.
+func foreignContainerNamespace(mode string) string {
+	trimmed := strings.TrimSpace(mode)
+	if len(trimmed) <= len(types.ContainerPrefix) {
+		return ""
+	}
+	if !strings.EqualFold(trimmed[:len(types.ContainerPrefix)], types.ContainerPrefix) {
+		return ""
+	}
+	return strings.TrimSpace(trimmed[len(types.ContainerPrefix):])
 }
 
 // isDangerousBindSource canonicalizes the source path and checks whether it
