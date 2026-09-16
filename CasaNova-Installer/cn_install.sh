@@ -611,7 +611,7 @@ Get_IPs() {
 # Show Welcome Banner
 Welcome_Banner() {
     echo -e "${GREEN_LINE}${aCOLOUR[1]}"
-    echo -e " CasaOS ${Casa_Tag}${COLOUR_RESET} is running at${COLOUR_RESET}${GREEN_SEPARATOR}"
+    echo -e " CasaOS ${CASA_TAG}${COLOUR_RESET} is running at${COLOUR_RESET}${GREEN_SEPARATOR}"
     echo -e "${GREEN_LINE}"
     Get_IPs
     echo -e " Open your browser and visit the above address."

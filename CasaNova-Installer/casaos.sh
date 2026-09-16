@@ -491,7 +491,7 @@ Download_CasaOS() {
     if [[ ! -n "$version" ]]; then
         Casa_Tag="v$(${Net_Getter} ${CASA_VERSION_URL})"
     elif [[ $version == "pre" ]]; then
-        Casa_Tag="$(${net_getter} ${CASA_RELEASE_API} | grep -o '"tag_name": ".*"' | sed 's/"//g' | sed 's/tag_name: //g' | sed -n '1p')"
+        Casa_Tag="$(${Net_Getter} ${CASA_RELEASE_API} | grep -o '"tag_name": ".*"' | sed 's/"//g' | sed 's/tag_name: //g' | sed -n '1p')"
     else
         Casa_Tag="$version"
     fi
