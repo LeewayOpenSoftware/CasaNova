@@ -56,6 +56,7 @@ readonly UNAME_M
 
 readonly CASA_UNINSTALL_URL="https://get.casaos.io/uninstall/v0.4.4-1"
 readonly CASA_UNINSTALL_PATH=/usr/bin/casaos-uninstall
+readonly CASA_OPENWRT_DOCS="https://github.com/${CASANOVA_ORG:-LeewayOpenSoftware}/CasaNova-OpenWrt"
 
 # REQUIREMENTS CONF PATH
 # Udevil

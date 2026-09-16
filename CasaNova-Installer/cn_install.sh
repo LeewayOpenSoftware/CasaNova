@@ -63,6 +63,9 @@ readonly CASA_CONF_PATH=/etc/casaos/gateway.ini
 readonly CASA_UNINSTALL_URL="https://raw.githubusercontent.com/${CASANOVA_ORG:-LeewayOpenSoftware}/get/main/uninstall.sh"
 readonly CASA_UNINSTALL_PATH=/usr/bin/casaos-uninstall
 readonly CASA_VERSION_URL="https://api.casaos.io/casaos-api/version"
+readonly CASA_REPO="${CASANOVA_ORG:-LeewayOpenSoftware}/CasaNova"
+readonly CASA_RELEASE_API="https://api.github.com/repos/${CASA_REPO}/releases"
+readonly CASA_OPENWRT_DOCS="https://github.com/${CASANOVA_ORG:-LeewayOpenSoftware}/CasaNova-OpenWrt"
 
 # REQUIREMENTS CONF PATH
 # Udevil
