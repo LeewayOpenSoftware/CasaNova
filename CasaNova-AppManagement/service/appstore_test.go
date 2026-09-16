@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/LeewayOpenSoftware/CasaNova-AppManagement/common"
@@ -91,8 +92,36 @@ func TestGetApp(t *testing.T) {
 }
 
 // Note: the test need root permission
+// THIS TEST USED TO WRITE INTO THE REAL APP STORE.
+//
+// Every other test in this package redirects config.AppInfo.AppStorePath at a
+// temporary directory first. This one did not — and not because it inherited a
+// sibling's setup: run on its own it still resolved to
+// /var/lib/casaos/appstore, because that is the package default. On a machine
+// where the suite runs as the service user — which is how the product is
+// deployed, as root — `go test` would have unpacked a catalogue into the LIVE
+// app store.
+//
+// What hid it was a guard narrower than its own message. It skipped on
+// os.IsPermission only, while saying "is not writable"; EACCES is one way for a
+// path not to be writable and the one that happens to occur on a developer
+// box, where /var/lib/casaos is root-owned. A read-only filesystem gives EROFS,
+// which is not a permission error, so the guard did not fire and the write was
+// attempted. That the write then failed was luck, not design.
+//
+//	A guard that enumerates ways to fail protects against the ones somebody
+//	thought of. Removing the reason to fail protects against the rest.
+//
+// So the fix is not a wider errno list: it is to point the path somewhere that
+// belongs to this test, which makes the whole question moot and matches what
+// every neighbour already does.
 func TestSkipUpdateCatalog(t *testing.T) {
 	logger.LogInitConsoleOnly()
+
+	previousAppStorePath := config.AppInfo.AppStorePath
+	t.Cleanup(func() { config.AppInfo.AppStorePath = previousAppStorePath })
+	sandbox := t.TempDir()
+	config.AppInfo.AppStorePath = sandbox
 
 	appStoreURL := []string{
 		"https://casaos.app/store/main.zip",
@@ -105,11 +134,39 @@ func TestSkipUpdateCatalog(t *testing.T) {
 		workdir, err := appStore.WorkDir()
 		assert.NilError(t, err)
 
-		// mkdir workdir for first
-		err = file.MkDir(workdir)
-		if os.IsPermission(err) {
-			t.Skipf("configured appstore path %q is not writable: %v", config.AppInfo.AppStorePath, err)
+		// CONTAINMENT IS CHECKED BEFORE ANYTHING IS CREATED, and that ordering
+		// is the point rather than a detail. It is what lets the redirection
+		// above be verified by deleting it: without it this test targets
+		// /var/lib/casaos again, and the check below says so and stops — no
+		// directory is attempted, nothing real is touched, and the failure is
+		// legible. A check placed after file.MkDir could only report a write
+		// that had already been tried.
+		if !strings.HasPrefix(workdir, sandbox+string(os.PathSeparator)) {
+			t.Fatalf("this test would operate on %q, which is outside its own temporary directory %q. "+
+				"config.AppInfo.AppStorePath is not pointing where this test believes it is, and on a box "+
+				"running as the service user that path is the LIVE app store.", workdir, sandbox)
 		}
+
+		// The catalogue is fetched over the network. Without one there is
+		// nothing here to exercise, and reporting a missing network as a
+		// failing product costs somebody an afternoon — the same reasoning,
+		// and the same two helpers, as TestAppStoreList next door.
+		//
+		// This precondition only became reachable by fixing the path: while
+		// the test skipped on EACCES it never got far enough to need a
+		// network. Uncovering it is not breaking it.
+		if host := catalogHost(t, url); !reachable(host) {
+			t.Skipf("skipping: the app store catalog host %q is not reachable from this machine, so "+
+				"nothing here can be exercised. This is a missing network, not a failing product.", host)
+		}
+
+		// mkdir workdir for first
+		//
+		// The os.IsPermission skip that used to stand here is deliberately
+		// gone. Inside a directory this test just created, a mkdir that fails
+		// is a real failure, and keeping the skip would turn it into a silent
+		// pass — a stale excuse for a condition that can no longer arise.
+		err = file.MkDir(workdir)
 		assert.NilError(t, err)
 
 		appStoreStat, err := os.Stat(workdir)
