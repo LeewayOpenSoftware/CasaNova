@@ -121,6 +121,74 @@ done
 for d in systemd www tmpfiles.d library tools; do
     [ -d "${BUILD_DIR}/${d}" ] || MISSING="${MISSING}\n  missing directory: ${BUILD_DIR}/${d}"
 done
+
+# ─── EXISTS IS NOT COMPLETE ──────────────────────────────────────────────────
+#
+# The loop above asks `[ -d ]` and nothing more, which is the same shape as the
+# bug this preflight was written to kill, one layer down: a directory that is
+# PRESENT but EMPTY passes, and the package ships with that part hollow. The
+# worst case is tools/ — it is the update engine itself, copied wholesale, so a
+# hollow tools/ produces a package whose updater cannot update.
+#
+# WHAT "COMPLETE" MEANS IS NOT THE SAME QUESTION FOR EVERY DIRECTORY, and
+# pretending otherwise is how a check becomes decorative. Three bars are used
+# below, strongest first, and each is only as strong as the truth available:
+#
+#   1. NAMED FILES, DERIVED (tools/). The Makefile already owns the list, in
+#      UPDATE_TOOLS, and it stages tools/ from it. Reading that variable rather
+#      than copying its contents here is deliberate: the Makefile's own comment
+#      records that this list was hardcoded in two places, one was forgotten,
+#      and a script "stayed frozen for months". A second copy in this file
+#      would be the third place to forget.
+#
+#   2. SHAPE (systemd/, www/). Their contents cannot be named: systemd/ is a
+#      glob collected from every repo, and www/ is a Vite build whose filenames
+#      are content-hashed and change every build. What CAN be named is the one
+#      thing each must contain to mean anything — at least one casanova unit,
+#      and an index.html for a web root to serve.
+#
+#   3. NON-EMPTY (tmpfiles.d/, library/). The weakest bar, and it is used only
+#      where nothing stronger is honest: neither is produced by `make full`,
+#      neither is in git, and there is no manifest anywhere that says what they
+#      should hold. SAY THE LIMIT OUT LOUD: this admits a directory with the
+#      WRONG contents. It refuses the empty one, which is the failure actually
+#      seen, and it claims nothing further.
+#
+# Everything here is a CHECK. Nothing below changes what gets packaged.
+
+# The list is read from the Makefile, so it cannot drift from what stages
+# tools/. An unreadable or empty result is a FAILURE, not an empty requirement:
+# a list that came back empty would silently approve every directory, which is
+# the same "absent measurement read as a passing one" this whole preflight is
+# against.
+REQUIRED_TOOLS=$(sed -n 's/^UPDATE_TOOLS[[:space:]]*:=[[:space:]]*//p' "${PROJECT_ROOT}/Makefile" | head -1)
+if [ -z "${REQUIRED_TOOLS}" ]; then
+    MISSING="${MISSING}\n  cannot determine required tools: UPDATE_TOOLS not found in ${PROJECT_ROOT}/Makefile"
+elif [ -d "${BUILD_DIR}/tools" ]; then
+    for t in ${REQUIRED_TOOLS}; do
+        [ -s "${BUILD_DIR}/tools/${t}" ] || \
+            MISSING="${MISSING}\n  empty or missing:  ${BUILD_DIR}/tools/${t} (the update engine ships from here)"
+    done
+fi
+
+# -s rather than -f throughout: a zero-byte script is present, executable and
+# does nothing, which is the failure this section exists to catch wearing the
+# successful shape.
+if [ -d "${BUILD_DIR}/systemd" ]; then
+    # shellcheck disable=SC2012
+    [ -n "$(find "${BUILD_DIR}/systemd" -maxdepth 1 -name 'casanova*.service' -size +0 -print -quit)" ] || \
+        MISSING="${MISSING}\n  no units in:       ${BUILD_DIR}/systemd (expected at least one casanova*.service)"
+fi
+if [ -d "${BUILD_DIR}/www" ]; then
+    [ -s "${BUILD_DIR}/www/index.html" ] || \
+        MISSING="${MISSING}\n  empty or missing:  ${BUILD_DIR}/www/index.html (a web root without it serves nothing)"
+fi
+for d in tmpfiles.d library; do
+    if [ -d "${BUILD_DIR}/${d}" ]; then
+        [ -n "$(find "${BUILD_DIR}/${d}" -mindepth 1 -print -quit)" ] || \
+            MISSING="${MISSING}\n  empty directory:   ${BUILD_DIR}/${d}"
+    fi
+done
 # Not under BUILD_DIR: the packager reads the manifest from the project root,
 # and `make full` writes it to both places.
 [ -f "${PROJECT_ROOT}/build/manifest.json" ] || \
