@@ -53,6 +53,7 @@ readonly MINIMUM_MEMORY="400"
 readonly MINIMUM_DOCKER_VERSION="20"
 readonly CASA_DEPANDS_PACKAGE=('curl' 'smartmontools' 'parted' 'ntfs-3g' 'net-tools' 'whiptail' 'udevil' 'samba' 'cifs-utils')
 readonly CASA_DEPANDS_COMMAND=('curl' 'smartctl' 'parted' 'ntfs-3g' 'netstat' 'whiptail' 'udevil' 'samba' 'mount.cifs')
+readonly CASA_OPENWRT_DOCS="https://github.com/${CASANOVA_ORG:-LeewayOpenSoftware}/CasaNova-OpenWrt"
 
 # SYSTEM INFO
 PHYSICAL_MEMORY=$(LC_ALL=C free -m | awk '/Mem:/ { print $2 }')
