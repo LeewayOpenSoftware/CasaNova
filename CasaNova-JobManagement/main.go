@@ -18,6 +18,7 @@ import (
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/external"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/model"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/constants"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/file"
 	util_http "github.com/LeewayOpenSoftware/CasaNova-Common/utils/http"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
@@ -91,6 +92,19 @@ func main() {
 		logger.LogInit(config.AppInfo.LogPath, config.AppInfo.LogSaveName, config.AppInfo.LogFileExt)
 
 		service.Initialize(config.CommonInfo.RuntimePath)
+
+		// The task store lives under DefaultDataPath (/var/lib/casaos,
+		// persistent) rather than CommonInfo.RuntimePath (/var/run/casaos,
+		// tmpfs): sharing RuntimePath with the gateway's address file meant
+		// a user's scheduled tasks silently vanished on every reboot. A box
+		// that already had tasks under the old tmpfs-backed path gets them
+		// copied forward once, best-effort — see MigrateLegacyTasksStore's
+		// own doc for the exact (never-overwrite) conditions. NOTE: an
+		// operator who previously relocated RuntimePath to move the task
+		// store along with the gateway's address file will find the task
+		// store no longer follows that override — it is now always under
+		// DefaultDataPath; only the gateway's address file still honors it.
+		service.MigrateLegacyTasksStore(config.CommonInfo.RuntimePath, constants.DefaultDataPath)
 
 		// Wave 4e: start the user-defined scheduled-tasks manager.
 		// Loads persisted tasks from disk and begins firing cron entries.
