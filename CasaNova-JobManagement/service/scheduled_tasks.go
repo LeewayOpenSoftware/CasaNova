@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/constants"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/logger"
 	"github.com/LeewayOpenSoftware/CasaNova-JobManagement/pkg/scheduled"
 	"github.com/robfig/cron/v3"
@@ -51,8 +52,16 @@ var (
 	schedulerImpl *scheduledManager
 )
 
+// tasksStoreBasePath is the persistent base directory the task store hangs
+// from (<tasksStoreBasePath>/jobs/tasks.json). Deliberately NOT derived from
+// MyService.runtimePath: that field is CommonInfo.RuntimePath
+// (/var/run/casaos — tmpfs), which existed for the gateway's address file, a
+// genuinely ephemeral artifact. Sharing it with the task store meant a
+// user's scheduled tasks silently vanished on every reboot. A var (not a
+// const) purely so tests can point it at a temp directory.
+var tasksStoreBasePath = constants.DefaultDataPath
+
 // Scheduler returns the process-wide manager, creating it lazily.
-// Runtime path comes from MyService so tests can point at a temp dir.
 // If initialization fails, returns nil and will retry on next call.
 func Scheduler() *scheduledManager {
 	schedulerMu.Lock()
@@ -60,10 +69,7 @@ func Scheduler() *scheduledManager {
 	if schedulerImpl != nil {
 		return schedulerImpl
 	}
-	runtimePath := "/var/lib/casaos/jobs"
-	if MyService != nil && MyService.runtimePath != "" {
-		runtimePath = filepath.Join(MyService.runtimePath, "jobs")
-	}
+	runtimePath := filepath.Join(tasksStoreBasePath, "jobs")
 	store, err := scheduled.NewTaskStore(runtimePath)
 	if err != nil {
 		logger.Error("failed to init scheduled tasks store", zap.Error(err))
