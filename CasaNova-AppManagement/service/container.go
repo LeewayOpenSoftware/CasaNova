@@ -374,7 +374,86 @@ func (ds *dockerService) GetContainerStats() []model.DockerStatsModel {
 	return list
 }
 
+// healthProbeConcurrency bounds how many container health probes may be in
+// flight at once, across every caller. Backported from 27.04; the number is a
+// burst budget, not a capacity plan.
+//
+// It is deliberately above the legitimate burst. A dashboard refresh probes
+// every app with a `web` label at once; a box with more apps than this queues
+// the overflow for up to healthProbeWait, which a healthy loopback GET --
+// milliseconds -- absorbs without a single rejection. The only way to hold a
+// slot for long is for the probed app to be unresponsive, which is exactly the
+// state in which the box should stop opening more sockets.
+//
+// THIS LINE HOLDS SLOTS 6x LONGER THAN 27.04: the per-probe budget below is
+// still 30s here, not 5s, so the worst-case ceiling is 16*30 = 480
+// probe-seconds against 27.04's 16*5 = 80. Constant either way, which is the
+// property that matters, but the shorter budget is worth porting on its own
+// merits -- deliberately NOT done here: this card is the cap, and shortening a
+// timeout on the maintenance line changes observable behaviour for apps that
+// legitimately answer slowly.
+const healthProbeConcurrency = 16
+
+// healthProbeWait is how long a caller queues for a slot before being told the
+// box is busy. A var, not a const, so tests can shorten it; nothing in
+// production writes it.
+//
+// It stays 2s even though slots turn over more slowly here. Lengthening it to
+// compensate would pin the caller's goroutine for longer, which is the very
+// thing this cap exists to bound.
+var healthProbeWait = 2 * time.Second
+
+// healthProbeSem is the cap itself, in the same buffered-channel idiom as
+// eventSemaphore in service.go.
+var healthProbeSem = make(chan struct{}, healthProbeConcurrency)
+
+// errHealthProbeBusy is returned instead of a probe result when the cap is
+// saturated. The handler maps every error to 503, which is the honest code:
+// the health of the container is unknown, not known-bad.
+var errHealthProbeBusy = errors.New("too many container health checks in flight, try again")
+
+// acquireHealthProbe takes a slot in the health-probe cap, waiting at most
+// healthProbeWait. It returns the release function on success.
+//
+// Waiting BOUNDED and then refusing is the whole point. Waiting forever would
+// only move the amplification from sockets to the queue: the caller's goroutine
+// would still be pinned, which is the occupancy lever this closes.
+func acquireHealthProbe() (func(), error) {
+	timer := time.NewTimer(healthProbeWait)
+	defer timer.Stop()
+
+	select {
+	case healthProbeSem <- struct{}{}:
+		return func() { <-healthProbeSem }, nil
+	case <-timer.C:
+		return nil, errHealthProbeBusy
+	}
+}
+
 func (ds *dockerService) CheckContainerHealth(id string) (bool, error) {
+	// Wave 34 gated this endpoint behind PermAppView, which guest already
+	// holds, so the probe is still reachable by the least privileged role on
+	// the box. Authorization said WHO may ask; nothing said HOW MANY may be
+	// asked at once, and each one pins a goroutine, a socket and a call to the
+	// shared docker client for up to the probe budget below.
+	//
+	// The cap is taken BEFORE the docker call, not just around the HTTP probe:
+	// both halves are work the caller can ask for an unbounded number of
+	// times, and capping only the second half would leave dockerd exposed to
+	// the same lever.
+	//
+	// What this does NOT bound: the goroutine echo already allocated for the
+	// request. That belongs to the HTTP server, not to this function; what is
+	// bounded here is how long such a goroutine can stay expensive (<= wait +
+	// the probe budget) and how many can be expensive at once.
+	release, err := acquireHealthProbe()
+	if err != nil {
+		logger.Error("refusing container health check, probe cap saturated",
+			zap.String("id", id), zap.Int("cap", healthProbeConcurrency))
+		return false, err
+	}
+	defer release()
+
 	container, err := ds.GetContainer(id)
 	if err != nil {
 		logger.Error("failed to get container by id", zap.Error(err), zap.String("id", id))
