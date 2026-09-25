@@ -21,7 +21,25 @@ import (
 	"gotest.tools/v3/assert"
 )
 
+// appStoreCatalogURL is the upstream archive TestGetComposeApp and TestGetApp
+// build their app store from. Written down once rather than once per test,
+// for the same reason catalogHost gives next door: a second copy is one more
+// thing to keep in step with the probe that guards it.
+const appStoreCatalogURL = "https://github.com/IceWhaleTech/_appstore/archive/refs/heads/main.zip"
+
 func TestGetComposeApp(t *testing.T) {
+	// The catalog is fetched over the network, and UpdateCatalog below
+	// downloads it. Without egress this test fails on the download and blames
+	// the product for a missing network -- the same reasoning, and the same two
+	// helpers, as TestSkipUpdateCatalog further down this file. reachable dials
+	// rather than resolving, so it exercises the egress path and not just the
+	// resolver; where the host answers, the test runs in full and stays free to
+	// fail, which is what should happen if the catalog moved or stopped parsing.
+	if host := catalogHost(t, appStoreCatalogURL); !reachable(host) {
+		t.Skipf("skipping: the app store catalog host %q is not reachable from this machine, so "+
+			"nothing here can be exercised. This is a missing network, not a failing product.", host)
+	}
+
 	defer goleak.VerifyNone(t, goleak.IgnoreTopFunction(topFunc1), goleak.IgnoreTopFunction(pollFunc1), goleak.IgnoreTopFunction(httpFunc1)) // https://github.com/census-instrumentation/opencensus-go/issues/1191
 	logger.LogInitConsoleOnly()
 
@@ -40,7 +58,7 @@ func TestGetComposeApp(t *testing.T) {
 
 	config.AppInfo.AppStorePath = appStorePath
 
-	appStore, err := service.AppStoreByURL("https://github.com/IceWhaleTech/_appstore/archive/refs/heads/main.zip")
+	appStore, err := service.AppStoreByURL(appStoreCatalogURL)
 	assert.NilError(t, err)
 
 	err = appStore.UpdateCatalog()
@@ -55,6 +73,18 @@ func TestGetComposeApp(t *testing.T) {
 }
 
 func TestGetApp(t *testing.T) {
+	// The catalog is fetched over the network, and UpdateCatalog below
+	// downloads it. Without egress this test fails on the download and blames
+	// the product for a missing network -- the same reasoning, and the same two
+	// helpers, as TestSkipUpdateCatalog further down this file. reachable dials
+	// rather than resolving, so it exercises the egress path and not just the
+	// resolver; where the host answers, the test runs in full and stays free to
+	// fail, which is what should happen if the catalog moved or stopped parsing.
+	if host := catalogHost(t, appStoreCatalogURL); !reachable(host) {
+		t.Skipf("skipping: the app store catalog host %q is not reachable from this machine, so "+
+			"nothing here can be exercised. This is a missing network, not a failing product.", host)
+	}
+
 	defer goleak.VerifyNone(t, goleak.IgnoreTopFunction(topFunc1), goleak.IgnoreTopFunction(pollFunc1), goleak.IgnoreTopFunction(httpFunc1)) // https://github.com/census-instrumentation/opencensus-go/issues/1191
 
 	defer func() {
@@ -74,7 +104,7 @@ func TestGetApp(t *testing.T) {
 
 	config.AppInfo.AppStorePath = appStorePath
 
-	appStore, err := service.AppStoreByURL("https://github.com/IceWhaleTech/_appstore/archive/refs/heads/main.zip")
+	appStore, err := service.AppStoreByURL(appStoreCatalogURL)
 	assert.NilError(t, err)
 
 	err = appStore.UpdateCatalog()
