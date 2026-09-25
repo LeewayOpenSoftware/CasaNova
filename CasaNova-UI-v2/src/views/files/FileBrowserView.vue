@@ -618,15 +618,22 @@ const deletePaths = computed(() => [...files.selected])
       </div>
     </div>
 
-    <!-- Single control row: breadcrumb + nav on the left, toolbar on the
-         right — one line so the content gets the vertical space. -->
+    <!-- Breadcrumb row. The toolbar used to share this row; it does not fit
+         beside a deep path. The breadcrumb sizes to its content while the
+         toolbar only got the leftover width, so FileToolbar's `flex-wrap`
+         root broke into three sub-rows inside that gap — and because this
+         row is `items-center`, the tall block centred and its first sub-row
+         floated ABOVE the breadcrumb. Giving the toolbar its own row below
+         costs ~40px of permanent chrome; that is the accepted trade. -->
     <div class="flex shrink-0 items-center gap-3 border-b border-[var(--cn-border)] px-4 py-2">
-      <div class="min-w-0 shrink">
-        <FileBreadcrumb />
-      </div>
-      <div class="min-w-0 flex-1">
-        <FileToolbar @action="onToolbarAction" />
-      </div>
+      <FileBreadcrumb />
+    </div>
+
+    <!-- Toolbar row: full width, one line. FileToolbar's own
+         `justify-between` root keeps the command groups left and the search
+         + details toggle right, so it needs no wrapper here. -->
+    <div class="shrink-0 border-b border-[var(--cn-border)] px-4 py-2">
+      <FileToolbar @action="onToolbarAction" />
     </div>
 
     <!-- Content row: file listing on the left, Win11-style Details pane
