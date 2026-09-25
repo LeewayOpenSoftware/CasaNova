@@ -693,6 +693,10 @@
       "size": "Tamanho",
       "modified": "Modificado"
     },
+    "error": {
+      "title": "Não foi possível abrir esta pasta",
+      "retry": "Tentar novamente"
+    },
     "empty": {
       "title": "Esta pasta está vazia",
       "subtitle": "Arraste arquivos aqui para enviá-los ou use os botões abaixo."

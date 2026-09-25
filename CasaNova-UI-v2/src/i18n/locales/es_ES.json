@@ -693,6 +693,10 @@
       "size": "Tamaño",
       "modified": "Modificado"
     },
+    "error": {
+      "title": "No se pudo abrir esta carpeta",
+      "retry": "Reintentar"
+    },
     "empty": {
       "title": "Esta carpeta está vacía",
       "subtitle": "Arrastra archivos aquí para subirlos o usa los botones de abajo."

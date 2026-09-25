@@ -270,6 +270,12 @@ export const useFilesStore = defineStore('files', () => {
   const fetchedOrder: string[] = []
   const MAX_FETCHED = 64
 
+  // Directories whose last load FAILED, keyed by path, holding the message
+  // the backend gave. Keyed rather than a single `lastError` (the shape the
+  // other stores use) because this store caches many directories at once: one
+  // scalar would blame whichever directory you happened to be looking at.
+  const dirErrors = shallowRef(new Map<string, string>())
+
   function rememberFetched(path: string): void {
     if (fetched.has(path)) {
       // Move to the front of recency.
@@ -291,7 +297,17 @@ export const useFilesStore = defineStore('files', () => {
     const result = await safeCall(
       () => filesApi.listDir(path, showHidden.value),
     )
-    if (result.error && !result.fixture) return
+    if (result.error && !result.fixture) {
+      // Record the failure instead of returning mute. Swallowing it here is
+      // what made "could not read" arrive at the view as "nothing here": the
+      // directory stayed absent from `tree`, visibleEntries fell back to [],
+      // and the empty state offered to upload into a path that had just
+      // refused us a listing.
+      dirErrors.value.set(path, result.error)
+      triggerRef(dirErrors)
+      return
+    }
+    if (dirErrors.value.delete(path)) triggerRef(dirErrors)
     fixtureMode.value = result.fixture
     // v0.1 perf: mutate the shallowRef Map in place + triggerRef
     // instead of cloning. The previous `new Map(tree.value)` was an
@@ -300,6 +316,22 @@ export const useFilesStore = defineStore('files', () => {
     tree.value.set(path, [...(result.data ?? [])])
     triggerRef(tree)
     rememberFetched(path)
+  }
+
+  // Error for the directory on screen, and whether that directory has ever
+  // been read. `tree` only gains a key on a successful load, so its presence
+  // is the honest "loaded" signal — and it is a shallowRef we already
+  // triggerRef, so this stays reactive without a second bookkeeping set.
+  const currentDirError = computed<string | null>(
+    () => dirErrors.value.get(activeTab.value.currentPath) ?? null,
+  )
+  const currentDirLoaded = computed(() => tree.value.has(activeTab.value.currentPath))
+
+  async function retryCurrentDir(): Promise<void> {
+    const path = activeTab.value.currentPath
+    if (dirErrors.value.delete(path)) triggerRef(dirErrors)
+    invalidatePath(path)
+    await fetchDir(path)
   }
 
   function invalidatePath(path: string) {
@@ -1156,6 +1188,8 @@ export const useFilesStore = defineStore('files', () => {
     clipboard, clipboardCut, clipboardCopy, clipboardClear, clipboardPaste,
     // Operations
     beginOperation, endOperation, fetchDir, invalidatePath,
+    // Per-directory load failures
+    currentDirError, currentDirLoaded, retryCurrentDir,
     // Tracked operations
     operations, clearCompleted,
     // Navigation (active tab)

@@ -693,6 +693,10 @@
       "size": "Size",
       "modified": "Modified"
     },
+    "error": {
+      "title": "Couldn’t open this folder",
+      "retry": "Try again"
+    },
     "empty": {
       "title": "This folder is empty",
       "subtitle": "Drag files here to upload, or use the buttons below."

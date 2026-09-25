@@ -64,7 +64,12 @@ function minimizeFiles() {
 }
 
 // ----- Empty state -----
-const isEmpty = computed(() => files.visibleEntries.length === 0)
+// Empty means "read it, and there was nothing in it" — not "could not read
+// it" and not "never read it". Both of those used to land here and be drawn
+// as an empty folder.
+const isEmpty = computed(
+  () => files.currentDirLoaded && !files.currentDirError && files.visibleEntries.length === 0,
+)
 
 // ----- Dialogs -----
 const newFolderDialogVisible = ref(false)
@@ -689,6 +694,31 @@ const deletePaths = computed(() => [...files.selected])
         </ul>
       </div>
 
+      <!-- Load failure. Deliberately BEFORE the empty state: a directory we
+           could not read is not an empty one, and the empty state invites an
+           upload into a path that may have just denied us a listing. The
+           backend's own message is shown rather than a generic line, because
+           it is the part that says WHY. -->
+      <div
+        v-else-if="files.currentDirError"
+        class="flex flex-col items-center justify-center py-16 text-center"
+      >
+        <AppIcon name="AlertTriangle" :size="40" class="mb-3 text-red-500 opacity-40" />
+        <h3 class="mb-1 text-lg font-semibold text-[var(--cn-text)]">
+          {{ t('files.error.title') }}
+        </h3>
+        <p class="mb-6 max-w-md break-words text-sm text-[var(--cn-text-muted)]">
+          {{ files.currentDirError }}
+        </p>
+        <button
+          type="button"
+          class="flex h-9 items-center gap-1.5 rounded-lg border border-[var(--cn-border)] px-3 text-sm text-[var(--cn-text)] transition-colors hover:bg-[var(--cn-surface-hover)]"
+          @click="files.retryCurrentDir()"
+        >
+          <AppIcon name="RefreshCw" :size="14" />
+          <span>{{ t('files.error.retry') }}</span>
+        </button>
+      </div>
       <FileEmptyState
         v-else-if="isEmpty"
         @upload="pickFiles"
