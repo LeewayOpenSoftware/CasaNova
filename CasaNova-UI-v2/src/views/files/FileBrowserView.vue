@@ -624,9 +624,14 @@ const deletePaths = computed(() => [...files.selected])
          root broke into three sub-rows inside that gap — and because this
          row is `items-center`, the tall block centred and its first sub-row
          floated ABOVE the breadcrumb. Giving the toolbar its own row below
-         costs ~40px of permanent chrome; that is the accepted trade. -->
+         costs ~40px of permanent chrome; that is the accepted trade.
+
+         min-w-0 is what lets a very deep path scroll inside the breadcrumb's
+         own overflow-x-auto strip instead of overflowing the panel: it used
+         to come from the wrapper this row no longer needs. Do not drop it as
+         redundant. -->
     <div class="flex shrink-0 items-center gap-3 border-b border-[var(--cn-border)] px-4 py-2">
-      <FileBreadcrumb />
+      <FileBreadcrumb class="min-w-0 flex-1" />
     </div>
 
     <!-- Toolbar row: full width, one line. FileToolbar's own
