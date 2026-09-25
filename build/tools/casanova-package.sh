@@ -87,6 +87,12 @@ fi
 #                     where PostUpdateRollback executes casaos-to-casanova.sh
 #   upgrade.sh        in-place upgrade path used by casaos-to-casanova.sh
 #   migrate.sh        migration path shipped with the full payload
+#   swap.sh           the ONLY script the real USB update runbook (update.md)
+#                     actually executes on the target box. This packager built
+#                     "successfully" without it for as long as it was missing
+#                     from this loop — the packager didn't know the one script
+#                     the human runs first even exists, so a complete-looking
+#                     package shipped mutilated with zero signal.
 #   www/ systemd/     apply-update.sh copies BOTH unguarded (`cp -r "$DIR"/www/*`
 #                     and `cp "$DIR"/systemd/*.service`) — missing here becomes a
 #                     failure on the USER'S box, mid-update, not here
@@ -115,7 +121,7 @@ fi
 # All of them are reported in ONE pass: failing on the first missing file sends
 # whoever is packaging round the loop once per artifact.
 MISSING=""
-for f in install.sh upgrade.sh migrate.sh apply-update.sh; do
+for f in install.sh upgrade.sh migrate.sh apply-update.sh swap.sh; do
     [ -f "${BUILD_DIR}/${f}" ] || MISSING="${MISSING}\n  missing file:      ${BUILD_DIR}/${f}"
 done
 for d in systemd www tmpfiles.d library tools; do
@@ -199,7 +205,7 @@ if [ -n "$MISSING" ]; then
     printf "${MISSING}\n" >&2
     err "These are not optional. A package without them installs nothing, applies"
     err "nothing, or silently ships the previous release's updater."
-    err "Note that install.sh / upgrade.sh / migrate.sh / apply-update.sh, tmpfiles.d/"
+    err "Note that install.sh / upgrade.sh / migrate.sh / apply-update.sh / swap.sh, tmpfiles.d/"
     err "and library/ are NOT produced by \`make full\` and are NOT in git (see the"
     err "clean: target's comment) — a worktree that never received them cannot build"
     err "a package, and that is the condition this check exists to report."
@@ -290,11 +296,13 @@ if [ -d "${BUILD_DIR}/tools" ]; then
     cp -r "${BUILD_DIR}/tools" "${STAGE_DIR}/tools"
 fi
 
-# Copy install / upgrade / migrate / apply-update scripts shipped with the
-# full payload. casaos-to-casanova.sh and casanova-update.sh need these to
-# perform an in-place upgrade on the target host.
+# Copy install / upgrade / migrate / apply-update / swap scripts shipped with
+# the full payload. casaos-to-casanova.sh and casanova-update.sh need these to
+# perform an in-place upgrade on the target host; swap.sh is what the USB
+# update runbook actually runs — its absence from this loop is how a package
+# built "successfully" and shipped without the one script the human needed.
 # Unconditional: the preflight above already refused to get here without them.
-for sh in install.sh upgrade.sh migrate.sh apply-update.sh; do
+for sh in install.sh upgrade.sh migrate.sh apply-update.sh swap.sh; do
     cp "${BUILD_DIR}/${sh}" "${STAGE_DIR}/${sh}"
 done
 
