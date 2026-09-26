@@ -116,50 +116,80 @@ func TestIsSameOrChild(t *testing.T) {
 	}
 }
 
-func TestRootDeviceFrom(t *testing.T) {
-	cases := []struct{ name, mounts, want string }{
+func TestProbeRootFromNamesTheDiskAndTheOutcome(t *testing.T) {
+	cases := []struct {
+		name, mounts string
+		wantStatus   RootStatus
+		wantDisks    []string
+	}{
 		{
-			"sata root",
-			"sysfs /sys sysfs rw 0 0\n/dev/sda2 / ext4 rw,relatime 0 0\n/dev/sda1 /boot/efi vfat rw 0 0\n",
-			"/dev/sda",
+			name:       "sata root",
+			mounts:     "sysfs /sys sysfs rw 0 0\n/dev/sda2 / ext4 rw,relatime 0 0\n/dev/sda1 /boot/efi vfat rw 0 0\n",
+			wantStatus: RootOnDisks,
+			wantDisks:  []string{"/dev/sda"},
 		},
 		{
-			"emmc root",
-			"/dev/mmcblk0p2 / ext4 rw,relatime 0 0\n/dev/mmcblk0p1 /boot vfat rw 0 0\n",
-			"/dev/mmcblk0",
+			name:       "emmc root",
+			mounts:     "/dev/mmcblk0p2 / ext4 rw,relatime 0 0\n/dev/mmcblk0p1 /boot vfat rw 0 0\n",
+			wantStatus: RootOnDisks,
+			wantDisks:  []string{"/dev/mmcblk0"},
 		},
 		{
-			"nvme root",
-			"/dev/nvme0n1p3 / btrfs rw 0 0\n",
-			"/dev/nvme0n1",
+			name:       "nvme root",
+			mounts:     "/dev/nvme0n1p3 / btrfs rw 0 0\n",
+			wantStatus: RootOnDisks,
+			wantDisks:  []string{"/dev/nvme0n1"},
 		},
 		{
 			// A mount point containing a space arrives octal-escaped, so a
 			// field split is safe; the point is only that "/" is matched
 			// exactly and not by prefix.
-			"a mount point that starts with a slash is not the root",
-			"/dev/sdb1 /DATA ext4 rw 0 0\n/dev/sdc1 / ext4 rw 0 0\n",
-			"/dev/sdc",
+			name:       "a mount point that starts with a slash is not the root",
+			mounts:     "/dev/sdb1 /DATA ext4 rw 0 0\n/dev/sdc1 / ext4 rw 0 0\n",
+			wantStatus: RootOnDisks,
+			wantDisks:  []string{"/dev/sdc"},
 		},
 		{
-			"overlay root is not a device node",
-			"overlay / overlay rw 0 0\n",
-			"",
+			// A live image. There is no boot disk, so every disk is a
+			// legitimate format target and the guards must NOT refuse. This
+			// is the one case that keeps the old permissive answer, and the
+			// only reason the fail-open was defensible in the first place.
+			name:       "overlay root has no disk to protect",
+			mounts:     "overlay / overlay rw 0 0\n",
+			wantStatus: RootDiskless,
 		},
 		{
-			"no root line at all",
-			"sysfs /sys sysfs rw 0 0\n",
-			"",
+			name:       "netbooted root has no disk to protect",
+			mounts:     "10.0.0.1:/export / nfs4 rw 0 0\n",
+			wantStatus: RootDiskless,
+		},
+		{
+			// Nothing to base an answer on. Under the old API this returned
+			// ("", nil) and the guards formatted whatever they were asked to.
+			name:       "no root line at all",
+			mounts:     "sysfs /sys sysfs rw 0 0\n",
+			wantStatus: RootUnknown,
+		},
+		{
+			// A root whose source is not a device node and whose filesystem is
+			// not one we can positively call diskless. It could be a disk we
+			// failed to name, so the answer is "unknown", which refuses.
+			name:       "an unrecognised non-device source is not assumed diskless",
+			mounts:     "rpool/ROOT/casanova / zfs rw 0 0\n",
+			wantStatus: RootUnknown,
 		},
 	}
 	for _, c := range cases {
-		got, err := RootDeviceFrom(strings.NewReader(c.mounts))
-		if err != nil {
-			t.Errorf("%s: unexpected error: %v", c.name, err)
+		got := ProbeRootFrom(strings.NewReader(c.mounts), nil)
+		if got.Status != c.wantStatus {
+			t.Errorf("%s: status = %s, want %s (reason: %s)", c.name, got.Status, c.wantStatus, got.Reason)
 			continue
 		}
-		if got != c.want {
-			t.Errorf("%s: RootDeviceFrom = %q, want %q", c.name, got, c.want)
+		if strings.Join(got.Disks, ",") != strings.Join(c.wantDisks, ",") {
+			t.Errorf("%s: disks = %v, want %v", c.name, got.Disks, c.wantDisks)
+		}
+		if got.Reason == "" {
+			t.Errorf("%s: no Reason given; a guard that refuses has nothing to tell the operator", c.name)
 		}
 	}
 }

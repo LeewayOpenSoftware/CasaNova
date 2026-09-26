@@ -32,12 +32,7 @@
 // to — rather than a heuristic that happens to hold for /dev/sda.
 package devid
 
-import (
-	"bufio"
-	"io"
-	"os"
-	"strings"
-)
+import "strings"
 
 // pSeparatedPrefixes are the families whose partition node is the disk node
 // plus "p" plus the partition number: /dev/nvme0n1 -> /dev/nvme0n1p1,
@@ -120,40 +115,13 @@ func IsSameOrChild(disk, dev string) bool {
 	return WholeDisk(disk) == WholeDisk(dev)
 }
 
-// RootDeviceFrom returns the whole-disk device node carrying "/", read from a
-// /proc/mounts-formatted stream. It takes a reader so the parsing can be
-// tested against the layouts this box will never have — eMMC, NVMe, LVM —
-// instead of only against whatever the build machine booted from.
-//
-// It returns "" when the root device is not a /dev node (an overlay or a
-// UUID= entry). Callers already treat "" as "cannot tell", and a name that is
-// not a device node cannot be compared to one.
-func RootDeviceFrom(r io.Reader) (string, error) {
-	sc := bufio.NewScanner(r)
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		if len(fields) < 2 || fields[1] != "/" {
-			continue
-		}
-		dev := fields[0]
-		if !strings.HasPrefix(dev, "/dev/") {
-			return "", nil
-		}
-		return WholeDisk(dev), nil
-	}
-	return "", sc.Err()
-}
-
-// RootDevice reads /proc/mounts and returns the whole-disk device node that
-// carries the root filesystem.
-func RootDevice() (string, error) {
-	f, err := os.Open("/proc/mounts")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	return RootDeviceFrom(f)
-}
+// The question "which disk is the root filesystem on?" used to live here as
+// RootDevice/RootDeviceFrom, returning (string, error). That signature could
+// not express the answer that mattered -- "it is on a disk, but I could not
+// work out which one" -- and reported it as ("", nil), which every caller read
+// as "not the system disk". It now lives in root.go as ProbeRoot, which names
+// the three possible outcomes instead of collapsing two of them into an empty
+// string. See RootStatus for what went wrong and why the shape changed.
 
 // splitNode separates a device node into its directory (with the trailing
 // slash) and its base name. It reports false for anything that is not a plain
