@@ -78,7 +78,7 @@ DR_LDFLAGS = -s -w -X github.com/LeewayOpenSoftware/CasaNova-Driver/common.BUILD
 VIRT_LDFLAGS = -s -w -X github.com/LeewayOpenSoftware/CasaNova-Virt/common.BUILD_VERSION=$(BUILD_VERSION)
 CLI_LDFLAGS = -s -w -X main.version=$(BUILD_VERSION) -X main.commit=$(shell git -C CasaNova-CLI rev-parse --short HEAD 2>/dev/null || echo no-git) -X main.date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all build build-all frontend full tidy vet clean status help
+.PHONY: all build build-all frontend full tidy vet test-package clean status help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -230,6 +230,13 @@ full: build frontend ## Build Go + frontend + collect systemd units + configs
 
 package: full ## Build everything then create a .tar.gz update package
 	@bash build/tools/casanova-package.sh --channel=$(CHANNEL)
+
+# Does NOT depend on full: it builds its own fixture in a temp dir, so the
+# packager's preflight can be tested without a 500MB build tree. A target
+# exists because a test nobody can find is as decorative as the check it
+# guards -- and a decorative check is exactly what this test was written after.
+test-package: ## Test the packager preflight and what the package contains
+	@bash build/tools/casanova-package.test.sh
 
 build-all: ## Build for amd64 + arm64
 	@$(MAKE) build GOARCH=amd64

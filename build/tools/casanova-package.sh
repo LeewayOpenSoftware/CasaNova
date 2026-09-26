@@ -120,8 +120,18 @@ fi
 #
 # All of them are reported in ONE pass: failing on the first missing file sends
 # whoever is packaging round the loop once per artifact.
+#
+# ONE list, read by the preflight here, by the message below, and by the copy
+# loop that actually stages them. It was three hardcoded copies in this single
+# file, and they drifted exactly the way the Makefile comment above predicts:
+# swap.sh reached none of them, so the packager neither demanded the one script
+# the deployment runs first nor shipped it, and said "Package created
+# successfully". A check and the copy it guards cannot be allowed to disagree
+# about what the payload is, so they no longer have separate opinions.
+PAYLOAD_SCRIPTS="install.sh upgrade.sh migrate.sh apply-update.sh swap.sh"
+
 MISSING=""
-for f in install.sh upgrade.sh migrate.sh apply-update.sh swap.sh; do
+for f in ${PAYLOAD_SCRIPTS}; do
     [ -f "${BUILD_DIR}/${f}" ] || MISSING="${MISSING}\n  missing file:      ${BUILD_DIR}/${f}"
 done
 for d in systemd www tmpfiles.d library tools; do
@@ -205,7 +215,7 @@ if [ -n "$MISSING" ]; then
     printf "${MISSING}\n" >&2
     err "These are not optional. A package without them installs nothing, applies"
     err "nothing, or silently ships the previous release's updater."
-    err "Note that install.sh / upgrade.sh / migrate.sh / apply-update.sh / swap.sh, tmpfiles.d/"
+    err "Note that $(echo "${PAYLOAD_SCRIPTS}" | sed 's| | / |g'), tmpfiles.d/"
     err "and library/ are NOT produced by \`make full\` and are NOT in git (see the"
     err "clean: target's comment) — a worktree that never received them cannot build"
     err "a package, and that is the condition this check exists to report."
@@ -296,13 +306,14 @@ if [ -d "${BUILD_DIR}/tools" ]; then
     cp -r "${BUILD_DIR}/tools" "${STAGE_DIR}/tools"
 fi
 
-# Copy install / upgrade / migrate / apply-update / swap scripts shipped with
-# the full payload. casaos-to-casanova.sh and casanova-update.sh need these to
-# perform an in-place upgrade on the target host; swap.sh is what the USB
-# update runbook actually runs — its absence from this loop is how a package
-# built "successfully" and shipped without the one script the human needed.
+# Copy the payload scripts. casaos-to-casanova.sh and casanova-update.sh need
+# these to perform an in-place upgrade on the target host; swap.sh is what the
+# USB update runbook actually runs — its absence from this loop is how a
+# package built "successfully" and shipped without the one script the human
+# needed. Same PAYLOAD_SCRIPTS the preflight demanded, so what is checked and
+# what is shipped cannot diverge again.
 # Unconditional: the preflight above already refused to get here without them.
-for sh in install.sh upgrade.sh migrate.sh apply-update.sh swap.sh; do
+for sh in ${PAYLOAD_SCRIPTS}; do
     cp "${BUILD_DIR}/${sh}" "${STAGE_DIR}/${sh}"
 done
 
