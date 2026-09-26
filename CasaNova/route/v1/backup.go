@@ -24,7 +24,10 @@ import (
 	"go.uber.org/zap"
 )
 
-const backupDir = "/var/lib/casaos/backups"
+// Kept indirect for the same reason as backupWalk below: the create
+// handler's verdict has to be exercised end to end, and a test must never
+// be able to write into the real backup directory to do it.
+var backupDir = "/var/lib/casaos/backups"
 
 // Permission bits allowed inside an extracted backup tarball.
 //
@@ -127,6 +130,43 @@ func PostBackupCreate(ctx echo.Context) error {
 	}
 	if len(created.Skipped) > 0 {
 		logger.Error("backup omitted paths", zap.Int("skipped", len(created.Skipped)), zap.Any("paths", created.Skipped))
+	}
+
+	// A backup that could not read everything is a FAILURE.
+	//
+	// The preceding commit made the omissions visible; it still answered
+	// success, so the only thing standing between a user and a backup that
+	// silently lacks their database was whether anyone read the response's
+	// "skipped" array. Nobody reads an array on a green result. The verdict
+	// is the part that cannot be ignored, so the verdict is what changed.
+	//
+	// Deliberately no threshold and no exemption list, including for a
+	// source that does not exist: "/var/lib/casaos/db is not there" and
+	// "/var/lib/casaos/db could not be opened" produce the same tarball —
+	// one without the database — and calling either of them success is the
+	// dishonesty this endpoint is being cured of.
+	//
+	// The cost of that strictness is that one piece of unreadable junk on a
+	// live box can fail every nightly run, which would leave the user with
+	// no backups at all. That is why the reason is carried in the failure
+	// message itself and not only in the log and the manifest: whoever sees
+	// the failure must be able to tell junk from a real loss at a glance,
+	// without going digging. Diagnosability is the mitigation; softening the
+	// verdict is not.
+	if reason := backupIncompleteReason(created.Skipped); reason != "" {
+		// The half-written tarball must not survive. GetBackupList would
+		// show it like any other backup and PostBackupRestore would put an
+		// incomplete system back without a word — a failed job that leaves a
+		// plausible-looking artefact behind is worse than one that leaves
+		// nothing.
+		if err := os.Remove(backupPath); err != nil {
+			logger.Error("incomplete backup left on disk", zap.String("path", backupPath), zap.Error(err))
+		}
+		return ctx.JSON(http.StatusInternalServerError, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: "backup failed: " + reason,
+			Data:    backupCreateResult{Skipped: created.Skipped},
+		})
 	}
 
 	info, err := os.Stat(backupPath)
@@ -378,6 +418,31 @@ func discoverApps() []string {
 // can read the file and so we refuse to overwrite an existing backup
 // with the same timestamp-based name (which would otherwise silently
 // clobber a legitimate backup on a clock-skew edge case).
+// backupIncompleteReason is the one line that explains a failed backup, or ""
+// when nothing was skipped.
+//
+// The verdict itself is the emptiness check and nothing more. The rest of this
+// function exists so that the failure is actionable from the response alone:
+// the exact path and the exact reason for the first casualty, and a count of
+// the others, because "backup failed" with the detail in a log file is how a
+// nightly job silently rots.
+func backupIncompleteReason(skipped []backupSkipped) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+
+	noun := "path"
+	if len(skipped) > 1 {
+		noun = "paths"
+	}
+	first := skipped[0]
+	reason := fmt.Sprintf("%d %s could not be read; first: %s (%s)", len(skipped), noun, first.Path, first.Reason)
+	if len(skipped) > 1 {
+		reason += fmt.Sprintf(" (and %d more, all listed under data.skipped)", len(skipped)-1)
+	}
+	return reason
+}
+
 func createBackupTarball(dest string, manifest backupManifest) (backupCreateResult, error) {
 	var result backupCreateResult
 	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
