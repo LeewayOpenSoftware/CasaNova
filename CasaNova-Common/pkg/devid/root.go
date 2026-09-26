@@ -146,14 +146,34 @@ type Resolver interface {
 	// device that is not stacked has no such directory; that is not an error,
 	// and returns no names.
 	Slaves(base string) ([]string, error)
+
+	// PoolMembers lists the device paths ZFS reports as belonging to pool.
+	//
+	// ZFS is the one layout whose membership the kernel does not publish: a
+	// pool's vdevs appear nowhere in /sys/block, so unlike LVM or md there is
+	// no slaves directory to walk and the only authority is ZFS itself. An
+	// error here has to end in a refusal, never in an empty list treated as
+	// "no disks" -- that would be the ("", nil) mistake this file exists to
+	// undo, wearing a different type.
+	PoolMembers(pool string) ([]string, error)
 }
 
 // SysResolver answers from the running kernel: symlinks from the filesystem,
 // device stacking from /sys/block.
 type SysResolver struct {
-	// Root prefixes both lookups, so a test can point them at a fixture tree.
-	// Empty means the real filesystem.
+	// Root prefixes both filesystem lookups, so a test can point them at a
+	// fixture tree. Empty means the real filesystem.
 	Root string
+
+	// ZpoolStatus returns the output of `zpool status -P <pool>`. Nil means
+	// run the real command.
+	//
+	// It is a field rather than a fixture path because ZFS pool membership is
+	// not a file: it comes back from a command, and no directory tree can
+	// stand in for it. What this seam buys is the part that can actually be
+	// wrong -- the parser -- exercised against verbatim zpool output for
+	// layouts (mirror, raidz) that no build machine here boots from.
+	ZpoolStatus func(pool string) ([]byte, error)
 }
 
 func (s SysResolver) Resolve(path string) (string, error) {
@@ -221,7 +241,11 @@ func ProbeRootFrom(r io.Reader, res Resolver) Root {
 		}
 	}
 
-	disks, err := rootDisks(source, res)
+	if fstype == zfsFSType {
+		return zfsRoot(source, res)
+	}
+
+	disks, err := disksBehind([]string{source}, source, res)
 	if err != nil {
 		return Root{Reason: fmt.Sprintf("/ is on %q (%s) but the disk behind it could not be determined: %v", source, fstype, err)}
 	}
@@ -232,25 +256,27 @@ func ProbeRootFrom(r io.Reader, res Resolver) Root {
 	}
 }
 
-// rootDisks reduces the device backing / to the whole disks it lives on.
+// disksBehind reduces the devices carrying / to the whole disks they live on.
 //
-// Two things stand between the mount table's name and a disk node that
-// IsSameOrChild can compare. The name may be a symlink -- /dev/root, or
-// /dev/disk/by-uuid/<uuid> -- and the device may be stacked: /dev/mapper/vg-root
-// is a device-mapper node whose real disks are its slaves in /sys/block, and
-// asking IsSameOrChild about it directly answers false for every disk in the
-// machine, which is precisely how an LVM or LUKS root went unprotected.
-func rootDisks(source string, res Resolver) ([]string, error) {
-	node := source
-	if res != nil {
-		if target, err := res.Resolve(source); err == nil && target != "" {
-			node = target
-		}
-		// A failed symlink resolution is not fatal on its own: a plain
-		// /dev/sda2 does not need resolving, and splitNode below is what
-		// decides whether the name we ended up with is usable.
-	}
-
+// Two things stand between a device name and a disk node that IsSameOrChild
+// can compare. The name may be a symlink -- /dev/root, /dev/disk/by-uuid/<uuid>,
+// or the /dev/disk/by-id path a ZFS pool usually records -- and the device may
+// be stacked: /dev/mapper/vg-root is a device-mapper node whose real disks are
+// its slaves in /sys/block, and asking IsSameOrChild about it directly answers
+// false for every disk in the machine, which is precisely how an LVM or LUKS
+// root went unprotected.
+//
+// It takes a LIST of starting nodes because a root filesystem can be carried
+// by several devices that are not stacked under one node. An md or LVM root
+// arrives as a single node and fans out through slaves; a ZFS root arrives
+// already fanned out, as the pool's vdev list, and every one of those has to
+// go through the same resolution. The two cases share this walk so that a
+// mirror vdev on LUKS is handled by the code that already knows how to walk
+// LUKS, rather than by a second implementation that would learn it later.
+//
+// what names what is being resolved, for error messages: the caller knows
+// whether these paths came from the mount table or from a pool's vdev list.
+func disksBehind(sources []string, what string, res Resolver) ([]string, error) {
 	var (
 		out  []string
 		seen = map[string]bool{}
@@ -258,7 +284,7 @@ func rootDisks(source string, res Resolver) ([]string, error) {
 	)
 	walk = func(node string, depth int) error {
 		if depth > maxStackDepth {
-			return fmt.Errorf("stacked devices below %q are still stacked after %d levels", source, maxStackDepth)
+			return fmt.Errorf("stacked devices below %q are still stacked after %d levels", what, maxStackDepth)
 		}
 		disk := WholeDisk(node)
 		_, base, ok := splitNode(disk)
@@ -289,8 +315,19 @@ func rootDisks(source string, res Resolver) ([]string, error) {
 		}
 		return nil
 	}
-	if err := walk(node, 0); err != nil {
-		return nil, err
+	for _, source := range sources {
+		node := source
+		if res != nil {
+			if target, err := res.Resolve(source); err == nil && target != "" {
+				node = target
+			}
+			// A failed symlink resolution is not fatal on its own: a plain
+			// /dev/sda2 does not need resolving, and splitNode below is what
+			// decides whether the name we ended up with is usable.
+		}
+		if err := walk(node, 0); err != nil {
+			return nil, err
+		}
 	}
 	sort.Strings(out)
 	return out, nil
