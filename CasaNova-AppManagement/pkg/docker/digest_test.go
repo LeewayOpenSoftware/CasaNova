@@ -3,8 +3,11 @@ package docker_test
 import (
 	"context"
 	"io"
+	"net"
+	"net/http"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-AppManagement/pkg/docker"
 	"github.com/docker/distribution/manifest/manifestlist"
@@ -18,6 +21,47 @@ import (
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+// dockerHubReachable reports whether the registry challenge endpoint
+// GetManifest depends on (GetChallenge -> https://index.docker.io/v2/) can
+// actually be reached from this machine.
+//
+// This box sits behind a local HTTP(S) proxy, and docker.httpClient() wires
+// Proxy: http.ProxyFromEnvironment into its Transport -- so the real request
+// never dials index.docker.io directly, it dials the proxy and asks it to
+// CONNECT. A probe that resolves/dials index.docker.io itself would say the
+// network is fine while GetManifest's own client still fails with
+// "proxyconnect tcp: dial tcp 127.0.0.1:3128: connection refused" the moment
+// egress is cut, because loopback stays up in that cut (only the proxy
+// listener on the other side of it is gone). http.ProxyFromEnvironment is
+// the exact stdlib call the transport itself makes, so asking it what it
+// would dial -- and then dialing that -- is measuring the real path, not a
+// proxy for it.
+func dockerHubReachable(t *testing.T) bool {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet, "https://index.docker.io/v2/", nil)
+	if err != nil {
+		t.Fatalf("could not build the probe request: %v", err)
+	}
+
+	proxyURL, err := http.ProxyFromEnvironment(req)
+	if err != nil {
+		return false
+	}
+
+	addr := "index.docker.io:443"
+	if proxyURL != nil {
+		addr = proxyURL.Host
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
 
 func TestCompareDigest(t *testing.T) {
 	defer goleak.VerifyNone(t)
@@ -73,6 +117,10 @@ func TestGetManifest1(t *testing.T) {
 		runtime.GC()
 	}()
 
+	if !dockerHubReachable(t) {
+		t.Skip("index.docker.io is not reachable from this machine (directly or via the configured proxy)")
+	}
+
 	manifest, contentType, err := docker.GetManifest(context.Background(), "hello-world:nanoserver-1803")
 	assert.NilError(t, err)
 	assert.Equal(t, contentType, manifestlist.MediaTypeManifestList)
@@ -104,6 +152,10 @@ func TestGetManifest2(t *testing.T) {
 		runtime.GC()
 	}()
 
+	if !dockerHubReachable(t) {
+		t.Skip("index.docker.io is not reachable from this machine (directly or via the configured proxy)")
+	}
+
 	manifest, contentType, err := docker.GetManifest(context.Background(), "correctroad/logseq:latest")
 	assert.NilError(t, err)
 	assert.Equal(t, contentType, "application/vnd.docker.distribution.manifest.v2+json")
@@ -125,6 +177,10 @@ func TestGetManifest3(t *testing.T) {
 		docker.Cache = nil
 		runtime.GC()
 	}()
+
+	if !dockerHubReachable(t) {
+		t.Skip("index.docker.io is not reachable from this machine (directly or via the configured proxy)")
+	}
 
 	manifest, contentType, err := docker.GetManifest(context.Background(), "2fauth/2fauth:latest")
 	assert.NilError(t, err)
