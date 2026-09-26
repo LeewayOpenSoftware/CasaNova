@@ -466,7 +466,11 @@ func (ds *dockerService) CheckContainerHealth(id string) (bool, error) {
 
 		logger.Info("checking container health at the specified web port...", zap.Any("name", container.Names), zap.String("id", id), zap.Any("url", url))
 		client := resty.New()
-		client.SetTimeout(30 * time.Second)
+		// 5s, aligned with 27.04 (0f505f4). Was 30s: with the 16-slot cap
+		// above that put the worst-case probe ceiling at 480s here vs 80s on
+		// 27.04. This changes observable behavior: an app that legitimately
+		// takes 6-30s to answer now flips to unhealthy instead of passing.
+		client.SetTimeout(5 * time.Second)
 		client.SetHeader("Accept", "text/html")
 		response, err := client.R().Get(url)
 		if err != nil {

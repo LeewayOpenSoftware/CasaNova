@@ -8,6 +8,10 @@ import (
 )
 
 func TestCurrentArchitecture(t *testing.T) {
+	if !docker.IsDaemonRunning() {
+		t.Skip("Docker daemon is not running")
+	}
+
 	a, err := docker.CurrentArchitecture()
 	assert.NilError(t, err)
 	assert.Assert(t, a != "")

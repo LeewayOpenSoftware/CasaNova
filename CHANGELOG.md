@@ -76,6 +76,14 @@ described. Backported onto the 26.10 line from the 27.04 audit passes.
   unhandled rejection — the drop silently did nothing — and a payload
   that parsed to a non-array passed the emptiness check and was sent to
   the batch-move endpoint after the local view had already moved.
+- **Container health probe's worst case took six times longer to fail than
+  on 27.04.** The concurrency cap on `CheckContainerHealth` was already
+  backported, but its per-probe timeout was still 30s where 27.04 had
+  already dropped to 5s, so the same 16-slot cap bounded the worst case at
+  480s here against 80s there. Timeout is now 5s on both lines. **This is
+  a behaviour change, not a pure bug fix**: an app that legitimately takes
+  longer than 5s (but less than 30s) to answer its health check now flips
+  to unhealthy instead of passing.
 
 ## [0.1.0] — 26.06 — first public release
 
