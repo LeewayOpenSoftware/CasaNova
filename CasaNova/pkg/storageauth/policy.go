@@ -29,6 +29,8 @@ import (
 //	4. EXPLICITLY_DENIED        an operator DENY rule covers it
 //	5. allowed by an EXPLICIT root
 //	6. allowed by a DERIVED root
+//	6.5 allowed by the principal's SYSTEM-DISK SWITCH, for non-mutating
+//	    operations only — a narrowing of rule 7, never of anything above it
 //	7. OUTSIDE_AUTHORIZED_STORAGE  default deny
 //
 // then, having established that CasaNova may manage the object at all:
@@ -36,6 +38,14 @@ import (
 //	8. administrators pass
 //	9. a grant covering (principal, subtree, operation) passes
 //	10. PRINCIPAL_NOT_AUTHORIZED   default deny
+//
+// Rule 6.5 is the one principal-dependent step in the ceiling, and it is placed
+// at the BOTTOM of it deliberately: it can convert rule 7's default deny and
+// nothing else. A system location, an operator DENY, an unusable path and an
+// authority that is not in force all outrank it, so switching an account on
+// widens what it may READ outside authorized storage without making any of the
+// boundaries above negotiable. It grants no write: mutating operations are
+// excluded before the switch is even consulted.
 //
 // Rule 3 sits ABOVE the explicit rules on purpose. An operator may extend what
 // CasaNova manages; they may not declare procfs to be ordinary user storage,
@@ -57,6 +67,12 @@ const (
 	// UI can show whether a location is derived or operator-configured.
 	ReasonAllowedDerived  ReasonCode = "ALLOWED_DERIVED"
 	ReasonAllowedExplicit ReasonCode = "ALLOWED_EXPLICIT"
+	// ReasonAllowedSystemDisk is the per-account system-disk switch narrowing
+	// rule 7. It is a SEPARATE code rather than reusing ALLOWED_EXPLICIT so an
+	// audit log distinguishes "an operator declared this a storage area" from
+	// "this one account may read the whole disk", which are different facts
+	// with different blast radii.
+	ReasonAllowedSystemDisk ReasonCode = "ALLOWED_SYSTEM_DISK"
 
 	// Denied outcomes.
 	ReasonOutsideAuthorizedStorage ReasonCode = "OUTSIDE_AUTHORIZED_STORAGE"

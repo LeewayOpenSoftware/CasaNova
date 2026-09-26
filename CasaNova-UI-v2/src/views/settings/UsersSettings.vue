@@ -19,6 +19,7 @@ import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
+import ToggleSwitch from 'primevue/toggleswitch'
 import dayjs from 'dayjs'
 import SettingsPage from '@/components/settings/SettingsPage.vue'
 import SettingsCard from '@/components/settings/SettingsCard.vue'
@@ -35,7 +36,35 @@ const users = useUsersStore()
 // list is actually consumed, so this is the right place to fetch.
 onMounted(() => {
   void users.refresh()
+  // Only an administrator is served this list; for anyone else both endpoints
+  // answer 403 and the store leaves systemDiskLoaded false, which is what
+  // hides the column. Asking and being refused is how the UI learns which of
+  // the two it is -- the role in the token is not authority over what the
+  // backend will actually allow.
+  void users.refreshSystemDisk()
 })
+
+// ----- System disk access -----
+//
+// "Can this account browse the whole disk from /?" It is OFF for everybody
+// until an administrator turns it on, administrators included, and the guest
+// account can never have it -- the backend refuses that outright, so the
+// switch is rendered disabled rather than offered and then rejected.
+const systemDiskBusy = ref<string | null>(null)
+
+function canHoldSystemDisk(u: UserEntry): boolean {
+  return u.role !== 'guest'
+}
+
+async function onSystemDiskChange(u: UserEntry, next: boolean) {
+  if (!canHoldSystemDisk(u)) return
+  systemDiskBusy.value = u.id
+  try {
+    await users.setSystemDiskAccess({ id: u.id, role: u.role }, next)
+  } finally {
+    systemDiskBusy.value = null
+  }
+}
 
 // ----- Role display helpers -----
 // Maps each role to an icon + tailwind color classes so the badges
@@ -187,6 +216,12 @@ function initial(username: string): string {
               <th class="hidden px-4 py-2 text-left font-medium sm:table-cell">
                 {{ t('settings.users.col_role') }}
               </th>
+              <th
+                v-if="users.systemDiskLoaded"
+                class="hidden px-4 py-2 text-left font-medium lg:table-cell"
+              >
+                {{ t('settings.users.col_system_disk') }}
+              </th>
               <th class="hidden px-4 py-2 text-left font-medium md:table-cell">
                 {{ t('settings.users.col_last_login') }}
               </th>
@@ -236,6 +271,22 @@ function initial(username: string): string {
                     </div>
                   </template>
                 </Select>
+              </td>
+              <td v-if="users.systemDiskLoaded" class="hidden px-4 py-3 lg:table-cell">
+                <div class="flex items-center gap-2">
+                  <ToggleSwitch
+                    :model-value="users.hasSystemDiskAccess(u.id)"
+                    :disabled="!canHoldSystemDisk(u) || systemDiskBusy === u.id"
+                    :aria-label="t('settings.users.system_disk_aria', { user: u.username })"
+                    @update:model-value="(v: boolean) => onSystemDiskChange(u, v)"
+                  />
+                  <span
+                    v-if="!canHoldSystemDisk(u)"
+                    class="text-xs text-[var(--cn-text-muted)]"
+                  >
+                    {{ t('settings.users.system_disk_never_guest') }}
+                  </span>
+                </div>
               </td>
               <td class="hidden px-4 py-3 text-[var(--cn-text-muted)] md:table-cell">
                 {{ formatDate(u.lastLoginAt) }}

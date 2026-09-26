@@ -205,6 +205,17 @@ func InitV1Router() http.Handler {
 		v1SysGroup := v1Group.Group("/sys")
 		v1SysGroup.Use()
 		{
+			// The per-account system-disk switch. Administrator-only on BOTH
+			// verbs: the list says which accounts can read every colleague's
+			// files, which is not a common user's business either.
+			//
+			// Under /v1/sys and not /v1/storage: the gateway ownership
+			// manifest gives /v1/storage to local-storage, so a handler
+			// registered there is never reached. TestEveryV1RouteIsReachable-
+			// ThroughTheGateway caught exactly that on the first attempt.
+			v1SysGroup.GET("/system-disk-access", v1.GetStorageSystemDiskAccess)
+			v1SysGroup.PUT("/system-disk-access/:id", v1.PutStorageSystemDiskAccess, strictJWT())
+
 			v1SysGroup.GET("/debug", v1.GetSystemConfigDebug) // debug — now behind JWT
 			v1SysGroup.GET("/diagnosis", v1.GetDiagnosis)     // self-diagnosis engine — now behind JWT
 

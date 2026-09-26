@@ -8,6 +8,11 @@
 //   PUT    /v1/users/:id/role    → change role (body: {role})
 //   POST   /v1/users/register    → bootstrap registration (requires one-shot key)
 //
+// And, from CasaNova (not UserService) because the switch is a storage-authority
+// fact rather than a property of the account:
+//   GET /v1/sys/system-disk-access      → ids the whole-disk switch is on for
+//   PUT /v1/sys/system-disk-access/:id  → set it (body: {enabled, role})
+//
 // Returns empty state when the backend is unreachable.
 
 import { defineStore } from 'pinia'
@@ -37,6 +42,14 @@ interface BackendUser {
 export const useUsersStore = defineStore('users', () => {
   const entries = ref<UserEntry[]>([])
   const roles = ref<RoleInfo[]>([])
+
+  // Accounts the "system disk access" switch is on for, as string ids because
+  // the storage authority keys principals by string. Empty until an
+  // administrator loads it: a non-administrator gets 403 from both endpoints,
+  // which is intended, so an empty set here means either "nobody" or "not
+  // allowed to know" and the UI only renders the column for administrators.
+  const systemDiskIds = ref<string[]>([])
+  const systemDiskLoaded = ref(false)
   const fixtureMode = ref(false)
   const loading = ref(false)
 
@@ -228,6 +241,55 @@ export const useUsersStore = defineStore('users', () => {
     return true
   }
 
+  // hasSystemDiskAccess is a function rather than a computed map so a row can
+  // ask about itself without the store having to mirror the user list.
+  function hasSystemDiskAccess(id: string): boolean {
+    return systemDiskIds.value.includes(String(id))
+  }
+
+  async function refreshSystemDisk(): Promise<void> {
+    const result = await safeCall(async () => {
+      const res = await client.get<{ success: number; data: string[] }>(
+        '/v1/sys/system-disk-access',
+      )
+      return res.data.data ?? []
+    })
+    if (result.error || !result.data) {
+      // A 403 is the expected answer for a non-administrator, so this is not
+      // surfaced as an error: the column simply does not render.
+      systemDiskIds.value = []
+      systemDiskLoaded.value = false
+      return
+    }
+    systemDiskIds.value = (result.data ?? []).map(String)
+    systemDiskLoaded.value = true
+  }
+
+  // Unidirectional, like the alert-rule and app-store toggles: the requested
+  // next state is sent to the backend and the local set is only updated once
+  // the backend agreed. Mutating first and reconciling later is how a failed
+  // PUT leaves a switch showing access that nobody actually has -- which for
+  // this particular switch means the UI claims an account cannot read the disk
+  // while it still can.
+  async function setSystemDiskAccess(
+    user: { id: string; role: UserRole },
+    next: boolean,
+  ): Promise<boolean> {
+    const result = await safeCall(() =>
+      client.put(`/v1/sys/system-disk-access/${user.id}`, {
+        enabled: next,
+        role: user.role,
+      }),
+    )
+    if (result.error) return false
+
+    const id = String(user.id)
+    systemDiskIds.value = next
+      ? [...systemDiskIds.value.filter((x) => x !== id), id]
+      : systemDiskIds.value.filter((x) => x !== id)
+    return true
+  }
+
   return {
     entries,
     sortedEntries,
@@ -240,5 +302,10 @@ export const useUsersStore = defineStore('users', () => {
     createUser,
     deleteUser,
     changeRole,
+    systemDiskIds,
+    systemDiskLoaded,
+    hasSystemDiskAccess,
+    refreshSystemDisk,
+    setSystemDiskAccess,
   }
 })
