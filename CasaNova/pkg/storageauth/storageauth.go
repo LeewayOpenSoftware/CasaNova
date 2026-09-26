@@ -312,6 +312,11 @@ type state struct {
 	pendingPrincipals int
 	grants            []Grant
 
+	// systemDisk is the set of principal IDs the per-account system-disk
+	// switch is ON for. Absence is OFF, so the default for every account —
+	// administrators included — is no whole-disk access. See systemdisk.go.
+	systemDisk map[string]struct{}
+
 	provisioned bool
 	validated   bool
 	derivedAt   time.Time
@@ -336,6 +341,7 @@ func SetStateDir(dir string) {
 	global.ceiling = nil
 	global.operatorAdd = nil
 	global.grants = nil
+	global.systemDisk = nil
 	global.provisioned = false
 	global.validated = false
 	global.derivedAt = time.Time{}
@@ -371,6 +377,16 @@ func (s *state) provisionLocked() error {
 		return s.failLocked("the state directory must exist",
 			fmt.Errorf("create %s: %w", s.dir, err))
 	}
+
+	// The per-account system-disk switches. An unreadable file fails the
+	// authority rather than reading as "nobody is switched on": that default
+	// is indistinguishable from the safe one and would hide a corrupt file.
+	sd, sderr := loadSystemDisk(filepath.Join(s.dir, systemDiskFileName))
+	if sderr != nil {
+		return s.failLocked("the system-disk switch list must parse",
+			fmt.Errorf("%s is unreadable (%w); refusing to run with an unknown policy", filepath.Join(s.dir, systemDiskFileName), sderr))
+	}
+	s.systemDisk = sd
 
 	// Operator-declared roots are persistent configuration, never inferred.
 	add, err := loadRoots(filepath.Join(s.dir, rootsFileName))
@@ -674,12 +690,33 @@ func AuthorizeStorage(p Principal, op Op, path string) Decision {
 	resolved := resolveForOp(op, clean)
 	d := pol.evaluateStorage(clean, resolved)
 	if !d.Allowed {
+		// Rule 6.5: the per-account system-disk switch narrows rule 7's
+		// default deny, and ONLY rule 7's. Keying on the reason code is what
+		// keeps the rest of the precedence intact without restating it: a
+		// SYSTEM_LOCATION (rule 3), an operator DENY (rule 4), an unusable
+		// path (rule 1) or an authority that is not in force (rule 2) all
+		// arrive here with their own reason and are returned untouched. The
+		// switch cannot promote any of them, which is the property the
+		// package's contract requires of every allow.
+		if d.Reason == ReasonOutsideAuthorizedStorage && systemDiskReads(p, op) {
+			return systemDiskDecision(clean, resolved)
+		}
 		return d
 	}
 
 	// Rules 8-10: may THIS principal, for THIS operation?
 	if p.Admin {
 		d.Path = clean
+		return d
+	}
+	// The switch is a whole-disk READ entitlement, so it answers the principal
+	// layer as well. Without this, a switched-on non-administrator could browse
+	// the parts of the disk OUTSIDE authorized storage — allowed just above at
+	// rule 6.5 — and be refused the parts INSIDE it for want of a grant, which
+	// is both incoherent and the opposite of what the switch says it does.
+	if systemDiskReads(p, op) {
+		d.Path = clean
+		d.Rule = d.Rule + "+system-disk-access"
 		return d
 	}
 	for _, g := range grants {
