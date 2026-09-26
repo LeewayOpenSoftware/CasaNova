@@ -76,7 +76,7 @@ JM_LDFLAGS = -s -w -X main.Version=$(BUILD_VERSION) -X github.com/LeewayOpenSoft
 AM_LDFLAGS = -s -w -X main.Version=$(BUILD_VERSION) -X github.com/LeewayOpenSoftware/CasaNova-AppManagement/common.BUILD_VERSION=$(BUILD_VERSION)
 DR_LDFLAGS = -s -w -X github.com/LeewayOpenSoftware/CasaNova-Driver/common.BUILD_VERSION=$(BUILD_VERSION)
 VIRT_LDFLAGS = -s -w -X github.com/LeewayOpenSoftware/CasaNova-Virt/common.BUILD_VERSION=$(BUILD_VERSION)
-CLI_LDFLAGS = -s -w -X main.version=$(BUILD_VERSION) -X main.commit=$(shell git -C CasaNova-CLI rev-parse --short HEAD 2>/dev/null || echo no-git) -X main.date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+CLI_LDFLAGS = -s -w -X main.version=$(BUILD_VERSION) -X main.commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo no-git) -X main.date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 .PHONY: all build build-all frontend full tidy vet test-package clean status help
 
@@ -111,27 +111,27 @@ build: ## Build all Go services for GOOS/GOARCH
 	@echo "Building CasaNova $(BUILD_VERSION) ($(CHANNEL) channel)"
 	@echo ""
 	@echo "==> verify CasaNova-Common (library only)"
-	@(cd CasaNova-Common && GOOS=$(GOOS) GOARCH=$(GOARCH) go build ./...) || exit 1
+	@(cd CasaNova-Common && GOOS=$(GOOS) GOARCH=$(GOARCH) go build -buildvcs=false ./...) || exit 1
 	@echo "==> building CasaNova-Gateway → casanova-gateway"
-	@(cd CasaNova-Gateway && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(GW_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-gateway .) || exit 1
+	@(cd CasaNova-Gateway && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(GW_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-gateway .) || exit 1
 	@echo "==> building CasaNova-MessageBus → casanova-message-bus"
-	@(cd CasaNova-MessageBus && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(MB_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-message-bus .) || exit 1
+	@(cd CasaNova-MessageBus && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(MB_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-message-bus .) || exit 1
 	@echo "==> building CasaNova-UserService → casanova-user-service"
-	@(cd CasaNova-UserService && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(US_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-user-service .) || exit 1
+	@(cd CasaNova-UserService && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(US_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-user-service .) || exit 1
 	@echo "==> building CasaNova-LocalStorage → casanova-local-storage"
-	@(cd CasaNova-LocalStorage && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(LS_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-local-storage .) || exit 1
+	@(cd CasaNova-LocalStorage && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(LS_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-local-storage .) || exit 1
 	@echo "==> building CasaNova-JobManagement → casanova-job-management"
-	@(cd CasaNova-JobManagement && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(JM_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-job-management .) || exit 1
+	@(cd CasaNova-JobManagement && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(JM_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-job-management .) || exit 1
 	@echo "==> building CasaNova-AppManagement → casanova-app-management"
-	@(cd CasaNova-AppManagement && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(AM_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-app-management .) || exit 1
+	@(cd CasaNova-AppManagement && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(AM_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-app-management .) || exit 1
 	@echo "==> building CasaNova-Driver → casanova-driver"
-	@(cd CasaNova-Driver && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(DR_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-driver .) || exit 1
+	@(cd CasaNova-Driver && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(DR_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-driver .) || exit 1
 	@echo "==> building CasaNova-Virt → casanova-virt"
-	@(cd CasaNova-Virt && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(VIRT_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-virt .) || exit 1
+	@(cd CasaNova-Virt && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(VIRT_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-virt .) || exit 1
 	@echo "==> building CasaNova → casanova"
-	@(cd CasaNova && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o ../$(BUILD_DIR)/casanova .) || exit 1
+	@(cd CasaNova && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(LDFLAGS)" -o ../$(BUILD_DIR)/casanova .) || exit 1
 	@echo "==> building CasaNova-CLI → casanova-cli"
-	@(cd CasaNova-CLI && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags="$(CLI_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-cli .) || exit 1
+	@(cd CasaNova-CLI && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(CLI_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-cli .) || exit 1
 	@echo ""
 	@echo "Go build complete: $(BUILD_DIR)/ — $(BUILD_VERSION)"
 	@ls -lh $(BUILD_DIR)/
