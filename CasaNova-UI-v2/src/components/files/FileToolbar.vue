@@ -9,7 +9,7 @@
 // Only reads from the store (selection / clipboard / sort / pane state)
 // happen here, to drive each button's enabled + active styling.
 
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import MorphIcon from '@/components/ui/MorphIcon.vue'
@@ -17,6 +17,44 @@ import { useFilesStore, type SortKey, type SortDir } from '@/stores/files'
 
 const { t } = useI18n()
 const files = useFilesStore()
+
+// ui-fm-toolbar-suelo-820: below ~820px of PANEL width (not viewport width —
+// this toolbar can sit in a panel narrower than the window) the row used to
+// wrap onto a second line. Tailwind's responsive prefixes key off viewport
+// width, the wrong axis here, so the toolbar measures its OWN rendered width
+// with a ResizeObserver and compacts (drops text labels, then shrinks the
+// search box) instead of wrapping. flex-wrap is removed from the template on
+// purpose: a wrap is exactly the failure this replaces, so a mis-tuned
+// threshold should show as a harmless one-line overflow during a resize
+// frame, never as a silent return to two rows.
+const rootRef = ref<HTMLElement | null>(null)
+const toolbarWidth = ref(0)
+let resizeObserver: ResizeObserver | null = null
+onMounted(() => {
+  if (!rootRef.value) return
+  resizeObserver = new ResizeObserver((entries) => {
+    toolbarWidth.value = entries[0]?.contentRect.width ?? 0
+  })
+  resizeObserver.observe(rootRef.value)
+})
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
+
+// Two tiers, measured against the real rendered markup (see the card for the
+// harness): full labels need 821px; icon-only alone (compact) needs 653px;
+// icon-only + Share/Upload-folder folded into "more" + a narrower search box
+// (veryCompact) needs 489px. Thresholds sit ABOVE each state's own measured
+// need, not at a round number picked by eye — 860 clears full's 821, and
+// veryCompact's 670 clears compact's OWN 653: without that second margin,
+// a width between compact's true floor (653) and a threshold picked too low
+// would fall into neither tier and overflow anyway, the exact bug this
+// replaces, just moved to a narrower range instead of removed.
+// `> 0` guards the one frame before the observer's first callback fires,
+// where an un-measured 0 would otherwise read as "narrower than everything".
+const compact = computed(() => toolbarWidth.value > 0 && toolbarWidth.value < 860)
+const veryCompact = computed(() => toolbarWidth.value > 0 && toolbarWidth.value < 670)
 
 const emit = defineEmits<{
   (
@@ -55,6 +93,9 @@ watch(searchText, (v) => {
 // Sort dropdown — a small self-contained popover (no PrimeVue Menu in the
 // bundle). A transparent fixed backdrop closes it on any outside click.
 const sortOpen = ref(false)
+// "More" popover — Share + Upload folder, only rendered at veryCompact
+// (see the template). Same self-contained-popover shape as sortOpen above.
+const moreOpen = ref(false)
 const SORT_KEYS: { key: SortKey; label: string }[] = [
   { key: 'name', label: 'files.sort.name' },
   { key: 'modified', label: 'files.sort.modified' },
@@ -78,17 +119,19 @@ const iconBtn =
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center justify-between gap-2">
+  <div ref="rootRef" class="flex items-center justify-between gap-2">
     <!-- LEFT: command groups -->
-    <div class="flex flex-wrap items-center gap-1">
+    <div class="flex items-center gap-1">
       <!-- New folder -->
       <button
         type="button"
         class="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--cn-text)] transition-colors hover:bg-[var(--cn-surface-hover)]"
+        :title="compact ? t('files.toolbar.new_folder') : undefined"
+        :aria-label="compact ? t('files.toolbar.new_folder') : undefined"
         @click="emit('action', 'new-folder')"
       >
         <AppIcon name="FolderPlus" :size="15" />
-        <span>{{ t('files.toolbar.new_folder') }}</span>
+        <span v-if="!compact">{{ t('files.toolbar.new_folder') }}</span>
       </button>
 
       <div class="mx-1 h-5 w-px bg-[var(--cn-border)]" />
@@ -134,7 +177,10 @@ const iconBtn =
       >
         <AppIcon name="Pencil" :size="15" />
       </button>
+      <!-- Folded into the "more" menu at veryCompact — see below the Upload
+           group, not removed, just relocated when there is no room. -->
       <button
+        v-if="!veryCompact"
         type="button"
         :class="iconBtn"
         :disabled="!oneSel"
@@ -163,11 +209,13 @@ const iconBtn =
           type="button"
           class="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--cn-text)] transition-colors hover:bg-[var(--cn-surface-hover)]"
           :aria-expanded="sortOpen"
+          :title="compact ? t('files.sort.label') : undefined"
+          :aria-label="compact ? t('files.sort.label') : undefined"
           @click="sortOpen = !sortOpen"
         >
           <AppIcon name="ArrowUpDown" :size="15" />
-          <span>{{ t('files.sort.label') }}</span>
-          <AppIcon name="ChevronDown" :size="12" />
+          <span v-if="!compact">{{ t('files.sort.label') }}</span>
+          <AppIcon v-if="!compact" name="ChevronDown" :size="12" />
         </button>
         <template v-if="sortOpen">
           <div class="fixed inset-0 z-40" @click="sortOpen = false" />
@@ -226,13 +274,19 @@ const iconBtn =
       <!-- Upload (primary) -->
       <button
         type="button"
-        class="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--cn-accent)] px-3 text-xs font-medium text-white transition-colors hover:bg-[var(--cn-accent-hover)]"
+        :class="[
+          'flex h-8 items-center gap-1.5 rounded-lg bg-[var(--cn-accent)] text-xs font-medium text-white transition-colors hover:bg-[var(--cn-accent-hover)]',
+          compact ? 'w-8 justify-center' : 'px-3',
+        ]"
+        :title="compact ? t('files.toolbar.upload') : undefined"
+        :aria-label="compact ? t('files.toolbar.upload') : undefined"
         @click="emit('action', 'upload')"
       >
         <AppIcon name="Upload" :size="14" />
-        <span>{{ t('files.toolbar.upload') }}</span>
+        <span v-if="!compact">{{ t('files.toolbar.upload') }}</span>
       </button>
       <button
+        v-if="!veryCompact"
         type="button"
         :class="iconBtn"
         :title="t('files.toolbar.upload_folder')"
@@ -241,6 +295,47 @@ const iconBtn =
       >
         <AppIcon name="FolderUp" :size="15" />
       </button>
+
+      <!-- "More" — Share + Upload folder, folded here only at veryCompact so
+           the row keeps fitting in one line instead of wrapping. Same
+           self-contained-popover shape as Sort above (fixed backdrop +
+           absolute panel), not a new pattern. -->
+      <div v-if="veryCompact" class="relative" @keydown.esc="moreOpen = false">
+        <button
+          type="button"
+          :class="iconBtn"
+          :aria-expanded="moreOpen"
+          :title="t('files.toolbar.more')"
+          :aria-label="t('files.toolbar.more')"
+          @click="moreOpen = !moreOpen"
+        >
+          <AppIcon name="MoreHorizontal" :size="15" />
+        </button>
+        <template v-if="moreOpen">
+          <div class="fixed inset-0 z-40" @click="moreOpen = false" />
+          <div
+            class="absolute right-0 top-9 z-50 w-40 rounded-[var(--cn-radius-sm)] border border-[var(--cn-border)] bg-[var(--cn-surface)] py-1 shadow-lg"
+          >
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-[var(--cn-text)] hover:bg-[var(--cn-surface-hover)] disabled:opacity-40"
+              :disabled="!oneSel"
+              @click="moreOpen = false; emit('action', 'share')"
+            >
+              <AppIcon name="Share2" :size="14" />
+              <span>{{ t('files.context.share') }}</span>
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-[var(--cn-text)] hover:bg-[var(--cn-surface-hover)]"
+              @click="moreOpen = false; emit('action', 'upload-folder')"
+            >
+              <AppIcon name="FolderUp" :size="14" />
+              <span>{{ t('files.toolbar.upload_folder') }}</span>
+            </button>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- RIGHT: search + details toggle -->
@@ -254,8 +349,12 @@ const iconBtn =
         <input
           v-model="searchText"
           type="text"
-          :placeholder="t('files.toolbar.search_placeholder')"
-          class="h-8 w-44 rounded-lg border border-[var(--cn-border)] bg-[var(--cn-surface)] pl-7 pr-2 text-xs text-[var(--cn-text)] focus:border-[var(--cn-accent)] focus:outline-none"
+          :placeholder="veryCompact ? '' : t('files.toolbar.search_placeholder')"
+          :title="t('files.toolbar.search_placeholder')"
+          :class="[
+            'h-8 rounded-lg border border-[var(--cn-border)] bg-[var(--cn-surface)] pl-7 pr-2 text-xs text-[var(--cn-text)] focus:border-[var(--cn-accent)] focus:outline-none',
+            veryCompact ? 'w-12' : 'w-44',
+          ]"
         />
       </div>
       <button
