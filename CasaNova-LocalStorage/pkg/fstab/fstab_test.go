@@ -15,7 +15,7 @@ const fstabContent = `
 `
 
 func TestFSTab(t *testing.T) {
-	fstab := &FStab{path: "/tmp/fstab"}
+	fstab := &FStab{path: t.TempDir() + "/fstab"}
 
 	err := os.WriteFile(fstab.path, []byte(fstabContent), 0o600)
 	assert.NilError(t, err)
