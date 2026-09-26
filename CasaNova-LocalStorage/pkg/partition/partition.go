@@ -181,12 +181,19 @@ func FormatPartitionAs(partitionDevice, fsType string) error {
 		return err
 	}
 
-	rootDev, err := devid.RootDevice()
-	if err != nil {
-		return fmt.Errorf("cannot verify root device safety: %w", err)
-	}
-	if devid.IsSameOrChild(rootDev, partitionDevice) {
-		return ErrFormatRootDevice
+	// Refuse to format the disk the system booted from -- and refuse just as
+	// firmly when which disk that is could not be determined.
+	//
+	// The error check this replaces looked like it covered that, and did not.
+	// devid.RootDevice returned ("", nil) -- a NIL error -- for a root it could
+	// not name, such as one on LVM or behind a /dev/root symlink, so the only
+	// thing left to catch it was IsSameOrChild against an empty string, which
+	// is false for every device. The guard passed and mkfs ran on the boot
+	// disk. ProbeRoot names that outcome instead of encoding it as an empty
+	// string, and Protects answers true for it.
+	root := devid.ProbeRoot()
+	if root.Protects(partitionDevice) {
+		return fmt.Errorf("%w: %s", ErrFormatRootDevice, root.Reason)
 	}
 
 	argv, ok := supportedMkfs[fsType]

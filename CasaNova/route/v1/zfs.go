@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -893,17 +892,23 @@ func PostZFSCreatePool(ctx echo.Context) error {
 		})
 	}
 
-	// Refuse to touch the system disk. getRootDevice returns "/dev/sdX"
-	// — every prefix-match rejection guards against also picking the
-	// partitions (/dev/sdX1, /dev/sdXp1).
-	if rootDev := zfsGetRootDevice(); rootDev != "" {
-		for _, d := range body.Devices {
-			if zfsIsSystemDisk(rootDev, d) {
-				return ctx.JSON(http.StatusForbidden, model.Result{
-					Success: common_err.SERVICE_ERROR,
-					Message: "refusing to create a pool on the system disk: " + d,
-				})
-			}
+	// Refuse to build a pool on the disk the system booted from -- and refuse
+	// just as firmly when which disk that is could not be determined.
+	//
+	// The guard used to be skipped entirely on an empty probe result
+	// (`if rootDev := ...; rootDev != ""`), and the probe returned empty for
+	// every root it could not name: one on LVM, one behind a /dev/root
+	// symlink, one on an md array. `zpool create` on the boot disk was allowed
+	// in exactly the cases where the check was needed most. ProbeRoot names
+	// that outcome instead of returning an empty string, and Protects refuses
+	// for it; see devid.RootStatus.
+	root := devid.ProbeRoot()
+	for _, d := range body.Devices {
+		if root.Protects(d) {
+			return ctx.JSON(http.StatusForbidden, model.Result{
+				Success: common_err.SERVICE_ERROR,
+				Message: fmt.Sprintf("refusing to create a pool on %s: %s", d, root.Reason),
+			})
 		}
 	}
 
@@ -1044,13 +1049,11 @@ func PostZFSReplace(ctx echo.Context) error {
 			Message: "old and new device must differ",
 		})
 	}
-	if rootDev := zfsGetRootDevice(); rootDev != "" {
-		if zfsIsSystemDisk(rootDev, body.NewDevice) {
-			return ctx.JSON(http.StatusForbidden, model.Result{
-				Success: common_err.SERVICE_ERROR,
-				Message: "refusing to use the system disk as a replacement vdev",
-			})
-		}
+	if root := devid.ProbeRoot(); root.Protects(body.NewDevice) {
+		return ctx.JSON(http.StatusForbidden, model.Result{
+			Success: common_err.SERVICE_ERROR,
+			Message: fmt.Sprintf("refusing to use %s as a replacement vdev: %s", body.NewDevice, root.Reason),
+		})
 	}
 	argv := []string{"replace"}
 	if body.Force {
@@ -1069,65 +1072,8 @@ func PostZFSReplace(ctx echo.Context) error {
 	})
 }
 
-// zfsIsSystemDisk reports whether dev is the disk carrying the root
-// filesystem, or one of its partitions. Both ZFS guards ask this one
-// question, so it is one function and a test can exercise the decision the
-// handlers actually make.
-// It used to be `dev == rootDev || strings.HasPrefix(dev, rootDev)`, and a
-// prefix match is not a device-identity match. It was wrong in both
-// directions: /dev/mmcblk0 is not a prefix of the mangled "/dev/mmcblk0p"
-// this function was handed, so a pool on the boot card was ALLOWED; and
-// /dev/sda is a string prefix of /dev/sdaa, the 27th disk a NAS with an
-// expander really can have, so an unrelated disk was refused. devid encodes
-// the two rules the kernel actually uses to build a partition node from a
-// disk node. Same fix, same package, as the format guards in
-// CasaNova-LocalStorage.
-func zfsIsSystemDisk(rootDev, dev string) bool {
-	return devid.IsSameOrChild(rootDev, dev)
-}
-
-// zfsGetRootDevice reads /proc/self/mountinfo for the device that backs
-// `/`, then strips any partition suffix so the returned string matches
-// "/dev/sdX" rather than "/dev/sdX2". Returns "" when discovery fails —
-// callers treat that as "skip the system-disk check" rather than
-// "refuse everything", because a missing rootfs probe shouldn't lock
-// the operator out of pool creation entirely.
-func zfsGetRootDevice() string {
-	data, err := os.ReadFile("/proc/self/mountinfo")
-	if err != nil {
-		return ""
-	}
-	return zfsRootDeviceFrom(string(data))
-}
-
-// zfsRootDeviceFrom is the parsing half of zfsGetRootDevice, split out so the
-// device layouts this build machine will never boot -- eMMC, SD card, NVMe --
-// can be tested rather than assumed. Same seam, same reason, as
-// devid.RootDeviceFrom.
-func zfsRootDeviceFrom(data string) string {
-	for _, line := range strings.Split(data, "\n") {
-		// Each mountinfo line has the mount point in the 5th field.
-		fields := strings.Fields(line)
-		if len(fields) < 10 {
-			continue
-		}
-		if fields[4] != "/" {
-			continue
-		}
-		// Last field is "source device path" after the " - <fstype>" marker.
-		for i, f := range fields {
-			if f == "-" && i+2 < len(fields) {
-				dev := fields[i+2]
-				// Reduce to the whole disk. This was a third hand-rolled
-				// copy of that rule -- trim trailing digits, with an nvme
-				// special case -- and it mangled every family whose disk
-				// name already ends in a digit: /dev/mmcblk0p2 became
-				// "/dev/mmcblk0p". devid knows the families and the two
-				// naming rules, and returns "" for a root that is not a
-				// device node, which callers already read as "cannot tell".
-				return devid.WholeDisk(dev)
-			}
-		}
-	}
-	return ""
-}
+// The question "is this device the disk the system booted from?" used to live
+// here as zfsIsSystemDisk + zfsGetRootDevice + zfsRootDeviceFrom -- the fourth
+// hand-rolled copy of it in the tree, and the fourth to answer "" for a root it
+// could not name. It is now devid.ProbeRoot().Protects, one implementation for
+// all four guards, whose "cannot tell" refuses instead of passing.

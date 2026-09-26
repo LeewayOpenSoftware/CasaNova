@@ -245,9 +245,16 @@ func PostAddStorage(ctx echo.Context) error {
 		// PutFormatStorage already has. Without it, POST /v1/storage
 		// {"path":"/dev/sda1","format":true} on a box booting from /dev/sda
 		// unmounts /boot/efi and rewrites the partition table → unbootable.
-		rootDev, _ := devid.RootDevice()
-		if devid.IsSameOrChild(rootDev, path) {
-			return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format/partition the system disk"})
+		//
+		// The probe answers one of three things, and "I could not tell which
+		// disk / is on" refuses just as "it is this disk" does. It used to
+		// discard the error and compare against the empty string, which is
+		// false for every device: an LVM root, or any root the probe could not
+		// name, sailed straight through the guard.
+		root := devid.ProbeRoot()
+		logRootProbe(root)
+		if root.Protects(path) {
+			return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format/partition the system disk: " + root.Reason})
 		}
 
 		if err := service.MyService.Disk().UmountPointAndRemoveDir(currentDisk); err != nil {
@@ -432,9 +439,13 @@ func PutFormatStorage(ctx echo.Context) error {
 	// question first is what lets this handler still answer 403 instead of a
 	// generic 500, and keeps it from needlessly unmounting a data partition
 	// that happens to share the system disk before refusing anyway.
-	rootDev, _ := devid.RootDevice()
-	if devid.IsSameOrChild(rootDev, path) {
-		return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format system disk"})
+	// An unresolved root disk refuses too: see ProbeRoot's RootStatus for why
+	// "cannot tell" is the same answer as "yes" on a guard against wiping the
+	// disk the OS is running from.
+	root := devid.ProbeRoot()
+	logRootProbe(root)
+	if root.Protects(path) {
+		return ctx.JSON(http.StatusForbidden, model.Result{Success: common_err.FORMAT_ERROR, Message: "cannot format system disk: " + root.Reason})
 	}
 
 	diskInfo := service.MyService.Disk().GetDiskInfo(path)
@@ -551,4 +562,23 @@ func DeleteStorage(ctx echo.Context) error {
 	}()
 
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS)})
+}
+
+// logRootProbe records what the system-disk probe concluded, because the 403 it
+// leads to is seen by whoever made the request and not by whoever has to work
+// out why the box refuses to format anything.
+//
+// An unresolved root is logged as an error on purpose: it is not a passing
+// condition but a standing one -- every format and repartition request is
+// refused while it lasts -- and the reason string names what the probe saw so
+// it can be fixed rather than guessed at.
+func logRootProbe(root devid.Root) {
+	switch root.Status {
+	case devid.RootUnknown:
+		logger.Error("the root disk could not be determined; format and repartition requests are refused until it can be",
+			zap.String("reason", root.Reason))
+	case devid.RootDiskless:
+		logger.Info("the root filesystem is on no block device, so no disk is protected from formatting",
+			zap.String("reason", root.Reason))
+	}
 }
