@@ -84,6 +84,16 @@ described. Backported onto the 26.10 line from the 27.04 audit passes.
   a behaviour change, not a pure bug fix**: an app that legitimately takes
   longer than 5s (but less than 30s) to answer its health check now flips
   to unhealthy instead of passing.
+- **Compose-app health probe had no concurrency cap and a 30s timeout,
+  unlike the equivalent container probe.** `ComposeApp.HealthCheck()` never
+  received the hardening `CheckContainerHealth` got: no bound on how many
+  probes can run at once, and a timeout six times longer than the 5s used
+  elsewhere. Its route is gated by the same `PermAppView` permission guest
+  already holds — the identical amplification vector, left open for
+  compose apps. Ported the same 16-slot cap and 5s timeout (kept as a
+  separate cap from the container one, since the two surfaces have
+  different burst shapes). **Behaviour change**, same as above: a
+  legitimately slow compose app between 5s and 30s now flips unhealthy.
 
 ## [0.1.0] — 26.06 — first public release
 

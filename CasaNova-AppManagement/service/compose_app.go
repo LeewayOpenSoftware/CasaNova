@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1604,7 +1605,64 @@ func (a *ComposeApp) UpdateEventPropertiesFromStoreInfo(eventProperties map[stri
 	return nil
 }
 
+// composeHealthProbeConcurrency bounds how many compose-app health probes may
+// be in flight at once, across every caller. Same idiom, same reasoning, and
+// the same value as healthProbeConcurrency in container.go (0f505f4): a
+// healthy loopback GET answers in milliseconds, so the only way to hold a
+// slot for long is for the probed app to be unresponsive, which is exactly
+// when the box should stop opening more sockets.
+//
+// A separate cap from healthProbeConcurrency, not a shared one: containers
+// and compose apps are refreshed from different UI surfaces with different
+// burst shapes, and coupling their budgets would let one starve the other's
+// legitimate probe.
+const composeHealthProbeConcurrency = 16
+
+// composeHealthProbeWait is how long a caller queues for a slot before being
+// told the box is busy. A var, not a const, so tests can shorten it; nothing
+// in production writes it.
+var composeHealthProbeWait = 2 * time.Second
+
+// composeHealthProbeSem is the cap itself, in the same buffered-channel
+// idiom as healthProbeSem / eventSemaphore.
+var composeHealthProbeSem = make(chan struct{}, composeHealthProbeConcurrency)
+
+// errComposeHealthProbeBusy is returned instead of a probe result when the
+// cap is saturated. Callers map every error to 503, which is the honest
+// code: the health of the app is unknown, not known-bad.
+var errComposeHealthProbeBusy = errors.New("too many compose app health checks in flight, try again")
+
+// acquireComposeHealthProbe takes a slot in the compose-app health-probe cap,
+// waiting at most composeHealthProbeWait. It returns the release function on
+// success. Waiting bounded and then refusing is the point: waiting forever
+// would only move the amplification from sockets to the queue.
+func acquireComposeHealthProbe() (func(), error) {
+	timer := time.NewTimer(composeHealthProbeWait)
+	defer timer.Stop()
+
+	select {
+	case composeHealthProbeSem <- struct{}{}:
+		return func() { <-composeHealthProbeSem }, nil
+	case <-timer.C:
+		return nil, errComposeHealthProbeBusy
+	}
+}
+
 func (a *ComposeApp) HealthCheck() (bool, error) {
+	// The cap is taken BEFORE StoreInfo, not just around the HTTP probe.
+	// Both halves of this function are work a caller with nothing but
+	// PermAppView can ask for an unbounded number of times: StoreInfo reads
+	// app metadata, and the probe opens a socket it may hold for the full
+	// timeout. Capping only the second half would leave the same lever open
+	// one call earlier.
+	release, err := acquireComposeHealthProbe()
+	if err != nil {
+		logger.Error("refusing compose app health check, probe cap saturated",
+			zap.String("name", a.Name), zap.Int("cap", composeHealthProbeConcurrency))
+		return false, err
+	}
+	defer release()
+
 	storeInfo, err := a.StoreInfo(false)
 	if err != nil {
 		return false, err
@@ -1647,7 +1705,13 @@ func (a *ComposeApp) HealthCheck() (bool, error) {
 	logger.Info("checking compose app health at the specified web port...", zap.String("name", a.Name), zap.Any("url", url))
 
 	client := resty.New()
-	client.SetTimeout(30 * time.Second)
+	// 5s, same as container.go's CheckContainerHealth (0f505f4): a container
+	// that cannot answer a loopback GET in five seconds is not healthy by
+	// any definition this endpoint reports. Concurrency is capped too, at
+	// the top of this function (composeHealthProbeConcurrency): together
+	// they put a constant ceiling on outstanding probe-seconds that no
+	// number of callers can raise.
+	client.SetTimeout(5 * time.Second)
 	client.SetHeader("Accept", "text/html")
 	// Health checks target local containers which may use self-signed certs.
 	// Allow TLS 1.2+ but skip verify for localhost-only health probes.
