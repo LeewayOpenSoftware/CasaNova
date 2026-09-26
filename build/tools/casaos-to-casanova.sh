@@ -1427,6 +1427,7 @@ deploy_casanova() {
     mkdir -p /var/lib/casaos/db
     mkdir -p /var/lib/casaos/apps
     mkdir -p /var/lib/casaos/appstore
+    mkdir -p /var/lib/casaos/conf
     mkdir -p /var/log/casaos
 
     # Deploy app library catalog (store registry + app definitions)
