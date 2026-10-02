@@ -663,6 +663,26 @@ func Authorize(p Principal, path string, op Op) (string, error) {
 // FAIL-CLOSED: when the authority is not in force, every principal is refused
 // with POLICY_UNAVAILABLE. "Could not determine policy" never becomes "allow".
 func AuthorizeStorage(p Principal, op Op, path string) Decision {
+	return authorizeStorage(p, op, path, false)
+}
+
+// AuthorizeListing authorizes reading the NAMES and metadata of a directory's
+// entries — a listing, a count, a stat-only size walk — as opposed to reading
+// what is inside a file.
+//
+// It differs from AuthorizeStorage(p, OpRead, path) in exactly one place, and
+// only for an account whose system-disk switch is on: a kernel pseudo-
+// filesystem (rule 3) and a withheld credential file may be LISTED, because
+// their names and sizes are what browsing "/" means. Their CONTENTS stay
+// refused by AuthorizeStorage, with the reason stated, because reading them is
+// where the danger is: /proc/kcore, a sysfs attribute whose read wakes
+// hardware, the appliance's own signing key. An operator DENY still wins, and
+// with the switch off this is AuthorizeStorage(p, OpRead, path) exactly.
+func AuthorizeListing(p Principal, path string) Decision {
+	return authorizeStorage(p, OpRead, path, true)
+}
+
+func authorizeStorage(p Principal, op Op, path string, listing bool) Decision {
 	global.maybeRefresh()
 
 	global.mu.RLock()
@@ -699,7 +719,32 @@ func AuthorizeStorage(p Principal, op Op, path string) Decision {
 		// switch cannot promote any of them, which is the property the
 		// package's contract requires of every allow.
 		if d.Reason == ReasonOutsideAuthorizedStorage && systemDiskReads(p, op) {
+			if !listing {
+				if w, ok := systemDiskWithheld(clean, resolved); ok {
+					return w
+				}
+			}
 			return systemDiskDecision(clean, resolved)
+		}
+		// Rule 3 for a LISTING by a switched-on account. Only the reason code
+		// SYSTEM_LOCATION from a readable mount table qualifies: when the
+		// table could not be read the authority cannot tell what is mounted
+		// there, and that refusal stands. Rule 4 is evaluated here explicitly
+		// because evaluateStorage returned before reaching it.
+		if listing && d.Reason == ReasonSystemLocation && d.Rule != "system:unverifiable" &&
+			systemDiskReads(p, op) {
+			if deny := pol.explicitDeny(clean, resolved); deny != nil {
+				return *deny
+			}
+			sd := systemDiskDecision(clean, resolved)
+			sd.Rule = "system-disk-access+list:" + strings.TrimPrefix(d.Rule, "system:")
+			sd.Detail = "this account has the system-disk switch on: the entries of this kernel filesystem may be listed, but not read"
+			return sd
+		}
+		// The same rule 3 refusal for a READ, said so the switched-on account
+		// learns why it can browse here but not open anything.
+		if !listing && d.Reason == ReasonSystemLocation && systemDiskReads(p, op) {
+			d.Detail += "; with the system-disk switch its entries can be listed, but its files are never read: kernel pseudo-files can expose memory or act on hardware"
 		}
 		return d
 	}

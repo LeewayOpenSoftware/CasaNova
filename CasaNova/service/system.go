@@ -397,6 +397,13 @@ func (c *systemService) GetDirPath(path string) ([]model.Path, error) {
 		for _, l := range ls {
 			filePath := filepath.Join(path, l.Name())
 			tempFile, err := l.Info()
+			if errors.Is(err, os.ErrNotExist) {
+				// Gone between readdir and stat. Routine in /proc (a process
+				// exits) and in /tmp; failing the whole listing for it made
+				// /proc, now browsable with the system-disk switch, fail at
+				// random.
+				continue
+			}
 			if err != nil {
 				logger.Error("when read dir", zap.Error(err))
 				return []model.Path{}, err

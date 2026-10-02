@@ -35,10 +35,18 @@ import (
 //   - It does not permit writing. Only non-mutating operations are widened; a
 //     write outside authorized storage is still refused, and writing inside it
 //     still needs a root plus a grant exactly as before.
-//   - It does not touch rule 3. /proc, /sys and the rest stay refused with
-//     SYSTEM_LOCATION for everyone, because the package's own contract says an
-//     allow must never override that: a switch that could would turn this into
-//     a disable-security control.
+//   - It does not let anyone READ what is in a kernel pseudo-filesystem (rule
+//     3). /proc, /sys, /dev and the rest may be LISTED by a switched-on account
+//     (AuthorizeListing) — their entries are part of "the whole disk from /" —
+//     but opening a file there stays SYSTEM_LOCATION for everyone: /proc/kcore
+//     is the machine's memory, a sysfs attribute read can wake hardware (an
+//     IIO read froze a Surface for seconds), and device nodes are raw disks
+//     and watchdogs. An allow that could promote those reads would turn this
+//     into a disable-security control.
+//   - It does not hand out the appliance's own credentials. The JWT signing
+//     key and the user databases are withheld (systemDiskWithheld): reading
+//     the signing key is not a read, it is the ability to mint an
+//     administrator's token, and the switch can be given to non-admins.
 //   - It does not touch rule 4. An operator DENY still wins, so a subtree an
 //     administrator excluded stays excluded for switched-on accounts too.
 //   - It is never available to a guest. Enforced when the switch is set AND
@@ -128,6 +136,11 @@ func SystemDiskPrincipals() []string {
 	return out
 }
 
+// SystemDiskReads reports whether the switch widens op for p: the account has
+// it on, is not a guest, and op does not mutate. Handlers use it to decide
+// whether the legacy blocked-prefix sanitizer applies to a read at all.
+func SystemDiskReads(p Principal, op Op) bool { return systemDiskReads(p, op) }
+
 // systemDiskReads reports whether p may perform op by virtue of the switch.
 //
 // Callers must hold no lock; it takes the read lock itself.
@@ -184,4 +197,78 @@ func systemDiskDecision(clean, resolved string) Decision {
 		ConfineRoot: "/",
 		Resolved:    resolved,
 	}
+}
+
+// withheldPaths are files and subtrees whose CONTENTS the switch never opens,
+// even though they lie outside authorized storage and the account may list
+// their names. Each is a credential of the appliance or of the host: reading it
+// grants more than reading. They are matched on both the requested and the
+// resolved form, so a symlink to one is withheld too.
+var withheldPaths = []string{
+	// The CasaNova data path: the JWT signing key and the user and app
+	// databases live directly in it or in db/ depending on the install.
+	"/var/lib/casaos/db",
+	"/var/lib/casaos/jwt_ec_private.pem",
+	"/var/lib/casaos/user.db",
+	"/var/lib/casaos/casaOS.db",
+	// Host password hashes.
+	"/etc/shadow", "/etc/shadow-", "/etc/gshadow", "/etc/gshadow-",
+}
+
+// withheldNames are the same secrets matched by file name, for an install whose
+// DBPath was configured somewhere else. -wal/-shm/-journal are the SQLite
+// companions, which hold recent rows of the same database.
+var withheldNames = []string{"jwt_ec_private.pem", "user.db", "casaOS.db"}
+
+// isWithheld reports whether path is one of the secrets above.
+func isWithheld(path string) (string, bool) {
+	for _, w := range withheldPaths {
+		if within(w, path) {
+			return w, true
+		}
+	}
+	if st := stateDir(); st != "" && within(st, path) {
+		return st, true
+	}
+	base := filepath.Base(path)
+	for _, n := range withheldNames {
+		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+			if base == n+suffix {
+				return path, true
+			}
+		}
+	}
+	// SSH host private keys: ssh_host_<type>_key (the .pub halves are public).
+	if filepath.Dir(path) == "/etc/ssh" && strings.HasPrefix(base, "ssh_host_") && strings.HasSuffix(base, "_key") {
+		return path, true
+	}
+	return "", false
+}
+
+// systemDiskWithheld is the refusal for opening a withheld secret through the
+// switch. SYSTEM_LOCATION because, like a pseudo-filesystem, it is a place the
+// file manager never treats as ordinary storage and no configuration changes
+// that; the Rule names which secret so an audit log is unambiguous.
+func systemDiskWithheld(clean, resolved string) (Decision, bool) {
+	hit, ok := isWithheld(clean)
+	if !ok {
+		hit, ok = isWithheld(resolved)
+	}
+	if !ok {
+		return Decision{}, false
+	}
+	return Decision{
+		Reason:     ReasonSystemLocation,
+		Rule:       "withheld:" + hit,
+		Detail:     "this file holds a credential of the appliance or the host; the system-disk switch lets it be listed but never read",
+		Remediable: false,
+	}, true
+}
+
+// stateDir is the authority's own state directory (grants, rules, this
+// switch), read under the lock.
+func stateDir() string {
+	global.mu.RLock()
+	defer global.mu.RUnlock()
+	return global.dir
 }

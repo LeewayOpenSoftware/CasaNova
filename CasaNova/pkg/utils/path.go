@@ -237,6 +237,28 @@ func sanitizeLexical(path string) (string, error) {
 	return cleaned, nil
 }
 
+// CleanFilePathForSystemDiskRead is sanitizeLexical WITHOUT the blocked-prefix
+// list: cleaning, the empty check and the null-byte guard only.
+//
+// It exists for one caller shape: a READ by an account whose system-disk switch
+// is on. For that account the blocked-prefix list is exactly the rule the switch
+// lifts — "/etc, /usr, /var… are not yours to see" — and leaving it in front of
+// the authority made the switch a no-op for every one of those directories. The
+// boundary does not disappear: storageauth still judges the resolved path,
+// refuses kernel pseudo-filesystems and withheld secrets, honours operator
+// DENY, and the switch never applies to a write. Every other caller keeps
+// SanitizeFilePath.
+func CleanFilePathForSystemDiskRead(path string) (string, error) {
+	if path == "" {
+		return "", errors.New("path cannot be empty")
+	}
+	cleaned := FixAndCleanPath(path)
+	if strings.ContainsRune(cleaned, 0) {
+		return "", errors.New("path contains invalid characters")
+	}
+	return cleaned, nil
+}
+
 // checkResolvedTarget runs the blocklist against where a path really lands on
 // disk. The lexical check alone is not enough: a symlink planted inside an
 // allowed area (/DATA/x -> /etc) walks straight past it, because the requested

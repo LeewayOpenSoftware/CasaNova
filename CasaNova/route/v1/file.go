@@ -91,6 +91,52 @@ func validatePathWith(ctx echo.Context, raw string, sanitize func(string) (strin
 	return authorizePathWith(ctx, raw, sanitize, opForSanitizer(sanitize))
 }
 
+// readPath validates a path for a READ: listing=true for the names and
+// metadata of a directory (list, count, stat-only size), false for contents
+// (preview, download, image).
+//
+// With the account's system-disk switch OFF this is validatePath, byte for
+// byte — same sanitizer, same op — so nothing changes for anyone who has not
+// been given whole-disk access.
+//
+// With it ON, the legacy blocked-prefix sanitizer is skipped and the decision
+// is storageauth's alone. That list is precisely the "not the system disk" rule
+// the switch exists to lift; in front of the authority it answered 400 "access
+// to /etc is not allowed" before the switch was ever consulted, and the
+// handlers that asked for read|write never reached the switch either, since it
+// widens reads only. The decision is returned so a caller can see that access
+// came from the switch (ALLOWED_SYSTEM_DISK) rather than from storage.
+func readPath(ctx echo.Context, raw string, listing bool) (string, storageauth.Decision, error) {
+	p := principalFrom(ctx)
+	if !storageauth.SystemDiskReads(p, storageauth.OpRead) {
+		clean, err := validatePath(ctx, raw)
+		return clean, storageauth.Decision{}, err
+	}
+	if raw == "" {
+		return "", storageauth.Decision{}, echo.NewHTTPError(http.StatusBadRequest, model.Result{
+			Success: common_err.INVALID_PARAMS,
+			Message: common_err.GetMsg(common_err.INVALID_PARAMS),
+		})
+	}
+	clean, err := utils.CleanFilePathForSystemDiskRead(raw)
+	if err != nil {
+		return "", storageauth.Decision{}, echo.NewHTTPError(http.StatusBadRequest, model.Result{
+			Success: common_err.INVALID_PARAMS,
+			Message: err.Error(),
+		})
+	}
+	var d storageauth.Decision
+	if listing {
+		d = storageauth.AuthorizeListing(p, clean)
+	} else {
+		d = storageauth.AuthorizeStorage(p, storageauth.OpRead, clean)
+	}
+	if !d.Allowed {
+		return "", d, storageDenied(d)
+	}
+	return d.Path, d, nil
+}
+
 // principalFrom builds the identity a storage decision is made for out of the
 // request context the JWT middleware populated.
 func principalFrom(ctx echo.Context) storageauth.Principal {
@@ -339,7 +385,7 @@ func GetFilerContent(ctx echo.Context) error {
 	if err := requirePerm(ctx, rbac.PermFileRead); err != nil {
 		return err
 	}
-	filePath, errResp := validatePath(ctx, ctx.QueryParam("path"))
+	filePath, _, errResp := readPath(ctx, ctx.QueryParam("path"), false)
 	if errResp != nil {
 		return errResp
 	}
@@ -432,9 +478,25 @@ func GetDownloadFile(ctx echo.Context) error {
 	// as part of a comma-separated batch.
 	list := make([]string, 0, len(rawList))
 	for _, v := range rawList {
-		clean, errResp := validatePath(ctx, v)
+		clean, d, errResp := readPath(ctx, v, false)
 		if errResp != nil {
 			return errResp
+		}
+		// A FOLDER reached only through the system-disk switch is not archived.
+		// The archive walks the tree without asking the authority per file, so
+		// it would carry exactly what the switch withholds — kernel pseudo-
+		// files (/proc/kcore is the machine's memory) and the appliance's
+		// credentials — and walk into every mount below it. Its files can each
+		// be downloaded; the refusal says so instead of producing a partial or
+		// unbounded archive.
+		if d.Reason == storageauth.ReasonAllowedSystemDisk {
+			if fi, serr := os.Stat(clean); serr == nil && fi.IsDir() {
+				return storageDenied(storageauth.Decision{
+					Reason: storageauth.ReasonSystemLocation,
+					Rule:   "system-disk-access:no-folder-archive",
+					Detail: "folders outside authorized storage cannot be downloaded as an archive; download their files individually",
+				})
+			}
 		}
 		if !file.Exists(clean) {
 			return ctx.JSON(common_err.SERVICE_ERROR, model.Result{
@@ -540,7 +602,7 @@ func GetDownloadSingleFile(ctx echo.Context) error {
 	if err := requirePerm(ctx, rbac.PermFileRead); err != nil {
 		return err
 	}
-	filePath, errResp := validatePath(ctx, ctx.QueryParam("path"))
+	filePath, _, errResp := readPath(ctx, ctx.QueryParam("path"), false)
 	if errResp != nil {
 		return errResp
 	}
@@ -617,7 +679,7 @@ func DirPath(ctx echo.Context) error {
 		return err
 	}
 	var req ListReq
-	cleanPath, errResp := validatePath(ctx, ctx.QueryParam("path"))
+	cleanPath, _, errResp := readPath(ctx, ctx.QueryParam("path"), true)
 	if errResp != nil {
 		return errResp
 	}
@@ -1540,7 +1602,15 @@ func GetFileImage(ctx echo.Context) error {
 	t := ctx.QueryParam("type")
 	path := ctx.QueryParam("path")
 
-	cleanPath, err := authorizePath(ctx, path, storageauth.OpRead)
+	// Switch off: exactly the check this handler always made (read only, not
+	// validatePath's read|write). Switch on: readPath, like the other reads.
+	var cleanPath string
+	var err error
+	if storageauth.SystemDiskReads(principalFrom(ctx), storageauth.OpRead) {
+		cleanPath, _, err = readPath(ctx, path, false)
+	} else {
+		cleanPath, err = authorizePath(ctx, path, storageauth.OpRead)
+	}
 	if err != nil {
 		return err
 	}
@@ -1704,7 +1774,7 @@ func GetSize(ctx echo.Context) error {
 	if err := ctx.Bind(&json); err != nil {
 		return ctx.JSON(http.StatusBadRequest, model.Result{Success: common_err.INVALID_PARAMS, Message: err.Error()})
 	}
-	path, errResp := validatePath(ctx, json["path"])
+	path, _, errResp := readPath(ctx, json["path"], true)
 	if errResp != nil {
 		return errResp
 	}
@@ -1751,7 +1821,7 @@ func GetFileCount(ctx echo.Context) error {
 	if err := ctx.Bind(&json); err != nil {
 		return ctx.JSON(http.StatusBadRequest, model.Result{Success: common_err.INVALID_PARAMS, Message: err.Error()})
 	}
-	path, errResp := validatePath(ctx, json["path"])
+	path, _, errResp := readPath(ctx, json["path"], true)
 	if errResp != nil {
 		return errResp
 	}

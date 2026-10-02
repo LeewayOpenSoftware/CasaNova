@@ -291,15 +291,8 @@ func (p *policy) evaluateStorage(clean, resolved string) Decision {
 	// Rule 4 — an explicit DENY covering EITHER form wins. Checking the
 	// resolved form too means a link cannot be used to slip out from under a
 	// denial that names the real location.
-	for _, r := range p.rules {
-		if r.Access == AccessDeny && (within(r.Path, clean) || within(r.Path, resolved)) {
-			return Decision{
-				Reason:     ReasonExplicitlyDenied,
-				Rule:       r.ID,
-				Detail:     "an administrator has denied access to this location",
-				Remediable: true,
-			}
-		}
+	if deny := p.explicitDeny(clean, resolved); deny != nil {
+		return *deny
 	}
 
 	// Rules 5-6 — BOTH the requested path and where it really lands must be
@@ -343,6 +336,23 @@ func (p *policy) evaluateStorage(clean, resolved string) Decision {
 		Detail:     "this location is outside the storage CasaNova is authorized to manage",
 		Remediable: true,
 	}
+}
+
+// explicitDeny is rule 4 on its own: the operator DENY covering either form of
+// the path, or nil. Separate so the system-disk listing exception, which is
+// decided after rule 3 has already returned, can still be overruled by it.
+func (p *policy) explicitDeny(clean, resolved string) *Decision {
+	for _, r := range p.rules {
+		if r.Access == AccessDeny && (within(r.Path, clean) || within(r.Path, resolved)) {
+			return &Decision{
+				Reason:     ReasonExplicitlyDenied,
+				Rule:       r.ID,
+				Detail:     "an administrator has denied access to this location",
+				Remediable: true,
+			}
+		}
+	}
+	return nil
 }
 
 // firstAllow returns the most specific ALLOW rule covering path, or nil.
