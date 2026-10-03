@@ -42,6 +42,7 @@ onMounted(() => {
   // the two it is -- the role in the token is not authority over what the
   // backend will actually allow.
   void users.refreshSystemDisk()
+  void users.refreshSystemSearch()
 })
 
 // ----- System disk access -----
@@ -60,9 +61,37 @@ async function onSystemDiskChange(u: UserEntry, next: boolean) {
   if (!canHoldSystemDisk(u)) return
   systemDiskBusy.value = u.id
   try {
-    await users.setSystemDiskAccess({ id: u.id, role: u.role }, next)
+    const ok = await users.setSystemDiskAccess({ id: u.id, role: u.role }, next)
+    // Taking system-disk access away also clears the search switch that
+    // depends on it, so turning the disk back on later does not silently
+    // bring back whole-filesystem search with it.
+    if (ok && !next && users.hasSystemSearchAccess(u.id)) {
+      await users.setSystemSearchAccess({ id: u.id, role: u.role }, false)
+    }
   } finally {
     systemDiskBusy.value = null
+  }
+}
+
+// ----- Whole-filesystem search -----
+//
+// "May this account search outside authorized storage?" A separate switch,
+// OFF for everybody, never for guest, and only usable while the account has
+// system-disk access: a hit it cannot open is no use, and the backend refuses
+// to turn it on otherwise and stops honouring it when that is turned off.
+const systemSearchBusy = ref<string | null>(null)
+
+function canHoldSystemSearch(u: UserEntry): boolean {
+  return canHoldSystemDisk(u) && users.hasSystemDiskAccess(u.id)
+}
+
+async function onSystemSearchChange(u: UserEntry, next: boolean) {
+  if (next && !canHoldSystemSearch(u)) return
+  systemSearchBusy.value = u.id
+  try {
+    await users.setSystemSearchAccess({ id: u.id, role: u.role }, next)
+  } finally {
+    systemSearchBusy.value = null
   }
 }
 
@@ -222,6 +251,12 @@ function initial(username: string): string {
               >
                 {{ t('settings.users.col_system_disk') }}
               </th>
+              <th
+                v-if="users.systemSearchLoaded"
+                class="hidden max-w-[14rem] px-4 py-2 text-left font-medium normal-case lg:table-cell"
+              >
+                {{ t('settings.users.col_system_search') }}
+              </th>
               <th class="hidden px-4 py-2 text-left font-medium md:table-cell">
                 {{ t('settings.users.col_last_login') }}
               </th>
@@ -285,6 +320,28 @@ function initial(username: string): string {
                     class="text-xs text-[var(--cn-text-muted)]"
                   >
                     {{ t('settings.users.system_disk_never_guest') }}
+                  </span>
+                </div>
+              </td>
+              <td v-if="users.systemSearchLoaded" class="hidden px-4 py-3 lg:table-cell">
+                <div class="flex items-center gap-2">
+                  <ToggleSwitch
+                    :model-value="users.hasSystemSearchAccess(u.id) && canHoldSystemSearch(u)"
+                    :disabled="!canHoldSystemSearch(u) || systemSearchBusy === u.id"
+                    :aria-label="t('settings.users.system_search_aria', { user: u.username })"
+                    @update:model-value="(v: boolean) => onSystemSearchChange(u, v)"
+                  />
+                  <span
+                    v-if="!canHoldSystemDisk(u)"
+                    class="text-xs text-[var(--cn-text-muted)]"
+                  >
+                    {{ t('settings.users.system_disk_never_guest') }}
+                  </span>
+                  <span
+                    v-else-if="!users.hasSystemDiskAccess(u.id)"
+                    class="text-xs text-[var(--cn-text-muted)]"
+                  >
+                    {{ t('settings.users.system_search_needs_disk') }}
                   </span>
                 </div>
               </td>

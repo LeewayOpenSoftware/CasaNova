@@ -651,6 +651,9 @@ export interface FileSearchResponse {
   truncated: boolean
   query: string
   root: string
+  // "filesystem" when the account's whole-filesystem search switch was in
+  // effect, "storage" for the storage-confined search.
+  scope?: 'storage' | 'filesystem'
 }
 
 // ----- Archive operations -----

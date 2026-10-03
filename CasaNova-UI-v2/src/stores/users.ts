@@ -50,6 +50,12 @@ export const useUsersStore = defineStore('users', () => {
   // allowed to know" and the UI only renders the column for administrators.
   const systemDiskIds = ref<string[]>([])
   const systemDiskLoaded = ref(false)
+  // Accounts the whole-filesystem SEARCH switch is recorded on for. It only
+  // takes effect together with system-disk access -- the backend refuses to
+  // turn it on without it and ignores it once that is turned off -- so the
+  // view renders it disabled for an account without system-disk access.
+  const systemSearchIds = ref<string[]>([])
+  const systemSearchLoaded = ref(false)
   const fixtureMode = ref(false)
   const loading = ref(false)
 
@@ -290,6 +296,47 @@ export const useUsersStore = defineStore('users', () => {
     return true
   }
 
+  function hasSystemSearchAccess(id: string): boolean {
+    return systemSearchIds.value.includes(String(id))
+  }
+
+  async function refreshSystemSearch(): Promise<void> {
+    const result = await safeCall(async () => {
+      const res = await client.get<{ success: number; data: string[] }>(
+        '/v1/sys/system-search-access',
+      )
+      return res.data.data ?? []
+    })
+    if (result.error || !result.data) {
+      systemSearchIds.value = []
+      systemSearchLoaded.value = false
+      return
+    }
+    systemSearchIds.value = (result.data ?? []).map(String)
+    systemSearchLoaded.value = true
+  }
+
+  // Same unidirectional shape as setSystemDiskAccess: the local set moves only
+  // once the backend agreed.
+  async function setSystemSearchAccess(
+    user: { id: string; role: UserRole },
+    next: boolean,
+  ): Promise<boolean> {
+    const result = await safeCall(() =>
+      client.put(`/v1/sys/system-search-access/${user.id}`, {
+        enabled: next,
+        role: user.role,
+      }),
+    )
+    if (result.error) return false
+
+    const id = String(user.id)
+    systemSearchIds.value = next
+      ? [...systemSearchIds.value.filter((x) => x !== id), id]
+      : systemSearchIds.value.filter((x) => x !== id)
+    return true
+  }
+
   return {
     entries,
     sortedEntries,
@@ -307,5 +354,10 @@ export const useUsersStore = defineStore('users', () => {
     hasSystemDiskAccess,
     refreshSystemDisk,
     setSystemDiskAccess,
+    systemSearchIds,
+    systemSearchLoaded,
+    hasSystemSearchAccess,
+    refreshSystemSearch,
+    setSystemSearchAccess,
   }
 })

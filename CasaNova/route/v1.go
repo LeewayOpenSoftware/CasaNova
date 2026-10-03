@@ -215,6 +215,10 @@ func InitV1Router() http.Handler {
 			// ThroughTheGateway caught exactly that on the first attempt.
 			v1SysGroup.GET("/system-disk-access", v1.GetStorageSystemDiskAccess)
 			v1SysGroup.PUT("/system-disk-access/:id", v1.PutStorageSystemDiskAccess, strictJWT())
+			// Whole-filesystem name search: a second per-account switch that
+			// needs the one above (storageauth/systemsearch.go).
+			v1SysGroup.GET("/system-search-access", v1.GetStorageSystemSearchAccess)
+			v1SysGroup.PUT("/system-search-access/:id", v1.PutStorageSystemSearchAccess, strictJWT())
 
 			v1SysGroup.GET("/debug", v1.GetSystemConfigDebug) // debug — now behind JWT
 			v1SysGroup.GET("/diagnosis", v1.GetDiagnosis)     // self-diagnosis engine — now behind JWT
