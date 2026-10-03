@@ -15,9 +15,10 @@ type APPModel struct {
 
 // ServerModel holds the [server] section: virt-specific tunables.
 type ServerModel struct {
-	// LibvirtSocket is the path to the libvirt RPC unix socket. ZimaOS runs
-	// the modular libvirt daemons, so the default points at virtqemud's
-	// socket; the monolithic libvirtd socket is the documented fallback.
+	// LibvirtSocket is the libvirt RPC unix socket to try first. When it does
+	// not exist, libvirtconn.ResolveSocket falls back to virtqemud-sock
+	// (modular daemons, ZimaOS) and then libvirt-sock (monolithic libvirtd,
+	// stock Ubuntu/Debian).
 	LibvirtSocket string
 	// ImageDir is where downloaded ISOs / OS images land (oracle used
 	// /DATA/Downloads/ISO).
