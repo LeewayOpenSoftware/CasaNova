@@ -395,7 +395,7 @@ onUnmounted(() => { if (monPoll) clearInterval(monPoll) })
             </Button>
           </div>
 
-          <!-- config: point at a remote NUT server (e.g. 192.168.3.214) -->
+          <!-- config: point at a remote NUT server (e.g. 192.0.2.10) -->
           <div v-if="showUpsConfig" class="flex flex-col gap-2 rounded-lg border border-[var(--cn-border)] p-3">
             <p class="text-xs text-[var(--cn-text-muted)]">{{ t('settings.host.ups_remote_desc') }}</p>
             <div class="flex flex-wrap items-center gap-2">
@@ -446,7 +446,7 @@ onUnmounted(() => { if (monPoll) clearInterval(monPoll) })
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <label class="w-28 text-xs text-[var(--cn-text-muted)]">{{ t('settings.host.power_forza_url') }}</label>
-              <InputText v-model="powerCfg.forzaUrl" placeholder="http://192.168.3.214:9090" class="w-56 font-mono text-sm" />
+              <InputText v-model="powerCfg.forzaUrl" placeholder="http://192.0.2.10:9090" class="w-56 font-mono text-sm" />
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <label class="w-28 text-xs text-[var(--cn-text-muted)]">{{ t('settings.host.power_forza_token') }}</label>

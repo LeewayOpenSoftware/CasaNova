@@ -62,7 +62,7 @@ func TestPutUPSConfigSurvivesAReadOnlyDestinationFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, rec := upsConfigTestContext(t, `{"host":"192.168.3.214","upsName":"ups"}`)
+	ctx, rec := upsConfigTestContext(t, `{"host":"192.0.2.10","upsName":"ups"}`)
 	if err := PutUPSConfig(ctx); err != nil {
 		t.Fatalf("PutUPSConfig returned an error: %v", err)
 	}
@@ -78,8 +78,8 @@ func TestPutUPSConfigSurvivesAReadOnlyDestinationFile(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("saved config is not valid JSON: %v (content: %q)", err, raw)
 	}
-	if got.Host != "192.168.3.214" || got.UPSName != "ups" {
-		t.Fatalf("saved config = %+v, want host=192.168.3.214 upsName=ups", got)
+	if got.Host != "192.0.2.10" || got.UPSName != "ups" {
+		t.Fatalf("saved config = %+v, want host=192.0.2.10 upsName=ups", got)
 	}
 }
 

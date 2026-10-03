@@ -68,7 +68,7 @@ func withDeleteUserFake(t *testing.T, byID map[string]dbmodel.UserDBModel) *fake
 	return fake
 }
 
-// THE GAP GOD FOUND: a sole admin stored as the legacy string "administrator"
+// THE GAP THE REVIEW FOUND: a sole admin stored as the legacy string "administrator"
 // (not literally "admin") must still be protected — resolveEffectiveRole
 // mints an admin token for that row, so it IS the box's only admin
 // operationally, even though a literal role=='admin' comparison would never

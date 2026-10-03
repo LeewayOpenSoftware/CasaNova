@@ -86,6 +86,10 @@ func setupLadderEnv(t *testing.T, running []string) *ladderTestEnv {
 
 func ladderCfg() PowerConfig {
 	c := defaultPowerConfig()
+	// fetchForza is always mocked in these tests, but pollOnce now treats an
+	// empty ForzaURL as "no UPS configured" and skips the fetch entirely —
+	// these tests are exercising a configured UPS, so give it a fixture URL.
+	c.ForzaURL = "http://192.0.2.10:9090"
 	c.Enabled = true
 	c.SavingsLadder = true
 	c.SpindownDisks = []string{"sda", "sdb"}

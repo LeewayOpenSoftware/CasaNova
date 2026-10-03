@@ -53,6 +53,10 @@ func setupPowerOffEnv(t *testing.T, f *fakePowerOff) {
 
 func shutdownCfg() PowerConfig {
 	c := defaultPowerConfig()
+	// fetchForza is always mocked in these tests, but pollOnce now treats an
+	// empty ForzaURL as "no UPS configured" and skips the fetch entirely —
+	// these tests are exercising a configured UPS, so give it a fixture URL.
+	c.ForzaURL = "http://192.0.2.10:9090"
 	c.Enabled = true
 	c.AutoShutdown = true
 	return c
@@ -549,7 +553,12 @@ func TestPowerConfigNormalizesTheValveLimit(t *testing.T) {
 	if c.LadderMaxUnconfirmedMin != defaultLadderMaxUnconfirmedMin {
 		t.Fatalf("LadderMaxUnconfirmedMin = %d, want %d", c.LadderMaxUnconfirmedMin, defaultLadderMaxUnconfirmedMin)
 	}
-	if c.ShutdownConfirm != 2 || c.ForzaURL == "" || c.IdleWatts <= 0 || c.MaxWatts <= c.IdleWatts {
+	if c.ShutdownConfirm != 2 || c.IdleWatts <= 0 || c.MaxWatts <= c.IdleWatts {
 		t.Fatalf("normalization regressed the pre-existing knobs: %+v", c)
+	}
+	// ForzaURL has no default host: an empty UPS URL means "no UPS configured"
+	// and must normalize to itself, not get filled in behind the caller's back.
+	if c.ForzaURL != "" {
+		t.Fatalf("normalization invented a ForzaURL out of thin air: %+v", c)
 	}
 }
