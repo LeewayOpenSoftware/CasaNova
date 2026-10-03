@@ -92,3 +92,55 @@ func PutStorageSystemDiskAccess(ctx echo.Context) error {
 		Data:    storageauth.SystemDiskPrincipals(),
 	})
 }
+
+// GetStorageSystemSearchAccess lists the accounts the whole-filesystem search
+// switch is recorded on for. Administrator-only, like the system-disk switch.
+func GetStorageSystemSearchAccess(ctx echo.Context) error {
+	if err := requirePerm(ctx, rbac.PermUserManage); err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, model.Result{
+		Success: common_err.SUCCESS,
+		Message: common_err.GetMsg(common_err.SUCCESS),
+		Data:    storageauth.SystemSearchPrincipals(),
+	})
+}
+
+// PutStorageSystemSearchAccess sets the whole-filesystem search switch for one
+// account. Same body as the system-disk switch; turning it on is refused while
+// that account's system-disk switch is off (see storageauth/systemsearch.go).
+func PutStorageSystemSearchAccess(ctx echo.Context) error {
+	if err := requirePerm(ctx, rbac.PermUserManage); err != nil {
+		return err
+	}
+
+	id := strings.TrimSpace(ctx.Param("id"))
+	n, err := strconv.Atoi(id)
+	if err != nil || n <= 0 {
+		return ctx.JSON(http.StatusBadRequest, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: "account id must be a positive integer",
+		})
+	}
+
+	var body systemDiskAccessBody
+	if err := ctx.Bind(&body); err != nil {
+		return ctx.JSON(http.StatusBadRequest, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: "request body must be {\"enabled\": bool, \"role\": string}",
+		})
+	}
+
+	if err := storageauth.SetSystemSearchAccess(strconv.Itoa(n), body.Role, body.Enabled); err != nil {
+		return ctx.JSON(http.StatusBadRequest, model.Result{
+			Success: common_err.CLIENT_ERROR,
+			Message: err.Error(),
+		})
+	}
+
+	return ctx.JSON(http.StatusOK, model.Result{
+		Success: common_err.SUCCESS,
+		Message: common_err.GetMsg(common_err.SUCCESS),
+		Data:    storageauth.SystemSearchPrincipals(),
+	})
+}

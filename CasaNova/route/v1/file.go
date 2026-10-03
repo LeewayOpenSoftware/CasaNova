@@ -2368,6 +2368,15 @@ const (
 	searchTimeout = 30 * time.Second
 )
 
+// searchScopeName tells the client which search ran: "filesystem" when the
+// whole-filesystem switch was in effect, "storage" otherwise.
+func searchScopeName(s *storageauth.SearchScope) string {
+	if s != nil {
+		return "filesystem"
+	}
+	return "storage"
+}
+
 // FileSearchHit is one row in the search response. Mirrors the same
 // shape FilesListEntry uses in GetDirPath so the frontend can reuse
 // existing rendering code.
@@ -2377,6 +2386,37 @@ type FileSearchHit struct {
 	IsDir    bool   `json:"is_dir"`
 	Size     int64  `json:"size"`
 	Modified string `json:"modified"`
+}
+
+// confineSearchRoot is the storage-confined search's root check, unchanged from
+// before the whole-filesystem switch existed: the legacy sanitizer plus a root
+// under a storage mount.
+func confineSearchRoot(ctx echo.Context, root *string) error {
+	cleanRoot, errResp := validatePath(ctx, *root)
+	if errResp != nil {
+		return errResp
+	}
+	*root = cleanRoot
+	// Confine the walk to real storage roots. validatePath blocks system dirs
+	// but still permits "/" and "/home", from which the search would enumerate
+	// the entire filesystem's names/paths. Require root under a storage mount.
+	// utils.DataRoots is the same list the sanitizer consults, so adding a
+	// storage root in one place can't leave the search endpoint behind.
+	confined := false
+	for _, ar := range utils.DataRoots {
+		if *root == ar || strings.HasPrefix(*root, ar+"/") {
+			confined = true
+			break
+		}
+	}
+	if !confined {
+		// Returned, not written: the caller must stop, and ctx.JSON returns nil.
+		return echo.NewHTTPError(http.StatusForbidden, model.Result{
+			Success: common_err.INVALID_PARAMS,
+			Message: "search root must be under a storage path (/DATA, /mnt, /media)",
+		})
+	}
+	return nil
 }
 
 func GetFileSearch(ctx echo.Context) error {
@@ -2394,28 +2434,26 @@ func GetFileSearch(ctx echo.Context) error {
 			Message: "root and q are required",
 		})
 	}
-	cleanRoot, errResp := validatePath(ctx, root)
-	if errResp != nil {
-		return errResp
-	}
-	root = cleanRoot
-	// Confine the walk to real storage roots. validatePath blocks system dirs
-	// but still permits "/" and "/home", from which the search would enumerate
-	// the entire filesystem's names/paths. Require root under a storage mount.
-	// utils.DataRoots is the same list the sanitizer consults, so adding a
-	// storage root in one place can't leave the search endpoint behind.
-	confined := false
-	for _, ar := range utils.DataRoots {
-		if root == ar || strings.HasPrefix(root, ar+"/") {
-			confined = true
-			break
+	// Whole-filesystem search: an account with BOTH the system-disk switch and
+	// the search switch on may start anywhere it may list, and the walk is
+	// then authorized directory by directory (storageauth.SearchScope). Every
+	// other caller keeps the storage-confined search below, unchanged.
+	var scope *storageauth.SearchScope
+	if p := principalFrom(ctx); storageauth.WholeFilesystemSearch(p) {
+		cleanRoot, _, errResp := readPath(ctx, root, true)
+		if errResp != nil {
+			return errResp
 		}
-	}
-	if !confined {
-		return ctx.JSON(http.StatusForbidden, model.Result{
-			Success: common_err.INVALID_PARAMS,
-			Message: "search root must be under a storage path (/DATA, /mnt, /media)",
-		})
+		root = cleanRoot
+		scope = storageauth.NewSearchScope(p)
+		if !scope.Descend(root, root) {
+			return ctx.JSON(http.StatusForbidden, model.Result{
+				Success: common_err.INVALID_PARAMS,
+				Message: "search does not walk kernel filesystems (/proc, /sys, /dev) or locations this account cannot list",
+			})
+		}
+	} else if errResp := confineSearchRoot(ctx, &root); errResp != nil {
+		return errResp
 	}
 	limit, _ := strconv.Atoi(ctx.QueryParam("limit"))
 	if limit <= 0 || limit > searchMaxResults {
@@ -2448,6 +2486,9 @@ func GetFileSearch(ctx echo.Context) error {
 			}
 			return nil
 		}
+		if scope != nil && info.IsDir() && p != root && !scope.Descend(root, p) {
+			return filepath.SkipDir
+		}
 		visited++
 		if visited > searchMaxFiles || time.Now().After(deadline) {
 			truncated = true
@@ -2460,7 +2501,7 @@ func GetFileSearch(ctx echo.Context) error {
 			}
 			return nil
 		}
-		if strings.Contains(strings.ToLower(name), q) {
+		if strings.Contains(strings.ToLower(name), q) && (scope == nil || !scope.Hide(p)) {
 			hits = append(hits, FileSearchHit{
 				Name:     name,
 				Path:     p,
@@ -2491,6 +2532,7 @@ func GetFileSearch(ctx echo.Context) error {
 			"truncated": truncated,
 			"query":     q,
 			"root":      root,
+			"scope":     searchScopeName(scope),
 		},
 	})
 }

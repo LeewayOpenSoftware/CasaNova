@@ -317,6 +317,11 @@ type state struct {
 	// administrators included — is no whole-disk access. See systemdisk.go.
 	systemDisk map[string]struct{}
 
+	// systemSearch is the set of principal IDs the whole-filesystem search
+	// switch is recorded ON for. In effect only together with systemDisk; see
+	// systemsearch.go.
+	systemSearch map[string]struct{}
+
 	provisioned bool
 	validated   bool
 	derivedAt   time.Time
@@ -342,6 +347,7 @@ func SetStateDir(dir string) {
 	global.operatorAdd = nil
 	global.grants = nil
 	global.systemDisk = nil
+	global.systemSearch = nil
 	global.provisioned = false
 	global.validated = false
 	global.derivedAt = time.Time{}
@@ -387,6 +393,12 @@ func (s *state) provisionLocked() error {
 			fmt.Errorf("%s is unreadable (%w); refusing to run with an unknown policy", filepath.Join(s.dir, systemDiskFileName), sderr))
 	}
 	s.systemDisk = sd
+	ss, sserr := loadSystemDisk(filepath.Join(s.dir, systemSearchFileName))
+	if sserr != nil {
+		return s.failLocked("the system-search switch list must parse",
+			fmt.Errorf("%s is unreadable (%w); refusing to run with an unknown policy", filepath.Join(s.dir, systemSearchFileName), sserr))
+	}
+	s.systemSearch = ss
 
 	// Operator-declared roots are persistent configuration, never inferred.
 	add, err := loadRoots(filepath.Join(s.dir, rootsFileName))
