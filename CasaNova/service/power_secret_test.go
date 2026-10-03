@@ -25,7 +25,7 @@ func TestRedactedConfigNeverCarriesTheToken(t *testing.T) {
 	const secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 	p := &PowerOrchestrator{}
-	p.cfg = PowerConfig{ForzaURL: "http://192.168.3.214:9090", ForzaToken: secret}
+	p.cfg = PowerConfig{ForzaURL: "http://192.0.2.10:9090", ForzaToken: secret}
 
 	got := p.RedactedConfig()
 
@@ -55,7 +55,7 @@ func TestSetConfigTreatsAnEmptyTokenAsUnchanged(t *testing.T) {
 	const secret = "shared-forza-credential"
 
 	p := &PowerOrchestrator{}
-	p.cfg = PowerConfig{ForzaURL: "http://192.168.3.214:9090", ForzaToken: secret}
+	p.cfg = PowerConfig{ForzaURL: "http://192.0.2.10:9090", ForzaToken: secret}
 
 	// What the UI sends back after the user edits an unrelated field.
 	incoming := p.RedactedConfig()

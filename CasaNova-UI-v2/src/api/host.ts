@@ -306,7 +306,7 @@ export async function getUPSConfig(): Promise<UPSConfig> {
   return res.data.data
 }
 
-// Set a remote NUT host (e.g. 192.168.3.214) — empty host reverts to local.
+// Set a remote NUT host (e.g. 192.0.2.10) — empty host reverts to local.
 export async function setUPSConfig(host: string, upsName: string): Promise<UPSInfo> {
   const res = await client.put<{ success: number; data: UPSInfo }>(
     '/v1/sys/host/ups/config',

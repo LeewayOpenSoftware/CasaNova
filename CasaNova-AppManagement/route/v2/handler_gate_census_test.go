@@ -13,9 +13,9 @@ import (
 
 // Every HTTP handler in this package must carry an authorization gate.
 //
-// Ported from 27.04 (docs/design/per-app-grants.md §7, commit 50da9c3): Jim's
-// wave-5 census found nineteen of this package's forty-four methods with no
-// gate at all — not the wrong bit, none — identical in both release lines.
+// Ported from 27.04 (docs/design/per-app-grants.md §7): the census found
+// nineteen of this package's forty-four methods with no gate at all — not
+// the wrong bit, none — identical in both release lines.
 // The router's JWT middleware still refused anonymous callers, so they were
 // AUTHENTICATED but UNAUTHORIZED, and nothing failed: no build error, no
 // test, no log line. A handler that forgets its gate looks exactly like one

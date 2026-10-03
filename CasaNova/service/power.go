@@ -87,7 +87,7 @@ type PeerReportState struct {
 // PowerConfig is persisted at powerConfigFile. Disabled by default.
 type PowerConfig struct {
 	Enabled       bool     `json:"enabled"`       // master switch — false => observe only
-	ForzaURL      string   `json:"forzaUrl"`      // e.g. http://192.168.3.214:9090
+	ForzaURL      string   `json:"forzaUrl"`      // e.g. http://192.0.2.10:9090; empty = no UPS configured
 	AutoShutdown  bool     `json:"autoShutdown"`  // allow shutdown_now to actually power off
 	EssentialApps []string `json:"essentialApps"` // app/container names stopped LAST
 	// Number of consecutive shutdown_now polls required before acting, so a
@@ -128,7 +128,7 @@ const ladderValveRetryInterval = time.Minute
 func defaultPowerConfig() PowerConfig {
 	return PowerConfig{
 		Enabled:                 false,
-		ForzaURL:                "http://192.168.3.214:9090",
+		ForzaURL:                "",
 		AutoShutdown:            false,
 		EssentialApps:           []string{},
 		ShutdownConfirm:         2,
@@ -364,6 +364,15 @@ func (p *PowerOrchestrator) Start(ctx context.Context) {
 // delay until the next poll (adaptive: fast on battery, slow on mains).
 func (p *PowerOrchestrator) pollOnce() time.Duration {
 	cfg := p.Config()
+	if strings.TrimSpace(cfg.ForzaURL) == "" {
+		// No UPS configured — nothing to poll, nothing to report, and no
+		// fetch error to manufacture every cycle.
+		p.mu.Lock()
+		p.last = ForzaPower{}
+		p.lastErr = ""
+		p.mu.Unlock()
+		return 60 * time.Second
+	}
 	pw, err := fetchForza(cfg.ForzaURL)
 	p.mu.Lock()
 	// Refresh the "we are still on battery" evidence BEFORE anything else so

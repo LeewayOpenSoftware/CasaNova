@@ -29,7 +29,7 @@ func withRoster(t *testing.T, rows []dbmodel.UserDBModel) {
 	t.Cleanup(func() { service.MyService = prev })
 }
 
-// This is the row shape god's correction targeted: a legacy account whose
+// This is the row shape the review correction targeted: a legacy account whose
 // Role column literally says "administrator" — never "admin" — but resolves
 // to admin at token-mint time via resolveEffectiveRole (Wave 35-U / Role
 // Mint Parity). Counting by the literal string misses this account entirely.

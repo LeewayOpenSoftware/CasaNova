@@ -18,7 +18,7 @@ import (
 )
 
 // UPS status via NUT (upsc) or apcupsd (apcaccess). Supports a REMOTE NUT
-// server: many home labs run upsd on a dedicated box (here 192.168.3.214) and
+// server: many home labs run upsd on a dedicated box (here 192.0.2.10) and
 // every other host just queries it read-only. When a remote host is configured
 // we run `upsc <name>@<host>`; otherwise we probe the local daemon. host/name
 // are validated to a safe charset and passed as separate argv (no shell), so
@@ -68,7 +68,7 @@ func GetUPSConfig(ctx echo.Context) error {
 	return ctx.JSON(http.StatusOK, model.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: loadUPSConfig()})
 }
 
-// PUT /v1/sys/host/ups/config  body: {"host":"192.168.3.214","upsName":"ups"}
+// PUT /v1/sys/host/ups/config  body: {"host":"192.0.2.10","upsName":"ups"}
 func PutUPSConfig(ctx echo.Context) error {
 	if err := requirePerm(ctx, rbac.PermSystemConfig); err != nil {
 		return err

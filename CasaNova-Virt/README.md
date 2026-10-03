@@ -130,6 +130,3 @@ ordered after `casanova-gateway`, `casanova-message-bus` and **`virtqemud.socket
 (`Requires=`). It carries the mandatory `RuntimeDirectory=casanova casaos` +
 `RuntimeDirectoryMode=0755` + **`RuntimeDirectoryPreserve=yes`** — without the
 last, a restart wipes the shared `/run/casaos` and crash-loops the whole stack.
-
-> **Note:** do not deploy to the live server from here — the main agent reviews
-> and deploys.

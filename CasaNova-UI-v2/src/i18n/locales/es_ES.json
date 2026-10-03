@@ -1837,7 +1837,7 @@
       "ups_none": "No se detectó UPS. Configura un servidor NUT remoto si el tuyo corre en otro equipo.",
       "ups_configure": "Configurar",
       "ups_remote_desc": "Consulta un servidor NUT (upsd) remoto. Deja el host vacío para usar un UPS local.",
-      "ups_host_ph": "192.168.3.214",
+      "ups_host_ph": "192.0.2.10",
       "ups_name_ph": "nombre ups (opcional)",
       "ups_local": "Usar local",
       "ups_via": "vía {host}",

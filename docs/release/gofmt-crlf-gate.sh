@@ -5,8 +5,7 @@
 # Plain `gofmt -l` cannot tell these apart: a CRLF file is flagged for its
 # line endings even when the code inside it is correctly formatted, so on
 # this tree ~276-279 CRLF-only false positives bury the ~3 files per line
-# that are genuinely misformatted (measured: see
-# agents/jim-mthgxasm/crlf-gofmt-gate-2026-09-12.md in the hive).
+# that are genuinely misformatted (measured directly against this gate).
 #
 # A file is flagged HERE only if its content, with \r stripped, STILL
 # differs from gofmt's output on that same stripped content. That is a real
