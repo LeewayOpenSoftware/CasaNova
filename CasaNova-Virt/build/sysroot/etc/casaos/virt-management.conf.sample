@@ -7,9 +7,10 @@ LogSaveName=virt-management
 LogFileExt=log
 
 [server]
-# libvirt RPC unix socket. ZimaOS runs the modular libvirt daemons, so this
-# points at virtqemud's socket. For a monolithic libvirtd, use
-# /var/run/libvirt/libvirt-sock instead.
+# libvirt RPC unix socket to try FIRST. If it does not exist the service falls
+# back to /var/run/libvirt/virtqemud-sock (modular daemons, e.g. ZimaOS) and
+# then /var/run/libvirt/libvirt-sock (monolithic libvirtd, e.g. stock
+# Ubuntu/Debian), using the first that exists. Set this only to force one.
 LibvirtSocket=/var/run/libvirt/virtqemud-sock
 # Directory where installer ISOs / OS images are stored.
 ImageDir=/DATA/Downloads/ISO
