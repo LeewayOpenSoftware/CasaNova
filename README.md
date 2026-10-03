@@ -187,8 +187,11 @@ restructure self-update, and rebuild the frontend on Vue 3 + PrimeVue
 
 [icewhale]: https://github.com/IceWhaleTech
 
+## Credits
+
+Leeway Open Software, in collaboration with Claude and GPT. See [CREDITS.md](CREDITS.md).
+
 ## License
 
-Apache 2.0 — matching upstream CasaOS. See [LICENSE](LICENSE) if
-present (forked attribution is preserved on the About page either
-way).
+Apache 2.0 — matching upstream CasaOS. See [LICENSE](LICENSE) (forked attribution is also preserved on the
+About page).
