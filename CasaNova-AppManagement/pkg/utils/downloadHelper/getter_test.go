@@ -32,7 +32,15 @@ func TestDownload(t *testing.T) {
 			"can be exercised. This is a missing network, not a failing product.")
 	}
 
-	defer goleak.VerifyNone(t, goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start")) // https://github.com/census-instrumentation/opencensus-go/issues/1191
+	// The HTTP client keeps its idle keep-alive connection to github.com open
+	// after Download returns; its read/write loops are the transport's pool,
+	// not a leak of Download's. Ignore them so goleak only flags real leaks.
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"), // https://github.com/census-instrumentation/opencensus-go/issues/1191
+		goleak.IgnoreAnyFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreAnyFunction("net/http.(*persistConn).readLoop"),
+		goleak.IgnoreAnyFunction("net/http.(*persistConn).writeLoop"),
+	)
 
 	dst := t.TempDir()
 
