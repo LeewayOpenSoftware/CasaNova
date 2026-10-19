@@ -1,9 +1,9 @@
-# CasaNova 🦁
+<img width="2048" height="768" alt="server_identity" src="https://github.com/user-attachments/assets/64d08f18-d215-48d1-8542-aef2183d0d0f" />
 
 ### Your server. Your space. Your rules.
 <img width="1919" height="1002" alt="imagen" src="https://github.com/user-attachments/assets/7caf2204-4be6-4474-a071-0b046492d3f1" />
 
-**A new home for everything you self-host.**
+** CasaNova 🦁 A new home for everything you self-host.**
 <img width="1919" height="996" alt="imagen" src="https://github.com/user-attachments/assets/86e5a2f6-ba09-4738-b512-fb70f64c3645" />
 
 CasaNova is an open-source home server platform built on the foundations of [CasaOS](https://github.com/IceWhaleTech/CasaOS) and inspired by the possibilities of [ZimaOS](https://github.com/IceWhaleTech/ZimaOS).
