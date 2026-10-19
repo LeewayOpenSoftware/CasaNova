@@ -117,7 +117,7 @@ And we're still getting started.
 
 ## 🚀 Getting started
 
-### CasaNova 26.10 — Release 18.6.2
+### CasaNova 26.10 - Release 18.6.2
 
 **A new chapter for your home server.** 🦁
 
@@ -130,7 +130,7 @@ This release is another step toward a platform that feels familiar, gives you mo
 | Product version | **18.6.2** |
 | Release series | **26.10** |
 | Git tag | `v26.10` |
-| Release title | CasaNova 18.6.2 — RELEASE 26.10 |
+| Release title | CasaNova 18.6.2 - RELEASE 26.10 |
 | Platform | Linux x86_64 |
 
 For detailed changes and fixes, see [CHANGELOG.md](CHANGELOG.md) and the [GitHub Releases page](https://github.com/LeewayOpenSoftware/CasaNova/releases).
