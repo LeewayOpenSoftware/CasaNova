@@ -22,8 +22,6 @@ Whether you're running a small media server, experimenting with containers, or m
 
 ## ✨ A familiar experience, with new possibilities
 
-*Screenshot coming soon — CasaNova dashboard*
-
 CasaNova doesn't try to reinvent everything that made CasaOS special.
 
 Instead, it builds upon that experience with a refreshed interface, improvements beneath the surface, and a focus on making your server easier to manage as it grows.
