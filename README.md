@@ -1,8 +1,10 @@
 # CasaNova 🦁
 
 ### Your server. Your space. Your rules.
+<img width="1919" height="1002" alt="imagen" src="https://github.com/user-attachments/assets/7caf2204-4be6-4474-a071-0b046492d3f1" />
 
 **A new home for everything you self-host.**
+<img width="1919" height="996" alt="imagen" src="https://github.com/user-attachments/assets/86e5a2f6-ba09-4738-b512-fb70f64c3645" />
 
 CasaNova is an open-source home server platform built on the foundations of [CasaOS](https://github.com/IceWhaleTech/CasaOS) and inspired by the possibilities of [ZimaOS](https://github.com/IceWhaleTech/ZimaOS).
 
@@ -27,12 +29,14 @@ CasaNova doesn't try to reinvent everything that made CasaOS special.
 Instead, it builds upon that experience with a refreshed interface, improvements beneath the surface, and a focus on making your server easier to manage as it grows.
 
 ### 🖥️ A refreshed dashboard
+<img width="1917" height="990" alt="imagen" src="https://github.com/user-attachments/assets/2014a004-e849-4b5b-8e29-d42551777ec2" />
 
 A modern Vue 3 interface powered by Pinia and PrimeVue, designed to bring your server's essential controls into one place.
 
 Manage your environment from the browser, without making everyday tasks more complicated than they need to be.
 
 ### 📦 Your applications, your way
+<img width="1917" height="1001" alt="imagen" src="https://github.com/user-attachments/assets/5cbd6650-2d17-4740-97e9-b99d83fd5806" />
 
 Install and manage Docker applications and Compose stacks from a familiar interface.
 
@@ -41,6 +45,7 @@ CasaNova retains compatibility with CasaOS application metadata, including the `
 The CasaOS community App Store remains available by default, so you don't have to leave your favorite applications behind.
 
 ### 💾 Storage without the guesswork
+<img width="430" height="913" alt="imagen" src="https://github.com/user-attachments/assets/1479e240-f4e3-4f82-9dee-4d4711b99857" />
 
 Keep an eye on your disks, mounts, and storage configuration.
 
@@ -55,6 +60,7 @@ CasaNova supports installing release packages directly through the browser, as w
 Upload a compatible update package, validate it, and let the update system handle the installation.
 
 ### 🛡️ Reliability matters
+<img width="1904" height="795" alt="imagen" src="https://github.com/user-attachments/assets/40efc4e7-fa73-470a-861e-bc96f1dc3967" />
 
 A home server is supposed to be there when you need it.
 
@@ -63,6 +69,7 @@ Behind the interface, CasaNova introduces improvements to service recovery, requ
 These aren't the most glamorous features, but they're part of what makes a platform dependable.
 
 ### 🔐 Your server stays yours
+<img width="1919" height="1002" alt="imagen" src="https://github.com/user-attachments/assets/e1466381-e0c6-40fc-87af-137ae32a610d" />
 
 CasaNova supports local user management, authentication, and access controls.
 
@@ -92,23 +99,21 @@ And we're still getting started.
 
 ## 📸 Take a look around
 
-*Images will be added as the interface and documentation evolve.*
+<img width="1919" height="999" alt="imagen" src="https://github.com/user-attachments/assets/d552a94a-22f6-4c2d-bcfe-3c45110fdf67" />
 
 **The dashboard**
 
-<!-- Add dashboard screenshot here -->
+<img width="1611" height="1001" alt="imagen" src="https://github.com/user-attachments/assets/a601d224-d7df-4673-ade3-d1bd50360e48" />
 
 **Applications and containers**
 
-<!-- Add App Store / container management screenshot here -->
+<img width="1490" height="887" alt="imagen" src="https://github.com/user-attachments/assets/8d256fc8-b2a7-4986-811f-f813c4ebb4ef" />
 
 **Storage and files**
 
-<!-- Add storage management screenshot here -->
+<img width="1916" height="998" alt="imagen" src="https://github.com/user-attachments/assets/598ea9e5-794a-4066-9bbe-c0a49a3bbfd0" />
 
 **Settings and updates**
-
-<!-- Add update interface screenshot here -->
 
 ---
 
