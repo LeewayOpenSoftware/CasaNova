@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/LeewayOpenSoftware/CasaNova/codegen"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/config"
+	"github.com/LeewayOpenSoftware/CasaNova/pkg/storageauth"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/utils"
 	"github.com/LeewayOpenSoftware/CasaNova/pkg/utils/file"
 
@@ -291,26 +293,49 @@ func InitFile() http.Handler {
 			w.Write([]byte(`{"message": "access denied"}`))
 			return
 		}
-		filePath := filepath.Clean(r.URL.Query().Get("path"))
-		if !filepath.IsAbs(filePath) || strings.Contains(filePath, "..") {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"message": "invalid path"}`))
-			return
-		}
-		// Block system directories (canonical shared list — includes /var, home
-		// of the JWT signing key, so this download handler can't leak it).
-		for _, prefix := range utils.BlockedSystemPrefixes {
-			if filePath == prefix || strings.HasPrefix(filePath, prefix+"/") {
-				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte(`{"message": "access denied"}`))
-				return
-			}
-		}
-		fileName := path.Base(filePath)
-		w.Header().Add("Content-Disposition", "attachment; filename*=utf-8''"+url.PathEscape(fileName))
-		http.ServeFile(w, r, filePath)
-		// http.ServeFile(w, r, filePath)
+		role := rbac.Normalize(claims.Role)
+		serveV3File(w, r, storageauth.Principal{
+			ID:    strconv.Itoa(claims.ID),
+			Role:  string(role),
+			Admin: rbac.Allows(role, rbac.PermUserManage),
+		}, r.URL.Query().Get("path"))
 	})
+}
+
+// serveV3File is the part of GET /v3/file that runs once the token is known to
+// be valid, unrevoked and allowed to read files: it decides whether THIS
+// principal may read THIS path, the same way v1 GetDownloadFile does.
+//
+// It used to check only the lexical blocked-prefix list and then call
+// http.ServeFile, so the per-user storage authority never ran here: a plain
+// user read any path the list did not name (/home/*/.ssh, other users' areas,
+// /tmp), and a symlink under /DATA was followed into /etc. SanitizeFilePath judges where the path really lands, and
+// OpenAuthorizedStrict asks the authority and opens beneath its boundary, so a
+// target swapped after the check is refused too.
+func serveV3File(w http.ResponseWriter, r *http.Request, p storageauth.Principal, raw string) {
+	filePath, err := utils.SanitizeFilePath(raw)
+	if err != nil || !filepath.IsAbs(raw) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"message": "invalid path"}`))
+		return
+	}
+	f, _, err := storageauth.OpenAuthorizedStrict(p, storageauth.OpRead, filePath, os.O_RDONLY, 0)
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"message": "access denied"}`))
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"message": "invalid path"}`))
+		return
+	}
+	fileName := path.Base(filePath)
+	w.Header().Add("Content-Disposition", "attachment; filename*=utf-8''"+url.PathEscape(fileName))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, fileName, info.ModTime(), f)
 }
 
 // writeJSONError answers a raw http.Handler with the same envelope the echo

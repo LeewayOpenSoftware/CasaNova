@@ -53,6 +53,7 @@ var chokepoints = map[string]string{
 	"sanitizeUploadPath": "service: the upload path's own chokepoint, which then calls AuthorizeSystem",
 	"getTrashManager":    "route/v1: installs the restore DestValidator, which then calls AuthorizeSystem",
 	"PostUploadFile":     "route/v2: sanitises then immediately calls AuthorizeStorage with the request's principal",
+	"serveV3File":        "route: GET /v3/file sanitises then opens through OpenAuthorizedStrict with the token's principal",
 }
 
 // exemptedFiles sanitise paths WITHOUT the storage authority for a recorded

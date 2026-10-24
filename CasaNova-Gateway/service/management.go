@@ -110,14 +110,17 @@ func newConfiguredProxy(target *url.URL) *httputil.ReverseProxy {
 		}
 	}
 
-	// Log proxy errors instead of silently returning empty 502s.
+	// Log proxy errors instead of silently returning empty 502s. The detail
+	// goes to the log only: err names the backend's internal address/port
+	// (e.g. "dial tcp 127.0.0.1:NNNN: connection refused"), which must not
+	// reach the client.
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		logger.Error("reverse proxy error",
 			zap.String("path", r.URL.Path),
 			zap.String("target", target.String()),
 			zap.Error(err),
 		)
-		http.Error(w, fmt.Sprintf("Backend unavailable: %v", err), http.StatusBadGateway)
+		http.Error(w, "Backend unavailable", http.StatusBadGateway)
 	}
 
 	// Strip hop-by-hop headers from backend responses (defense-in-depth).

@@ -90,3 +90,24 @@ func TestCreateFileStillSucceedsAndReportsCollision(t *testing.T) {
 }
 
 func c() *systemService { return &systemService{} }
+
+// os.Stat reports a dangling symlink as missing, and os.Create used to follow
+// it: a link planted in storage made CreateFile write wherever it pointed,
+// outside the ceiling the caller's path check had just approved.
+func TestCreateFileDoesNotFollowDanglingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "authorized_keys")
+	link := filepath.Join(dir, "notes.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+
+	code, err := c().CreateFile(link)
+
+	if code == common_err.SUCCESS {
+		t.Errorf("reported SUCCESS creating through a dangling symlink (err %v)", err)
+	}
+	if _, statErr := os.Lstat(outside); !os.IsNotExist(statErr) {
+		t.Fatalf("CreateFile created the symlink's target %s: %v", outside, statErr)
+	}
+}

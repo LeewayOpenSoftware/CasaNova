@@ -20,11 +20,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova/pkg/storageauth"
 	"github.com/labstack/echo/v4"
 )
 
@@ -125,6 +127,25 @@ func searchFile(c echo.Context) error {
 			"message": "dir must be under a storage path (/DATA, /mnt, /media)",
 		})
 	}
+	// The storage authority decides what this account may list, as the v1
+	// search does: PermFileRead alone let any user enumerate every other
+	// user's names, sizes and mtimes. A named dir must be listable; with no
+	// dir, each storage root is walked only if listable, otherwise just the
+	// account's own grants beneath it.
+	p := storageauth.Principal{
+		ID:    strconv.Itoa(commonmw.UserIDFromContext(c)),
+		Role:  string(commonmw.RoleFromContext(c)),
+		Admin: rbac.Allows(commonmw.RoleFromContext(c), rbac.PermUserManage),
+	}
+	if strings.TrimSpace(req.Dir) != "" {
+		if d := storageauth.AuthorizeListing(p, roots[0]); !d.Allowed {
+			return c.JSON(http.StatusForbidden, echo.Map{
+				"message": string(d.Reason), "reason": string(d.Reason), "detail": d.Detail,
+			})
+		}
+	} else {
+		roots = authorizedSearchRoots(p, roots)
+	}
 
 	start := time.Now()
 	hits, total, timedOut := walkSearch(roots, keyword, count)
@@ -177,6 +198,39 @@ func resolveSearchRoots(dir string) ([]string, bool) {
 		}
 	}
 	return nil, false
+}
+
+// authorizedSearchRoots narrows the storage roots to what p may list: a root
+// the authority allows as a whole, else the account's grants under it (nested
+// grants collapse into their parent so no hit is returned twice).
+func authorizedSearchRoots(p storageauth.Principal, roots []string) []string {
+	under := func(parent, child string) bool {
+		return child == parent || strings.HasPrefix(child, parent+string(filepath.Separator))
+	}
+	out := make([]string, 0, len(roots))
+	for _, r := range roots {
+		if storageauth.AuthorizeListing(p, r).Allowed {
+			out = append(out, r)
+			continue
+		}
+		grants := storageauth.EffectiveRoots(p)
+		for _, g := range grants {
+			if !under(r, g.Path) || !storageauth.AuthorizeListing(p, g.Path).Allowed {
+				continue
+			}
+			nested := false
+			for _, o := range grants {
+				if o.Path != g.Path && under(o.Path, g.Path) {
+					nested = true
+					break
+				}
+			}
+			if !nested {
+				out = append(out, g.Path)
+			}
+		}
+	}
+	return out
 }
 
 // walkSearch runs a bounded, case-insensitive filename walk across roots and

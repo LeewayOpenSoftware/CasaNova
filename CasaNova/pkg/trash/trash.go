@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -122,6 +123,9 @@ func (m *Manager) Trash(srcPath string) (*Entry, error) {
 
 	// Find a collision-free name in the trash.
 	baseName := filepath.Base(absPath)
+	if !validTrashedName(baseName) {
+		return nil, fmt.Errorf("trash: cannot trash %q", absPath)
+	}
 	trashedName := pickUniqueName(filesDir, infoDir, baseName)
 
 	// Order: metadata FIRST, then the rename. The two steps cannot be one
@@ -197,8 +201,17 @@ func (m *Manager) List(searchRoots []string) ([]Entry, error) {
 		trashRoot := filepath.Join(root, TrashDirName)
 		infoDir := filepath.Join(trashRoot, "info")
 
-		if _, err := os.Stat(infoDir); os.IsNotExist(err) {
+		if _, err := os.Lstat(infoDir); os.IsNotExist(err) {
 			continue // this filesystem has no trash yet
+		}
+		// The trash root sits on user-writable storage, so a container or
+		// SMB client can plant .Trash-casanova/files (or the root itself) as
+		// a symlink to a host directory. Every Delete/Purge path below is
+		// joined under it, so following such a link means the daily janitor
+		// deletes outside the trash. Refuse the whole root instead.
+		if err := checkTrashDirs(trashRoot); err != nil {
+			log.Printf("trash: skipping %s: %v", trashRoot, err)
+			continue
 		}
 
 		infoFiles, err := os.ReadDir(infoDir)
@@ -252,6 +265,9 @@ func (m *Manager) Restore(entry *Entry) error {
 	if entry.trashRoot == "" {
 		return errors.New("entry has no trash root — was it loaded via List?")
 	}
+	if !validTrashedName(entry.TrashedName) {
+		return fmt.Errorf("trash: invalid entry name %q", entry.TrashedName)
+	}
 
 	if m.DestValidator == nil {
 		return errors.New("trash restore refused: no destination validator configured")
@@ -288,6 +304,12 @@ func (m *Manager) Restore(entry *Entry) error {
 func (m *Manager) Delete(entry *Entry) error {
 	if entry.trashRoot == "" {
 		return errors.New("entry has no trash root")
+	}
+	if err := checkTrashDirs(entry.trashRoot); err != nil {
+		return err
+	}
+	if !validTrashedName(entry.TrashedName) {
+		return fmt.Errorf("trash: invalid entry name %q", entry.TrashedName)
 	}
 	filePath := filepath.Join(entry.trashRoot, "files", entry.TrashedName)
 	infoPath := filepath.Join(entry.trashRoot, "info", entry.TrashedName+".trashinfo")
@@ -394,13 +416,45 @@ func ensureTrashDir(filePath string) (string, error) {
 	filesDir := filepath.Join(trashRoot, "files")
 	infoDir := filepath.Join(trashRoot, "info")
 
-	for _, d := range []string{filesDir, infoDir} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
+	// Mkdir, not MkdirAll: an existing component (possibly a planted
+	// symlink) is never created through; checkTrashDirs then rejects it.
+	for _, d := range []string{trashRoot, filesDir, infoDir} {
+		if err := os.Mkdir(d, 0o700); err != nil && !os.IsExist(err) {
 			return "", fmt.Errorf("create trash dir %s: %w", d, err)
 		}
 	}
+	if err := checkTrashDirs(trashRoot); err != nil {
+		return "", err
+	}
 
 	return trashRoot, nil
+}
+
+// validTrashedName reports whether name is exactly one ordinary path
+// component. TrashedName is joined onto files/ and info/, and it comes from a
+// dirent name in info/ that anyone with write access to the trash (a
+// container or SMB client on /DATA) can create: "...trashinfo" trims to "..",
+// "..trashinfo" to "." and ".trashinfo" to "", and each of those joins to the
+// trash root or files/ itself, so Delete/Empty/Purge would RemoveAll the
+// whole trash of that filesystem and Restore would move it.
+func validTrashedName(name string) bool {
+	return name != "" && name != "." && name != ".." &&
+		!strings.ContainsRune(name, '/') && filepath.Base(name) == name
+}
+
+// checkTrashDirs verifies that trashRoot and its files/ and info/ subdirs are
+// real directories, not symlinks (Lstat, so a planted link is not followed).
+func checkTrashDirs(trashRoot string) error {
+	for _, d := range []string{trashRoot, filepath.Join(trashRoot, "files"), filepath.Join(trashRoot, "info")} {
+		fi, err := os.Lstat(d)
+		if err != nil {
+			return fmt.Errorf("trash dir %s: %w", d, err)
+		}
+		if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+			return fmt.Errorf("trash dir %s is not a real directory", d)
+		}
+	}
+	return nil
 }
 
 // mountinfoPath is the kernel's view of this process's mount table. It is a
@@ -552,6 +606,10 @@ func pickUniqueName(filesDir, infoDir, baseName string) string {
 
 // readEntry parses a .trashinfo file and returns the Entry.
 func readEntry(trashRoot, infoFileName string) (*Entry, error) {
+	name := strings.TrimSuffix(infoFileName, ".trashinfo")
+	if !validTrashedName(name) {
+		return nil, fmt.Errorf("trash: invalid entry name %q", infoFileName)
+	}
 	infoPath := filepath.Join(trashRoot, "info", infoFileName)
 	f, err := os.Open(infoPath)
 	if err != nil {
@@ -561,7 +619,7 @@ func readEntry(trashRoot, infoFileName string) (*Entry, error) {
 
 	entry := &Entry{
 		trashRoot:   trashRoot,
-		TrashedName: strings.TrimSuffix(infoFileName, ".trashinfo"),
+		TrashedName: name,
 	}
 	entry.ID = entry.TrashedName
 

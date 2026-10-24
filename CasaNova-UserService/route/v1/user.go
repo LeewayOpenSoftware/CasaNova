@@ -877,6 +877,26 @@ func PutUserAvatar(ctx echo.Context) error {
 		})
 }
 
+// avatarServable reports whether a stored avatar path may be served: it must
+// exist and resolve (symlinks included) inside the owner's own directory under
+// UserDataPath, which is the only place PutUserAvatar writes. Anything else —
+// a path stored before PutUserInfo stopped accepting one, or a link planted in
+// the directory — falls back to the default avatar instead of being read.
+func avatarServable(avatarPath string, userID int) bool {
+	if avatarPath == "" || !file.Exists(avatarPath) {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(avatarPath)
+	if err != nil {
+		return false
+	}
+	userDir, err := filepath.EvalSymlinks(filepath.Join(config.AppInfo.UserDataPath, strconv.Itoa(userID)))
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(resolved, userDir+string(filepath.Separator))
+}
+
 // @Summary get user head
 // @Produce  application/json
 // @Tags user
@@ -892,7 +912,7 @@ func GetUserAvatar(ctx echo.Context) error {
 			model.Result{Success: common_err.USER_NOT_EXIST, Message: common_err.GetMsg(common_err.USER_NOT_EXIST)})
 	}
 
-	if file.Exists(user.Avatar) {
+	if avatarServable(user.Avatar, user.Id) {
 		ctx.Response().Header().Set("Content-Disposition", "attachment; filename*=utf-8''"+url2.PathEscape(path.Base(user.Avatar)))
 		ctx.Response().Header().Set("Cache-Control", "no-cache, no-store, max-age=0, must-revalidate, value")
 		return ctx.File(user.Avatar)
@@ -952,9 +972,12 @@ func PutUserInfo(ctx echo.Context) error {
 	if len(json.Email) == 0 {
 		json.Email = user.Email
 	}
-	if len(json.Avatar) == 0 {
-		json.Avatar = user.Avatar
-	}
+	// SECURITY: the avatar path is not the caller's to set. GetUserAvatar
+	// serves whatever path is stored here, and this service runs as root,
+	// so {"avatar":"/var/lib/casaos/db/jwt_ec_private.pem"} turned any
+	// logged-in account into a reader of the JWT signing key. PutUserAvatar
+	// is the only writer: it stores the image it decoded and wrote itself.
+	json.Avatar = user.Avatar
 	// SECURITY: Never allow users to change their own role via this endpoint.
 	// Role changes must go through the admin-only PutUserRole handler.
 	json.Role = user.Role

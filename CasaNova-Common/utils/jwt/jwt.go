@@ -159,6 +159,13 @@ func Validate(token string, publicKeyFunc func() (*ecdsa.PublicKey, error)) (boo
 	if claims.Issuer == "oauth2-delegated" {
 		return false, nil, errDelegatedNotGeneralAccess
 	}
+	// Every first-party access token names a user (DB ids start at 1). The
+	// OIDC id_token is signed with the same key but carries no "id" claim,
+	// so it parses as principal 0 — which revocation can never match. It
+	// must not pass as an access token.
+	if claims.ID <= 0 {
+		return false, nil, errNoPrincipal
+	}
 
 	return true, claims, nil
 }
@@ -168,6 +175,10 @@ func Validate(token string, publicKeyFunc func() (*ecdsa.PublicKey, error)) (boo
 // middleware can distinguish "credential confusion attempt" from "expired
 // signature" in audit logs if it ever wants to.
 var errRefreshNotAccess = errors.New("jwt: refresh token rejected by access-token validator")
+
+// errNoPrincipal is returned when a validly signed token names no user, e.g.
+// an OIDC id_token presented as an access token.
+var errNoPrincipal = errors.New("jwt: token without a user id rejected by access-token validator")
 
 // ValidateDelegated accepts only the OAuth2 access token minted for the OIDC
 // userinfo resource. Keeping this separate from Validate prevents an RP from

@@ -513,6 +513,15 @@ func GetCompressionAlgorithm(t string) (string, archiver.Writer, error) {
 }
 
 func AddFile(ar archiver.Writer, path, commonPath string) error {
+	return AddFileWithin(ar, path, commonPath, commonPath)
+}
+
+// AddFileWithin is AddFile with a separate containment root: archive names
+// stay relative to commonPath, but a symlink is only followed when its real
+// target is under root. A shared folder passes itself as root (and its parent
+// as commonPath, to keep the top-level folder name in the archive) so a
+// symlink to a sibling of the share is not served.
+func AddFileWithin(ar archiver.Writer, path, commonPath, root string) error {
 	// Lstat (not Stat) so we can detect symlinks before following them.
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -520,7 +529,7 @@ func AddFile(ar archiver.Writer, path, commonPath string) error {
 	}
 
 	// Symlinks: resolve the real target and verify it stays within the
-	// archive's base directory (commonPath). Without this check a symlink
+	// containment root. Without this check a symlink
 	// pointing to e.g. /etc/passwd would leak sensitive files into the
 	// downloaded archive.
 	if info.Mode()&os.ModeSymlink != 0 {
@@ -530,10 +539,10 @@ func AddFile(ar archiver.Writer, path, commonPath string) error {
 			return nil
 		}
 		// Ensure the resolved target is under the base directory.
-		absCommon, _ := filepath.Abs(commonPath)
+		absRoot, _ := filepath.Abs(root)
 		absResolved, _ := filepath.Abs(resolved)
-		if !strings.HasPrefix(absResolved, absCommon+string(filepath.Separator)) && absResolved != absCommon {
-			log.Printf("AddFile: skipping symlink %s -> %s (escapes base directory %s)", path, resolved, commonPath)
+		if !strings.HasPrefix(absResolved, absRoot+string(filepath.Separator)) && absResolved != absRoot {
+			log.Printf("AddFile: skipping symlink %s -> %s (escapes base directory %s)", path, resolved, root)
 			return nil
 		}
 		target, terr := os.Stat(path) // follows the link
@@ -577,7 +586,7 @@ func AddFile(ar archiver.Writer, path, commonPath string) error {
 		}
 
 		for _, name := range names {
-			err = AddFile(ar, filepath.Join(path, name), commonPath)
+			err = AddFileWithin(ar, filepath.Join(path, name), commonPath, root)
 			if err != nil {
 				log.Printf("Failed to archive %v", err)
 			}

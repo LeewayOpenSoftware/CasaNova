@@ -3,11 +3,13 @@ package v1
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/tokenrevocation"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/service"
 	dbmodel "github.com/LeewayOpenSoftware/CasaNova-UserService/service/model"
 	"github.com/labstack/echo/v4"
@@ -62,6 +64,9 @@ func withPutUserRoleFake(byID map[string]dbmodel.UserDBModel) *fakeUserServicePu
 
 // Baseline: demoting an ordinary user must keep working.
 func TestPutUserRoleAllowsDemotingANonAdmin(t *testing.T) {
+	tokenrevocation.SetPath(filepath.Join(t.TempDir(), "token-revocations.json"))
+	t.Cleanup(func() { tokenrevocation.SetPath(tokenrevocation.DefaultPath) })
+
 	fake := withPutUserRoleFake(map[string]dbmodel.UserDBModel{
 		"7": {Id: 7, Role: "admin"},
 		"8": {Id: 8, Role: "user"},
@@ -85,6 +90,9 @@ func TestPutUserRoleAllowsDemotingANonAdmin(t *testing.T) {
 // Baseline: demoting one of two admins (both real "admin" strings) must
 // keep working — the pre-existing behavior this guard must not break.
 func TestPutUserRoleAllowsDemotingAnAdminWhenAnotherRemains(t *testing.T) {
+	tokenrevocation.SetPath(filepath.Join(t.TempDir(), "token-revocations.json"))
+	t.Cleanup(func() { tokenrevocation.SetPath(tokenrevocation.DefaultPath) })
+
 	fake := withPutUserRoleFake(map[string]dbmodel.UserDBModel{
 		"7": {Id: 7, Role: "admin"},
 		"9": {Id: 9, Role: "admin"},

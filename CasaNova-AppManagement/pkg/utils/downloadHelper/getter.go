@@ -170,8 +170,9 @@ func isReservedIP(ip net.IP) bool {
 }
 
 // newSafeHTTPClient returns an http.Client whose CheckRedirect re-runs the
-// SSRF guard on every hop, caps the chain length, and refuses any non-
-// http(s) redirect target.
+// SSRF guard on every hop, caps the chain length, refuses any non-http(s)
+// redirect target, and refuses an https -> http downgrade (an https app
+// store must not be silently served over plaintext by a redirect).
 func newSafeHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 60 * time.Second,
@@ -182,6 +183,9 @@ func newSafeHTTPClient() *http.Client {
 			scheme := strings.ToLower(req.URL.Scheme)
 			if scheme != "http" && scheme != "https" {
 				return fmt.Errorf("download: redirect to disallowed scheme %q", req.URL.Scheme)
+			}
+			if scheme == "http" && len(via) > 0 && strings.EqualFold(via[len(via)-1].URL.Scheme, "https") {
+				return fmt.Errorf("download: redirect from https to http refused")
 			}
 			if err := checkHostNotPrivate(req.URL.Hostname()); err != nil {
 				return err

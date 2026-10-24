@@ -761,6 +761,18 @@ func authorizeStorage(p Principal, op Op, path string, listing bool) Decision {
 		return d
 	}
 
+	// The withheld secrets are refused to a switched-on READ inside authorized
+	// storage too, not only outside it: the AppData root is /var/lib/casaos,
+	// which is where the JWT signing key and the user database live, and the
+	// read handlers skip the system-directory blocklist for a switched-on
+	// account. Without this the switch handed the signing key to any account
+	// it was given to.
+	if !listing && systemDiskReads(p, op) {
+		if w, ok := systemDiskWithheld(clean, resolved); ok {
+			return w
+		}
+	}
+
 	// Rules 8-10: may THIS principal, for THIS operation?
 	if p.Admin {
 		d.Path = clean

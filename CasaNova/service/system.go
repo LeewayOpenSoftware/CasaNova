@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/command"
@@ -295,14 +296,27 @@ func (c *systemService) RenameFile(oldF, newF string) (int, error) {
 // success, for a file that was never written. Nothing logged it either, so the
 // only visible symptom was a later operation failing on a file the client had
 // been told existed.
+//
+// The create is O_EXCL|O_NOFOLLOW, not os.Create: os.Stat reports a DANGLING
+// symlink as not-existing, and os.Create then follows it, so a link planted
+// in storage (/DATA/notes.txt -> /home/u/.ssh/authorized_keys) made the file
+// appear outside the storage ceiling the path check had just approved. With
+// O_EXCL the kernel refuses any name that is already taken, link or not.
 func (c *systemService) CreateFile(path string) (int, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return common_err.FILE_OR_DIR_EXISTS, nil
 	}
 	if os.IsNotExist(err) {
-		if createErr := file.CreateFile(path); createErr != nil {
+		f, createErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o666)
+		if os.IsExist(createErr) {
+			return common_err.FILE_OR_DIR_EXISTS, nil
+		}
+		if createErr != nil {
 			return common_err.SERVICE_ERROR, createErr
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			return common_err.SERVICE_ERROR, closeErr
 		}
 		return common_err.SUCCESS, nil
 	}

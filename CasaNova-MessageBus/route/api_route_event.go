@@ -209,12 +209,8 @@ func (r *APIRoute) SubscribeEventWS(c echo.Context, sourceID codegen.SourceID, p
 		// Read pump: drain inbound frames so we notice peer EOF/close.
 		// On any error we close the conn, which unblocks the write loop.
 		go func() {
-			for {
-				if _, _, err := wsutil.ReadClientData(conn); err != nil {
-					_ = conn.Close()
-					return
-				}
-			}
+			_ = drainClientFrames(conn)
+			_ = conn.Close()
 		}()
 
 		const writeDeadline = 10 * time.Second
@@ -259,4 +255,38 @@ func (r *APIRoute) SubscribeEventWS(c echo.Context, sourceID codegen.SourceID, p
 	}(conn, channel, eventNames)
 
 	return nil
+}
+
+// maxClientFrameSize bounds a single inbound frame on the event websocket.
+// Subscribers never send data on this socket; only control frames (pong,
+// close; at most 125 bytes) are expected.
+const maxClientFrameSize = 4 << 10
+
+// drainClientFrames answers control frames and discards data frames without
+// buffering them, until the peer goes away or sends a frame larger than
+// maxClientFrameSize. It replaces wsutil.ReadClientData, which reads a frame
+// (or fragmented message) of any size fully into memory.
+func drainClientFrames(conn io.ReadWriter) error {
+	controlHandler := wsutil.ControlFrameHandler(conn, ws.StateServerSide)
+	rd := wsutil.Reader{
+		Source:         conn,
+		State:          ws.StateServerSide,
+		MaxFrameSize:   maxClientFrameSize,
+		OnIntermediate: controlHandler,
+	}
+	for {
+		hdr, err := rd.NextFrame()
+		if err != nil {
+			return err
+		}
+		if hdr.OpCode.IsControl() {
+			if err := controlHandler(hdr, &rd); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := rd.Discard(); err != nil {
+			return err
+		}
+	}
 }

@@ -100,6 +100,17 @@ type userTOTPConfig struct {
 // would each open their own.
 var totpVerifyMu sync.Mutex
 
+// totpLastStep / totpLastSecret remember the newest time step accepted at
+// login (and for which secret), so a TOTP code cannot be replayed within its
+// ±1-step window. Guarded by totpVerifyMu. Kept in memory on purpose: the
+// TOTP login path must stay lock-free and write-free on 2fa.json (see the
+// concurrency notes above), and a code's whole window is ~90 s, so losing
+// this on a restart only reopens one window.
+var (
+	totpLastStep   int64
+	totpLastSecret string
+)
+
 // errTOTPRequired signals "the password was right but a 2FA code is
 // required and was not supplied". The login handler maps it to a
 // distinct response so the UI can prompt for an OTP without retrying
@@ -143,8 +154,18 @@ func totpEnforceLogin(suppliedCode string) error {
 	// writes, so it needs no cross-process lock.
 	secret, derr := base32.StdEncoding.WithPadding(base32.NoPadding).
 		DecodeString(strings.ToUpper(cfg.Secret))
-	if derr == nil && validateUserTOTP(secret, code) {
-		return nil
+	if derr == nil {
+		var minStep int64 = -1 << 63
+		if totpLastSecret == cfg.Secret {
+			minStep = totpLastStep + 1
+		}
+		if step, ok := matchUserTOTPStep(secret, code, minStep); ok {
+			totpLastStep, totpLastSecret = step, cfg.Secret
+			return nil
+		}
+		if _, ok := matchUserTOTPStep(secret, code, -1<<63); ok {
+			return errTOTPInvalid // valid code, already used
+		}
 	}
 
 	// Fall back to backup codes. That path consumes the code, so it runs
@@ -234,15 +255,16 @@ func consumeUserBackupCode(codeUpper string) error {
 // validateUserTOTP is the same RFC 6238 validator used by CasaNova's
 // totp.go, duplicated here so UserService doesn't import the CasaNova
 // service package (which would create a circular module dependency).
-// Tolerates ±1 time step (30s) of clock drift.
-func validateUserTOTP(secret []byte, code string) bool {
+// Tolerates ±1 time step (30s) of clock drift. Returns the matching step,
+// ignoring steps below minStep (already accepted ones).
+func matchUserTOTPStep(secret []byte, code string, minStep int64) (int64, bool) {
 	now := time.Now().Unix() / int64(userTOTPPeriod)
 	for _, off := range []int64{-1, 0, 1} {
-		if generateUserTOTP(secret, now+off) == code {
-			return true
+		if now+off >= minStep && generateUserTOTP(secret, now+off) == code {
+			return now + off, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 func generateUserTOTP(secret []byte, timeStep int64) string {

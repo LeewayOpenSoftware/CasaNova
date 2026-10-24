@@ -213,6 +213,13 @@ var withheldPaths = []string{
 	"/var/lib/casaos/casaOS.db",
 	// Host password hashes.
 	"/etc/shadow", "/etc/shadow-", "/etc/gshadow", "/etc/gshadow-",
+	// The services' runtime directories: /run/casanova/internal holds the
+	// per-boot inter-service secret, which every service accepts in place of
+	// a JWT, and /run/casaos the management and peer URLs and the routes.
+	// /var/run is listed too for installs where it is not a link to /run.
+	"/run/casanova", "/run/casaos", "/var/run/casanova", "/var/run/casaos",
+	// Samba's account database (NT hashes) and secrets.
+	"/var/lib/samba/private",
 }
 
 // withheldNames are the same secrets matched by file name, for an install whose
@@ -242,7 +249,31 @@ func isWithheld(path string) (string, bool) {
 	if filepath.Dir(path) == "/etc/ssh" && strings.HasPrefix(base, "ssh_host_") && strings.HasSuffix(base, "_key") {
 		return path, true
 	}
+	if isCredentialFile(filepath.Base(filepath.Dir(path)), base) {
+		return path, true
+	}
 	return "", false
+}
+
+// isCredentialFile matches, by name, the credentials of the host's own tools
+// that the switch must not read wherever they live: zerotier's *.secret
+// (local API token and node identity), certificate private keys
+// (letsencrypt privkey*.pem), users' SSH private keys (~/.ssh/id_*, not the
+// .pub halves), rclone's cloud tokens and docker's registry credentials.
+func isCredentialFile(parent, base string) bool {
+	switch {
+	case strings.HasSuffix(base, ".secret"):
+		return true
+	case strings.HasPrefix(base, "privkey") && strings.HasSuffix(base, ".pem"):
+		return true
+	case parent == ".ssh" && strings.HasPrefix(base, "id_") && !strings.HasSuffix(base, ".pub"):
+		return true
+	case base == "rclone.conf":
+		return true
+	case parent == ".docker" && base == "config.json":
+		return true
+	}
+	return false
 }
 
 // systemDiskWithheld is the refusal for opening a withheld secret through the

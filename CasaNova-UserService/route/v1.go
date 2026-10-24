@@ -38,6 +38,20 @@ import (
 // validate tokens — never passes through here. The allowlist is therefore nil.
 var jwtLoopbackSkipper = authskip.For(nil)
 
+// jsonBodyLimitSize caps the JSON bodies of the routes in InitRouter.
+const jsonBodyLimitSize = "1M"
+
+// jsonBodyLimitSkipper exempts the authenticated upload routes, whose
+// legitimate bodies exceed 1M: avatar (handler caps at 11 MiB), custom conf
+// (handler caps at 2 MiB) and the multipart image upload.
+func jsonBodyLimitSkipper(c echo.Context) bool {
+	switch c.Path() {
+	case "/v1/users/avatar", "/v1/users/current/custom/:key", "/v1/users/current/image/:key":
+		return true
+	}
+	return false
+}
+
 func InitRouter() http.Handler {
 	e := echo.New()
 
@@ -78,21 +92,30 @@ func InitRouter() http.Handler {
 		Format: `{"time":"${time_rfc3339}","method":"${method}","path":"${path}","status":${status},"latency_human":"${latency_human}"}` + "\n",
 	}))
 
-	e.POST("/v1/users/register", v1.PostUserRegister)
-	e.POST("/v1/users/login", v1.PostUserLogin)
+	// Request bodies here are small JSON documents. Without a cap ctx.Bind
+	// decodes a body of any size, and login/register/refresh are reachable
+	// without a token — a single multi-GB POST OOMs the service. Routes
+	// that carry their own larger cap are exempt (see jsonBodyLimitSkipper).
+	jsonBodyLimit := echo_middleware.BodyLimitWithConfig(echo_middleware.BodyLimitConfig{
+		Skipper: jsonBodyLimitSkipper,
+		Limit:   jsonBodyLimitSize,
+	})
+
+	e.POST("/v1/users/register", v1.PostUserRegister, jsonBodyLimit)
+	e.POST("/v1/users/login", v1.PostUserLogin, jsonBodyLimit)
 	// Wave 28: GET /v1/users/name was previously public — anyone could
 	// pull the entire username list, which is a perfect enumeration
 	// oracle that defeats every login-side timing-attack defense. The
 	// route is now mounted inside v1UsersGroup (JWT-required) below,
 	// AND the handler enforces an admin RBAC check so non-admin
 	// callers cannot iterate other users either.
-	e.POST("/v1/users/refresh", v1.PostUserRefreshToken)
+	e.POST("/v1/users/refresh", v1.PostUserRefreshToken, jsonBodyLimit)
 	// Logout is unauthenticated by design: the access token may have
 	// already expired by the time the user clicks "log out", so a JWT
 	// gate would render the endpoint unreachable in exactly the cases
 	// where it matters most. The handler verifies the *refresh* token
 	// signature itself before revoking the family.
-	e.POST("/v1/users/logout", v1.PostUserLogout)
+	e.POST("/v1/users/logout", v1.PostUserLogout, jsonBodyLimit)
 	// No short-term modifications
 	e.GET("/v1/users/image", v1.GetUserImage)
 
@@ -170,7 +193,7 @@ func InitRouter() http.Handler {
 	}
 
 	v1UsersGroup := v1Group.Group("/users")
-	v1UsersGroup.Use(echo_middleware.JWTWithConfig(jwtConfig))
+	v1UsersGroup.Use(echo_middleware.JWTWithConfig(jwtConfig), jsonBodyLimit)
 	{
 		v1UsersGroup.Use()
 		v1UsersGroup.GET("/current", v1.GetUserInfo)
@@ -224,7 +247,7 @@ func InitRouter() http.Handler {
 	e.GET("/.well-known/openid-configuration", v1.GetOAuth2Discovery)
 
 	// /token uses client_id+secret auth — must be unauthenticated.
-	v1Group.POST("/oauth2/token", v1.PostOAuth2Token)
+	v1Group.POST("/oauth2/token", v1.PostOAuth2Token, jsonBodyLimit)
 
 	// /authorize and /userinfo are JWT-protected — they identify the
 	// caller via the access token, not via a client-supplied user_id

@@ -427,6 +427,18 @@ func extractArchive(parent context.Context, src, dest string, lim archiveLimits)
 				"refusing unsafe archive: entry escapes the destination (%s)", name))
 		}
 
+		// The final-component Lstat in writeArchiveEntry does not see a
+		// directory symlink planted higher up (dest is container/SMB
+		// writable): MkdirAll, CreateTemp and Rename all resolve it, and the
+		// member lands wherever the link points. Check before creating.
+		linkDir := filepath.Dir(target)
+		if f.IsDir() {
+			linkDir = target
+		}
+		if err := archivePlantedLink(dest, linkDir); err != nil {
+			return refuse(http.StatusBadRequest, fmt.Errorf("refusing to extract %s: %w", name, err))
+		}
+
 		if f.IsDir() {
 			if err := os.MkdirAll(target, f.Mode().Perm()); err != nil {
 				return refuse(http.StatusInternalServerError, err)
@@ -498,6 +510,31 @@ func extractArchive(parent context.Context, src, dest string, lim archiveLimits)
 		return status, refusal
 	}
 	return 0, nil
+}
+
+// archivePlantedLink returns an ELOOP error if any existing component between
+// dest (exclusive) and dir (inclusive) is a symlink. Components that do not
+// exist yet are created by the extraction itself, so the walk stops there.
+func archivePlantedLink(dest, dir string) error {
+	rel, err := filepath.Rel(dest, dir)
+	if err != nil || rel == "." {
+		return err
+	}
+	p := dest
+	for _, c := range strings.Split(rel, string(os.PathSeparator)) {
+		p = filepath.Join(p, c)
+		st, err := os.Lstat(p)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			return &os.PathError{Op: "extract", Path: p, Err: syscall.ELOOP}
+		}
+	}
+	return nil
 }
 
 // archiveReclaimableBytes reports how much space the filesystem gets back when

@@ -6,6 +6,7 @@ import (
 
 	commonmw "github.com/LeewayOpenSoftware/CasaNova-Common/middleware"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/rbac"
+	"github.com/LeewayOpenSoftware/CasaNova-Common/pkg/tokenrevocation"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/auditlog"
 	"github.com/LeewayOpenSoftware/CasaNova-Common/utils/common_err"
 	"github.com/LeewayOpenSoftware/CasaNova-UserService/model"
@@ -119,6 +120,7 @@ func PutUserRole(ctx echo.Context) error {
 		})
 	}
 
+	roleChanged := target.Role != string(newRole)
 	target.Role = string(newRole)
 	service.MyService.User().UpdateUser(target)
 
@@ -133,6 +135,20 @@ func PutUserRole(ctx echo.Context) error {
 			Target:   id,
 			Message:  "role changed to " + string(newRole),
 		})
+	}
+
+	// Every service authorises from the role claim in the signed token, so a
+	// role change must cut off the target's existing sessions — otherwise a
+	// demoted admin keeps admin until the access token expires and can keep
+	// refreshing (mirrors the password change and DeleteUser).
+	if roleChanged {
+		revokeAllRefreshFamiliesForUser(target.Id)
+		if err := tokenrevocation.RevokeID(target.Id); err != nil {
+			return ctx.JSON(http.StatusInternalServerError, model.Result{
+				Success: common_err.SERVICE_ERROR,
+				Message: "role changed but existing sessions could not be revoked: " + err.Error(),
+			})
+		}
 	}
 
 	return ctx.JSON(http.StatusOK, model.Result{

@@ -26,6 +26,11 @@ func finalizeAccessClaims(claims *jwt.Claims) (role string, ok bool) {
 	if claims.Issuer == "refresh" {
 		return "", false
 	}
+	// No user id = not a first-party access token (e.g. an OIDC id_token,
+	// which is signed with the same key). jwt.Validate refuses it too.
+	if claims.ID <= 0 {
+		return "", false
+	}
 
 	// Wave 35-S / 35-U: tokens issued before Wave 35-U's login fix may
 	// carry either an empty role claim (pre-role-claim builds) or "guest"

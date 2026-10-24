@@ -586,7 +586,18 @@ func GetDownloadFile(ctx echo.Context) error {
 	// "download".
 	ctx.Response().Header().Add("Content-Disposition", "attachment; filename*=utf-8''"+url.PathEscape(name))
 	for _, fname := range list {
-		err = file.AddFile(ar, fname, commonDir)
+		// Names stay relative to the selection's common prefix, but a symlink
+		// inside a selected folder is followed only while it stays inside THAT
+		// folder. With the prefix as the containment root, a link to a sibling
+		// of the selection (/DATA/a/x -> /DATA/b) was archived although only
+		// /DATA/a had been authorized. The root is the selected entry's resolved
+		// location, so a selected symlink readPath already authorized still
+		// archives its own contents.
+		root := fname
+		if resolved, rerr := filepath.EvalSymlinks(fname); rerr == nil {
+			root = resolved
+		}
+		err = file.AddFileWithin(ar, fname, commonDir, root)
 		if err != nil {
 			log.Printf("Failed to archive %s: %v", fname, err)
 		}

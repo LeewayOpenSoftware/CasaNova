@@ -544,6 +544,16 @@ func UpdateSetting(ctx echo.Context) error {
 }
 
 func GetDockerNetworks(ctx echo.Context) error {
+	// 26.10.1 audit (container routes): this handler had no explicit
+	// gate at all, relying solely on v1Group's blanket JWT requirement.
+	// Every role already holds PermAppView (see rbac.go), so this is a
+	// no-op against today's middleware — but it also catches the
+	// "context nobody authenticated" case requirePerm's second check
+	// guards (see route/v1/rbac_gate.go), matching every sibling handler
+	// in this file instead of being the one exception.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
 	networks := service.MyService.Docker().GetNetworkList()
 	list := []map[string]string{}
 	for _, network := range networks {
@@ -678,6 +688,11 @@ func ArchiveContainer(ctx echo.Context) error {
 // @Success 200 {string} string "ok"
 // @Router /app/usage [get]
 func AppUsageList(ctx echo.Context) error {
+	// 26.10.1 audit (container routes): same gap and same fix as
+	// GetDockerNetworks above.
+	if err := requirePerm(ctx, rbac.PermAppView); err != nil {
+		return err
+	}
 	list := service.MyService.Docker().GetContainerStats()
 	return ctx.JSON(common_err.SUCCESS, &modelCommon.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: list})
 	// return ctx.JSON(common_err.SUCCESS, &modelCommon.Result{Success: common_err.SUCCESS, Message: common_err.GetMsg(common_err.SUCCESS), Data: nil})

@@ -43,7 +43,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const shareLinksFile = "/var/lib/casanova/share-links.json"
+// var (not const) only so tests can point the store at a temp dir.
+var shareLinksFile = "/var/lib/casanova/share-links.json"
 
 // ShareLink is the persisted record. PasswordHash is never serialised
 // to API responses (json:"-" on the response struct below); it lives
@@ -317,8 +318,10 @@ func resolveShare(ctx echo.Context, id, password string) (*ShareLink, error) {
 // serveShare streams the shared path — single file directly, folder as
 // a zip assembled on the fly.
 func serveShare(ctx echo.Context, link *ShareLink) error {
-	fi, err := os.Stat(link.Path)
-	if err != nil {
+	// Lstat: if the shared path has been replaced by a symlink since the
+	// link was created, it no longer is what was shared — refuse it.
+	fi, err := os.Lstat(link.Path)
+	if err != nil || fi.Mode()&os.ModeSymlink != 0 {
 		return ctx.JSON(http.StatusNotFound, model.Result{
 			Success: common_err.FILE_DOES_NOT_EXIST,
 			Message: "shared file no longer exists",
@@ -352,8 +355,10 @@ func serveShare(ctx echo.Context, link *ShareLink) error {
 		return err
 	}
 	defer ar.Close()
+	// Names stay relative to the parent (the zip keeps the folder name), but
+	// symlinks are only followed while they stay inside the shared folder.
 	commonDir := filepath.Dir(link.Path)
-	return file.AddFile(ar, link.Path, commonDir)
+	return file.AddFileWithin(ar, link.Path, commonDir, link.Path)
 }
 
 // GET /public/share/:id — direct download (no password case) or 401.

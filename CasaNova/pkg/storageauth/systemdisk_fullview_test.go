@@ -160,7 +160,10 @@ func TestSystemDiskWithholdsCredentials(t *testing.T) {
 		t.Error("a symlink to the signing key was readable through the switch")
 	}
 	// Fixed host paths.
-	for _, p := range []string{"/etc/shadow", "/etc/gshadow", "/var/lib/casaos/db/x", "/etc/ssh/ssh_host_ed25519_key"} {
+	// The runtime directories hold the inter-service secret, which every
+	// service accepts in place of a JWT: reading it is acting as a peer.
+	for _, p := range []string{"/etc/shadow", "/etc/gshadow", "/var/lib/casaos/db/x", "/etc/ssh/ssh_host_ed25519_key",
+		"/run/casanova/internal/service.secret", "/run/casaos/management.url", "/var/run/casaos/routes.json"} {
 		if d := AuthorizeStorage(u, OpRead, p); d.Allowed {
 			t.Errorf("%s readable through the switch", p)
 		}
@@ -234,5 +237,84 @@ func TestSystemDiskListingKeepsTheUnverifiableRefusal(t *testing.T) {
 	d := AuthorizeListing(a, "/proc")
 	if d.Allowed || d.Rule != "system:unverifiable" {
 		t.Errorf("listing /proc with an unreadable mount table: allowed=%v rule=%q, want the unverifiable refusal", d.Allowed, d.Rule)
+	}
+}
+
+// RULE: the host tools' own credentials are withheld by name wherever they
+// live, and their public halves are not.
+func TestSystemDiskWithholdsHostToolCredentials(t *testing.T) {
+	SetStateDir(filepath.Join(t.TempDir(), "state"))
+	t.Cleanup(func() { SetStateDir("/var/lib/casanova") })
+	for _, p := range []string{
+		"/var/lib/zerotier-one/authtoken.secret",
+		"/var/lib/zerotier-one/identity.secret",
+		"/etc/letsencrypt/live/example/privkey.pem",
+		"/etc/letsencrypt/archive/example/privkey3.pem",
+		"/root/.ssh/id_ed25519",
+		"/home/admin/.ssh/id_rsa",
+		"/var/lib/samba/private/passdb.tdb",
+		"/root/.config/rclone/rclone.conf",
+		"/root/.docker/config.json",
+	} {
+		if _, ok := isWithheld(p); !ok {
+			t.Errorf("%s is not withheld", p)
+		}
+	}
+	for _, p := range []string{
+		"/root/.ssh/id_ed25519.pub",
+		"/etc/letsencrypt/live/example/fullchain.pem",
+		"/DATA/AppData/app/config.json",
+		"/var/lib/zerotier-one/identity.public",
+	} {
+		if _, ok := isWithheld(p); ok {
+			t.Errorf("%s is withheld but is not a credential", p)
+		}
+	}
+}
+
+// RULE: the withheld secrets are refused inside authorized storage too. The
+// AppData root is the DB path, which holds the signing key and the user
+// database, and the read handlers skip the system-directory blocklist for a
+// switched-on account.
+func TestSystemDiskWithholdsCredentialsInsideTheCeiling(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "DATA")
+	appdata := filepath.Join(root, "var", "lib", "casaos")
+	for _, d := range []string{data, filepath.Join(appdata, "db")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key := filepath.Join(appdata, "db", "jwt_ec_private.pem")
+	udb := filepath.Join(appdata, "db", "user.db")
+	for _, p := range []string{key, udb} {
+		if err := os.WriteFile(p, []byte("SIGNING-KEY-FIXTURE"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	SetStateDir(filepath.Join(root, "state"))
+	t.Cleanup(func() { SetStateDir("/var/lib/casanova") })
+	if err := Ensure(Deps{
+		DataRoots: []string{data},
+		AppData:   func() (string, error) { return appdata, nil },
+	}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	for _, p := range []Principal{{ID: "7", Role: "user"}, {ID: "1", Role: "admin", Admin: true}} {
+		if err := SetSystemDiskAccess(p.ID, p.Role, true); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range []string{key, udb} {
+			if d := AuthorizeStorage(p, OpRead, f); d.Allowed {
+				t.Errorf("%s with the switch on may read %s (rule=%s)", p.Role, filepath.Base(f), d.Rule)
+			}
+		}
+		if b, _, err := ReadFileAuthorized(p, key); err == nil {
+			t.Errorf("%s with the switch on read the signing key: %q", p.Role, string(b))
+		}
+		if l := AuthorizeListing(p, key); !l.Allowed {
+			t.Errorf("%s: the key's NAME could not be listed: %s", p.Role, l.Reason)
+		}
 	}
 }
