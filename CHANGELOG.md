@@ -56,6 +56,8 @@ production validation).
 - You must sign in again after an administrator changes your role; a
   second use of the same 2FA code within ~90 s is refused.
 - Version: BASE_VERSION 18.6.3, DISPLAY_VERSION 26.10.1 (channel beta).
+- **Recommended:** rotate the session signing key after updating, see
+  the release notes (`docs/release/26.10.1/RELEASE_NOTES_26.10.1.md`).
 
 ## [26.10] — bug-fix roll-up
 

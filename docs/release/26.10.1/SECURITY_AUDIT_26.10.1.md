@@ -72,7 +72,7 @@ Cada uno con test de regresión rojo→verde y la suite del módulo en verde.
 | F-17 | Alta | Papelera: una entrada de `info/` llamada `...trashinfo` (o `..trashinfo`, `.trashinfo`) daba el nombre `..`/`.`/vacío y `Delete`/`Empty`/`Purge` borraban la papelera entera del disco; `Restore` movía la papelera completa al destino | Ninguno: esas entradas dejan de listarse |
 | F-D1 | Baja (defensa en profundidad) | `GetDockerNetworks` y `AppUsageList` sin `requirePerm` explícito (inalcanzable sin JWT, pero rompía el patrón del fichero) | Ninguno |
 
-**Instalaciones 26.10**: F-01 y F-02 están presentes en todo 26.10; actualizar a 26.10.1 los cierra. En la instalación de referencia, la prueba autenticada de F-01 tras actualizar dio el resultado esperado (no se sirve contenido fuera del directorio del usuario).
+**Instalaciones 26.10**: F-01 y F-02 están presentes en todo 26.10; actualizar a 26.10.1 los cierra. En la instalación de referencia, la prueba autenticada de F-01 tras actualizar, por la ruta del ataque real, dio el resultado esperado: la ruta del avatar se ignora y `GET /v1/users/avatar` responde 404 sin contenido de la clave.
 
 ## 6. Riesgos confirmados sin fix en 26.10.1 (R-*)
 

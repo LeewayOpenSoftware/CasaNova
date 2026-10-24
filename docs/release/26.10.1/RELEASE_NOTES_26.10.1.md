@@ -70,6 +70,21 @@ sudo bash /usr/share/casanova/tools/casanova-update.sh casanova-18.6.3-RELEASE-2
 
 A backup is taken automatically; roll back with `sudo bash casaos-to-casanova.sh --rollback-upgrade`. This package is an **update** for an existing CasaNova install, not a fresh installer.
 
+### Rotate the session signing key after updating (recommended)
+
+In 26.10, any signed-in account could read the server's session signing key (`jwt_ec_private.pem`). 26.10.1 closes that, but a key that was read before the update stays valid until you replace it. There is only a private key on disk; the public half is derived in memory and published at `/.well-known/jwks.json`. The user service creates a new key (mode 0600) when the file is missing. Other services cache the public key for up to 15 minutes, so stop every CasaNova service first and start them again in order:
+
+```
+sudo -i
+KEYDIR=$(sed -n 's/^DBPath *= *//p' /etc/casanova/user-service.conf | tr -d '[:space:]'); KEYDIR=${KEYDIR:-/var/lib/casaos/db}
+for s in casanova casanova-job-management casanova-app-management casanova-local-storage casanova-local-storage-first casanova-user-service casanova-virt casanova-driver casanova-message-bus casanova-gateway; do systemctl stop $s; done
+mv "$KEYDIR/jwt_ec_private.pem" "$KEYDIR/jwt_ec_private.pem.old-$(date +%Y%m%d)"
+for s in casanova-gateway casanova-message-bus casanova-driver casanova-virt casanova-user-service casanova-local-storage-first casanova-local-storage casanova-app-management casanova-job-management casanova; do systemctl start $s; sleep 1; done
+ls -l "$KEYDIR/jwt_ec_private.pem"; systemctl is-active casanova-user-service
+```
+
+Check: a new `jwt_ec_private.pem` exists with `-rw-------`, the user service is `active`, and you can sign in. Effect: every session and refresh token, and every token issued to OAuth2/OIDC clients, stops working, so all users sign in again. If the user service does not start, put the old file back under its original name and start it again; otherwise delete the `.old-*` file, since it is the leaked key. Rolling back the update does not restore the key (the backup snapshots only `*.db` files).
+
 ## Files
 
 | File | SHA-256 |

@@ -55,7 +55,7 @@ Ejecutadas en el propio host contra el gateway (`localhost:85`). Sin fuerza brut
 | Igual con token falso | 401 | 401 |
 | `/v1/sys/debug`, `/v3/file`, `/v2/local_storage/search`, `/v1/users/current` sin sesión | 401 | 401 ×4 |
 | Denylist x509 GO-2026-6809 en binarios instalados | 1 por binario | 10/10 |
-| Avatar con sesión válida (F-01) | error, sin contenido | **OK** — probado con una sesión real (§9) |
+| Avatar con sesión válida (F-01): `PUT /v1/users/current {"avatar":"<ruta de la clave JWT>"}` y luego `GET /v1/users/avatar` | ruta ignorada, sin contenido | **OK** — el PUT responde 200 pero el avatar guardado sigue vacío (la ruta se ignora); el GET responde 404, sin contenido de la clave. Verificado por el mantenedor reproduciendo la ruta del ataque con una sesión real (§9) |
 
 R-01 (lista blanca de loopback + túnel) se documenta sin cambio en 26.10.1, por eso no se prueba aquí.
 
@@ -93,4 +93,4 @@ Los tres paquetes tienen el mismo nombre de archivo: distinguirlos siempre por b
 - **Instalación final**: 2026-10-24 ~17:47Z, con backup automático. Rollback disponible con `casaos-to-casanova.sh --rollback-upgrade`; no fue necesario.
 - **Contenido**: entre el primer build y el final cambia sólo el frontend; los binarios Go se compilan de la misma fuente.
 - **Prueba móvil** (Playwright, perfil iPhone 13, 390 px, sesión real): `scrollWidth == clientWidth` (390) en **12/12 rutas**; menú "Más" de la barra superior, Ajustes lista → detalle con vuelta atrás y "Ubicaciones" en Archivos funcionan. Tras la ronda 2, con datos reales: Contenedores (filas de apps compose sin solape), Usuarios, General y Actualizaciones ("Revertir" dentro de la tarjeta) OK. En escritorio (1440 px) la UI no cambia.
-- **Avatar autenticado (F-01)**: probado con una sesión real: no se sirve contenido fuera del directorio del usuario.
+- **Avatar autenticado (F-01)**: el mantenedor reprodujo la ruta del ataque con una sesión real, apuntando el avatar a la clave JWT real (bajo el `DBPath` del user service): `PUT /v1/users/current` → 200 con el avatar guardado vacío (ruta ignorada) y `GET /v1/users/avatar` → 404, sin contenido de la clave.
