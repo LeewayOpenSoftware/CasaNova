@@ -1,6 +1,12 @@
 module github.com/LeewayOpenSoftware/CasaNova
 
-go 1.24
+go 1.26.0
+
+toolchain go1.26.10
+
+// Runtime defaults stay those of 26.10 (go 1.24) while the go line follows
+// the dependency floor; see docs/release/26.10.1/MAINTENANCE_CHANGELOG_26.10.1.md.
+godebug default=go1.24
 
 require (
 	github.com/Curtis-Milo/nat-type-identifier-go v0.0.0-20220215191915-18d42168c63d
@@ -19,7 +25,7 @@ require (
 	github.com/google/go-github/v36 v36.0.0
 	github.com/google/uuid v1.5.0
 	github.com/googollee/go-socket.io v1.7.0
-	github.com/gorilla/websocket v1.5.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/h2non/filetype v1.1.3
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/json-iterator/go v1.1.12
@@ -39,10 +45,10 @@ require (
 	github.com/tidwall/gjson v1.17.0
 	go.uber.org/goleak v1.2.1
 	go.uber.org/zap v1.24.0
-	golang.org/x/crypto v0.23.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/oauth2 v0.7.0
-	golang.org/x/sync v0.9.0
-	golang.org/x/sys v0.20.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/sys v0.48.0
 	gorm.io/gorm v1.31.1
 	gotest.tools v2.2.0+incompatible
 )
@@ -66,8 +72,7 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
-	github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/geo v0.0.0-20210211234256-740aa86cb551 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -81,7 +86,6 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
-	github.com/labstack/echo-jwt/v4 v4.2.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230110061619-bbe2e5e100de // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -101,7 +105,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
-	github.com/ulikunitz/xz v0.5.11 // indirect
+	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
@@ -109,9 +113,9 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/image v0.6.0 // indirect
-	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
+	golang.org/x/image v0.45.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect

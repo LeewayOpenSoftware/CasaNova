@@ -21,9 +21,12 @@ GOARCH ?= amd64
 # the staged package: both are 18.6.2. While this said 18.6.1, `make package`
 # produced a tarball the updater correctly refused as a DOWNGRADE, so the build
 # pipeline could not ship anything at all.
-BASE_VERSION ?= 18.6.2
+# 26.10.1 (security maintenance) bumps the patch to 18.6.3: above every
+# 18.6.2.* already installed, still below 19.0.0 so a 27.04 box never sees it
+# as an upgrade.
+BASE_VERSION ?= 18.6.3
 # Display version — user-facing label on the About page (YY.MM)
-DISPLAY_VERSION ?= 26.10
+DISPLAY_VERSION ?= 26.10.1
 # Release channel: dev (development), st (stable), beta
 # This is release/26.10: the line stabilising toward CasaNova 26.10.
 # BASE_VERSION deliberately stays 18.6.2 — the internal build version is a
@@ -39,6 +42,18 @@ BUILD_TS := $(shell date +%d%m%y%H%M)
 BUILD_VERSION := $(BASE_VERSION).$(CHANNEL)$(BUILD_NUM).$(BUILD_TS)
 # Legacy VERSION for backward compat
 VERSION := $(BUILD_VERSION)
+
+# ─── Go toolchain ────────────────────────────────────────────────────────────
+# Every shipped binary must be compiled with this exact toolchain. go1.26.10 is
+# the first release carrying the crypto/x509 distrust list for compromised
+# intermediates (GO-2026-6809 / CVE-2026-111943); 26.10 shipped with go1.24.2
+# and go1.24.9, both outside the fixed range. Installing a newer Go on a server
+# does NOT change binaries that were already built — only a rebuild does.
+# GOTOOLCHAIN makes the go command fetch and use exactly this release whatever
+# Go is installed locally; `check-go` refuses a build that did not end up with it.
+# The go.mod files carry the same `toolchain` line for builds outside make.
+GO_TOOLCHAIN ?= go1.26.10
+export GOTOOLCHAIN := $(GO_TOOLCHAIN)
 
 # All Go service repos in build order (dependencies first)
 UPDATE_TOOLS := casanova-update.sh casanova-package.sh casaos-to-casanova.sh
@@ -78,7 +93,7 @@ DR_LDFLAGS = -s -w -X github.com/LeewayOpenSoftware/CasaNova-Driver/common.BUILD
 VIRT_LDFLAGS = -s -w -X github.com/LeewayOpenSoftware/CasaNova-Virt/common.BUILD_VERSION=$(BUILD_VERSION)
 CLI_LDFLAGS = -s -w -X main.version=$(BUILD_VERSION) -X main.commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo no-git) -X main.date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all build build-all frontend full tidy vet test-package clean status help
+.PHONY: all build build-all frontend full tidy vet test-package clean status help check-go check-node
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -133,11 +148,34 @@ build: ## Build all Go services for GOOS/GOARCH
 	@echo "==> building CasaNova-CLI → casanova-cli"
 	@(cd CasaNova-CLI && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="$(CLI_LDFLAGS)" -o ../$(BUILD_DIR)/casanova-cli .) || exit 1
 	@echo ""
+	@$(MAKE) --no-print-directory check-go
 	@echo "Go build complete: $(BUILD_DIR)/ — $(BUILD_VERSION)"
 	@ls -lh $(BUILD_DIR)/
 
+check-go: ## Fail unless every built binary was compiled with GO_TOOLCHAIN
+	@fail=0; for bin in $(BUILD_DIR)/*; do \
+		[ -f "$$bin" ] || continue; \
+		got=$$(go version "$$bin" 2>/dev/null | awk '{print $$NF}'); \
+		if [ "$$got" != "$(GO_TOOLCHAIN)" ]; then \
+			echo "  ✗ $$bin built with $${got:-unknown}, expected $(GO_TOOLCHAIN)"; fail=1; \
+		fi; \
+	done; \
+	[ $$fail -eq 0 ] && echo "==> all binaries built with $(GO_TOOLCHAIN)" || exit 1
+
+# Node only compiles the UI (nothing Node ships or runs in production), but the
+# build machine still executes npm packages, so it must not run a Node with open
+# advisories. Floors per line = the 2026-10-21 security releases (CVE-2026-111497
+# and others): 22.23.4, 24.22.1, 26.12.1. Any other line (20 is EOL) is refused.
+check-node: ## Fail unless node is a patched 22/24/26 release
+	@v=$$(node -v 2>/dev/null | sed 's/^v//'); \
+	case "$${v%%.*}" in 22) min=22.23.4;; 24) min=24.22.1;; 26) min=26.12.1;; *) min=;; esac; \
+	if [ -z "$$min" ] || [ "$$(printf '%s\n%s\n' "$$min" "$$v" | sort -V | head -1)" != "$$min" ]; then \
+		echo "  ✗ node $${v:-missing}: need >= 22.23.4 / 24.22.1 / 26.12.1 (same major)"; exit 1; \
+	fi; echo "==> node $$v OK"
+
 frontend: ## Build the Vue 3 frontend
 	@echo "==> building CasaNova-UI-v2"
+	@$(MAKE) --no-print-directory check-node
 	@(cd CasaNova-UI-v2 && npm install --prefer-offline && VITE_STRICT_API=1 VITE_DISPLAY_VERSION=$(DISPLAY_VERSION) npm run build) || exit 1
 	# vite.config.ts sets build.outDir to build/sysroot/var/lib/casanova/www
 	# so the packaged release can slot straight in. Copy from that path,

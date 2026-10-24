@@ -25,7 +25,7 @@ const VERSION = "0.1.0"
 // fact, none of them agreeing, is how a release ships announcing the wrong
 // version. Kept in step with the Makefile and marked as the mirror it is;
 // the Makefile is the source.
-const DISPLAY_VERSION = "26.10"
+const DISPLAY_VERSION = "26.10.1"
 
 // CHANNEL is the default release channel. Overridden by -ldflags.
 // Values: "dev", "stable", "beta"
