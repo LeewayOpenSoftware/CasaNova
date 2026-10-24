@@ -3,6 +3,60 @@
 All notable user-facing changes land here. Internal refactors that don't change
 behaviour are recorded in commit history, not this file. Dates are in UTC.
 
+## [26.10.1] — security maintenance — 2026-10-24
+
+Security and maintenance update for 26.10. No new features, no data
+migrations. Full details: `docs/release/26.10.1/` (release notes,
+maintenance changelog, security audit, CVE matrix, regression and
+production validation).
+
+### Security
+
+- **Files and credentials.** The avatar setting could serve any host file
+  to a signed-in account, and the system-disk switch let the signing key,
+  the user database and host-tool credentials be read; both are closed.
+  `GET /v3/file` now asks the storage authority; v2 search answers only
+  what the account may list; public folder shares, multi-item downloads,
+  archive extraction, file creation and the trash no longer follow
+  symlinks planted inside storage; crafted trash entries (`..`) can no
+  longer make delete/empty/purge erase a disk's whole trash.
+- **Sessions and 2FA.** A role change ends that user's sessions; a TOTP
+  code works once; an OIDC `id_token` is no longer accepted as an access
+  token.
+- **Resilience.** 1 MiB cap on JSON bodies of the v1 user routes; the
+  event WebSocket bounds inbound frames; gateway 502 bodies no longer show
+  the backend address; the app-store downloader refuses https → http
+  redirects; two docker handlers gain an explicit permission gate.
+
+### Build and dependencies
+
+- Every binary is compiled with **go1.26.10** (GO-2026-6809 /
+  CVE-2026-111943 and all standard-library advisories of the go1.24 build).
+  `toolchain go1.26.10` in every `go.mod`, `GOTOOLCHAIN` exported by the
+  Makefile, and `make build` ends with `check-go`, which refuses a binary
+  built with any other Go.
+- Patch/minor bumps of the modules with a reachable advisory: x/net
+  v0.60.0, x/crypto v0.57.0, x/text v0.42.0, x/image v0.45.0, jwt/v4
+  v4.5.2, gorilla/websocket v1.5.3, ulikunitz/xz v0.5.15, grpc v1.83.1,
+  go-jose/v4 v4.1.4, protobuf v1.33.0. `go 1.26.0` with
+  `godebug default=go1.24` keeps the runtime defaults of 26.10.
+- `make frontend` refuses an unpatched Node.js (`check-node`: 22.23.4 /
+  24.22.1 / 26.12.1 or later in the same line); `engines` and `.nvmrc`
+  match.
+- Accepted risk: `labstack/echo/v4` stays v4.12.0 (GO-2026-6293); the fix
+  removes the JWT middleware every service uses and the advisory's
+  precondition does not occur in the gateway. Major upgrades and
+  replacements of unmaintained modules are deferred to 27.04.
+
+### Changed
+
+- **UI usable on phones**: the top bar folds into a "More" menu, Settings
+  is list → detail, Files hides the sidebar behind a "Places" toggle, and
+  rows and toolbars wrap instead of overlapping.
+- You must sign in again after an administrator changes your role; a
+  second use of the same 2FA code within ~90 s is refused.
+- Version: BASE_VERSION 18.6.3, DISPLAY_VERSION 26.10.1 (channel beta).
+
 ## [26.10] — bug-fix roll-up
 
 Fixes only — no new features and no behaviour changes beyond the defects
