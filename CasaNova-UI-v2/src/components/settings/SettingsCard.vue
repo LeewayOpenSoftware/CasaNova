@@ -42,8 +42,11 @@ const hasBody = computed(() => {
        and the body is empty) size tightly to their content with no wasted
        gap or empty block. Multi-content cards keep gap-4 between header and body. -->
   <section class="cn-widget flex flex-col p-5" :class="{ 'gap-4': hasBody }">
-    <div v-if="title || $slots.actions" class="flex items-center justify-between gap-4">
-      <div v-if="title" class="min-w-0 flex-1">
+    <!-- Below sm the row may wrap: a wide control (a selector) drops
+         under the text instead of squeezing it to one word per line,
+         while a narrow one (a toggle) still fits beside 12rem of text. -->
+    <div v-if="title || $slots.actions" class="flex items-center justify-between gap-4 max-sm:flex-wrap">
+      <div v-if="title" class="min-w-0 flex-1 max-sm:min-w-[12rem]">
         <h2 class="text-sm font-semibold text-[var(--cn-text)]">{{ title }}</h2>
         <p v-if="description" class="mt-0.5 text-xs text-[var(--cn-text-muted)]">
           {{ description }}

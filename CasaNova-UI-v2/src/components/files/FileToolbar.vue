@@ -55,6 +55,12 @@ onBeforeUnmount(() => {
 // where an un-measured 0 would otherwise read as "narrower than everything".
 const compact = computed(() => toolbarWidth.value > 0 && toolbarWidth.value < 860)
 const veryCompact = computed(() => toolbarWidth.value > 0 && toolbarWidth.value < 670)
+// Below veryCompact's own floor (489px) nothing left can be folded without
+// hiding commands a touch screen has no other way to reach (no right-click),
+// and on a phone the pane is ~330px: the row overflowed and Upload sat
+// clipped off the right edge. There, and only there, the row wraps — two
+// short lines beat commands nobody can see.
+const phone = computed(() => toolbarWidth.value > 0 && toolbarWidth.value < 489)
 
 const emit = defineEmits<{
   (
@@ -119,9 +125,10 @@ const iconBtn =
 </script>
 
 <template>
-  <div ref="rootRef" class="flex items-center justify-between gap-2">
-    <!-- LEFT: command groups -->
-    <div class="flex items-center gap-1">
+  <div ref="rootRef" :class="['flex items-center justify-between gap-2', phone && 'flex-wrap gap-x-1 gap-y-1']">
+    <!-- LEFT: command groups. On a phone the group dissolves into the root
+         (contents) so its buttons and the search share the wrapped lines. -->
+    <div :class="['flex items-center gap-1', phone && 'contents']">
       <!-- New folder -->
       <button
         type="button"

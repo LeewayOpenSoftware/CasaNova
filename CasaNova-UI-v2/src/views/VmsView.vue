@@ -105,7 +105,7 @@ const totalMemGiB = computed(() =>
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-full max-w-7xl flex-col p-6">
+  <div class="mx-auto flex min-h-full max-w-7xl flex-col p-3 sm:p-6">
     <!-- Header -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-4">
@@ -157,14 +157,16 @@ const totalMemGiB = computed(() =>
         <div
           v-for="vm in virt.domains"
           :key="vm.uuid"
-          class="cn-widget flex flex-wrap items-center gap-4 p-4"
+          class="cn-widget flex flex-wrap items-center gap-3 p-3 sm:gap-4 sm:p-4"
         >
           <!-- identity -->
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="statusDot(vm.status)" />
             <div class="min-w-0">
               <div class="truncate text-sm font-semibold text-[var(--cn-text)]">{{ vm.name }}</div>
-              <div class="mt-0.5 flex items-center gap-2 text-xs text-[var(--cn-text-muted)]">
+              <!-- nowrap per value: on a phone "2 vCPU" broke onto two lines
+                   inside its own span; the row wraps between values instead. -->
+              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap text-xs text-[var(--cn-text-muted)]">
                 <span class="rounded px-1.5 py-0.5 font-medium" :class="statusClass(vm.status)">
                   {{ t(`vms.status.${vm.status}`) }}
                 </span>

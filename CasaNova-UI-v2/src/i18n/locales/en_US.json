@@ -77,7 +77,8 @@
     },
     "search": "Search files",
     "notes": "Notes",
-    "apps": "Apps"
+    "apps": "Apps",
+    "more": "More"
   },
   "account": {
     "title": "Account",
@@ -570,7 +571,9 @@
       "favorites": "Favorites",
       "storage": "Storage",
       "add_storage": "Add storage",
-      "shared": "Shared"
+      "shared": "Shared",
+      "places": "Places",
+      "back_to_files": "Back to files"
     },
     "storage_menu": {
       "local": "New local storage",

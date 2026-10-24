@@ -29,7 +29,7 @@ defineProps<{
     <!-- Page header: icon + title + optional one-line description.
          Matches the rhythm we'll see on every settings page so users
          always know where they are. -->
-    <header class="flex items-start gap-4">
+    <header class="flex flex-wrap items-start gap-4 sm:flex-nowrap">
       <div
         class="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--cn-border)] bg-[var(--cn-surface-hover)] text-blue-500"
       >
@@ -48,7 +48,10 @@ defineProps<{
            keeps every settings page's actions anchored at the same
            baseline as the title, so pages with actions feel as
            harmonious as pages without them. -->
-      <div v-if="$slots.actions" class="flex shrink-0 items-center gap-3 pt-0.5">
+      <!-- Below sm the actions take their own line under the title
+           (pl-16 = icon 48px + gap 16px): beside it they squeezed the
+           title and description into a column a word wide. -->
+      <div v-if="$slots.actions" class="flex shrink-0 items-center gap-3 pt-0.5 max-sm:basis-full max-sm:pl-16">
         <slot name="actions" />
       </div>
     </header>

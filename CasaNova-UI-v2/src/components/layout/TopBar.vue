@@ -182,11 +182,37 @@ function openSettings() {
 function toggleNotifications() {
   notifications.toggleSidebar()
 }
+
+// Below `sm` (640px) the full icon row does not fit: on a 390px phone it
+// pushed the page to ~677px and every route scrolled sideways. The icons
+// that are places to go (Files, Notes, Apps, Library, Terminal, Settings)
+// fold into this menu there; Search, live operations, notifications and
+// the avatar stay in the bar. At `sm` and up the menu button is hidden and
+// the row is exactly what it was.
+const moreMenu = ref()
+const moreMenuItems = computed(() => [
+  { label: t('topbar.files'), iconName: 'Files', command: openFiles },
+  { label: t('topbar.notes'), iconName: 'NotebookPen', command: openNotes },
+  { label: t('topbar.apps'), iconName: 'AppWindow', command: openApps },
+  { label: t('library.title'), iconName: 'LayoutGrid', command: () => libraryStore.openPanel() },
+  { label: t('topbar.terminal'), iconName: 'Terminal', command: openTerminal },
+  { label: t('topbar.settings'), iconName: 'Settings', command: openSettings },
+])
+// The two activity dots of the folded icons (file operations, update
+// available) must not vanish with them.
+const moreMenuHasActivity = computed(
+  () => filesStore.activeOperationCount > 0
+    || (updatesStore.status.updateAvailable && !updatesStore.isActive),
+)
+
+function openMoreMenu(event: Event) {
+  moreMenu.value?.toggle(event)
+}
 </script>
 
 <template>
   <header
-    class="cn-topbar flex h-14 items-center gap-3 border-b border-slate-200 bg-[var(--cn-surface)] px-4 dark:border-slate-800"
+    class="cn-topbar flex h-14 items-center gap-1 border-b border-slate-200 bg-[var(--cn-surface)] px-3 dark:border-slate-800 sm:gap-3 sm:px-4"
   >
     <!-- Brand: CasaNova wordmark with the "orb with clouds" mark from
          public/assets/brand/casanova2.png. This is the "core / center"
@@ -198,9 +224,9 @@ function toggleNotifications() {
          a per-user pref (casanova.prefs.brandName) synced via the existing
          ui-prefs endpoint — no backend change. Pencil/editor are SIBLINGS
          of the home button (never nested — nested <button> is invalid). -->
-    <div class="group flex items-center gap-1">
+    <div class="group flex min-w-0 items-center gap-1">
       <button
-        class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-slate-100"
+        class="flex min-w-0 items-center gap-2 text-lg font-bold text-slate-900 dark:text-slate-100"
         @click="goHome"
       >
         <span class="relative flex h-8 w-8 shrink-0 items-center justify-center">
@@ -211,7 +237,7 @@ function toggleNotifications() {
             aria-hidden="true"
           />
         </span>
-        <span v-if="!brandEditing && !brandNameHidden">{{ brandDisplayName }}</span>
+        <span v-if="!brandEditing && !brandNameHidden" class="max-sm:truncate">{{ brandDisplayName }}</span>
       </button>
 
       <!-- Pencil: admin-only, fades in on hover of the brand group. -->
@@ -278,7 +304,7 @@ function toggleNotifications() {
          files store has in-flight operations (uploads, copies, moves).
          Users can minimize the file manager mid-upload and still see
          at a glance that their work is progressing. -->
-    <div class="relative">
+    <div class="relative hidden sm:block">
       <Button
         text
         rounded
@@ -303,29 +329,33 @@ function toggleNotifications() {
     <!-- Notes: server-side scratchpad. Sits next to Files because it is the
          same kind of thing — content that lives on the box — and because its
          whole value is being one click away. -->
-    <Button
-      text
-      rounded
-      severity="secondary"
-      :aria-label="t('topbar.notes')"
-      :title="t('topbar.notes')"
-      @click="openNotes"
-    >
-      <AppIcon name="NotebookPen" :size="20" />
-    </Button>
+    <div class="hidden sm:contents">
+      <Button
+        text
+        rounded
+        severity="secondary"
+        :aria-label="t('topbar.notes')"
+        :title="t('topbar.notes')"
+        @click="openNotes"
+      >
+        <AppIcon name="NotebookPen" :size="20" />
+      </Button>
+    </div>
 
     <!-- Apps: the internal browser. Embedded panels for apps that consent
          to framing; honest new-tab fallbacks for the ones that refuse. -->
-    <Button
-      text
-      rounded
-      severity="secondary"
-      :aria-label="t('topbar.apps')"
-      :title="t('topbar.apps')"
-      @click="openApps"
-    >
-      <AppIcon name="AppWindow" :size="20" />
-    </Button>
+    <div class="hidden sm:contents">
+      <Button
+        text
+        rounded
+        severity="secondary"
+        :aria-label="t('topbar.apps')"
+        :title="t('topbar.apps')"
+        @click="openApps"
+      >
+        <AppIcon name="AppWindow" :size="20" />
+      </Button>
+    </div>
 
     <!-- App Library button -->
     <!-- Global file search (casanova-search) across all storage. -->
@@ -338,30 +368,34 @@ function toggleNotifications() {
     >
       <AppIcon name="Search" :size="20" />
     </Button>
-    <Button
-      text
-      rounded
-      severity="secondary"
-      :aria-label="t('library.title')"
-      @click.stop="libraryStore.openPanel()"
-    >
-      <AppIcon name="LayoutGrid" :size="20" />
-    </Button>
+    <div class="hidden sm:contents">
+      <Button
+        text
+        rounded
+        severity="secondary"
+        :aria-label="t('library.title')"
+        @click.stop="libraryStore.openPanel()"
+      >
+        <AppIcon name="LayoutGrid" :size="20" />
+      </Button>
+    </div>
 
     <!-- Live operations button — temporary tile that only appears
          while installs/uploads are running, like a Windows 11 taskbar
          progress tile. -->
     <LiveOperationsButton />
-    <Button
-      text
-      rounded
-      severity="secondary"
-      :aria-label="t('topbar.terminal')"
-      @click="openTerminal"
-    >
-      <AppIcon name="Terminal" :size="20" />
-    </Button>
-    <div class="relative">
+    <div class="hidden sm:contents">
+      <Button
+        text
+        rounded
+        severity="secondary"
+        :aria-label="t('topbar.terminal')"
+        @click="openTerminal"
+      >
+        <AppIcon name="Terminal" :size="20" />
+      </Button>
+    </div>
+    <div class="relative hidden sm:block">
       <Button
         text
         rounded
@@ -381,6 +415,39 @@ function toggleNotifications() {
         <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
       </span>
     </div>
+
+    <!-- Overflow menu: only below `sm`, where it stands in for the icons
+         hidden above (see moreMenuItems). -->
+    <div class="relative sm:hidden">
+      <Button
+        text
+        rounded
+        severity="secondary"
+        :aria-label="t('topbar.more')"
+        :title="t('topbar.more')"
+        aria-haspopup="true"
+        @click="openMoreMenu"
+      >
+        <AppIcon name="MoreHorizontal" :size="20" />
+      </Button>
+      <span
+        v-if="moreMenuHasActivity"
+        class="pointer-events-none absolute right-1 top-1 flex h-2.5 w-2.5"
+      >
+        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
+      </span>
+    </div>
+    <Menu ref="moreMenu" :model="moreMenuItems" :popup="true">
+      <template #item="{ item, props }">
+        <a
+          v-bind="props.action"
+          class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-[var(--cn-text)]"
+        >
+          <AppIcon :name="item.iconName" :size="15" />
+          <span>{{ item.label }}</span>
+        </a>
+      </template>
+    </Menu>
 
     <!-- Notification bell with unread badge. The badge only renders when
          unreadCount > 0 so the icon stays clean when there's nothing new. -->
@@ -407,7 +474,7 @@ function toggleNotifications() {
          own profile picture. PrimeVue Menu's `popup` mode anchors the
          dropdown to whatever element called toggle(). -->
     <button
-      class="ml-2 flex items-center gap-2 rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800"
+      class="ml-1 flex shrink-0 items-center gap-2 rounded-full p-1 sm:ml-2 hover:bg-slate-100 dark:hover:bg-slate-800"
       :aria-label="t('topbar.user_menu')"
       @click="openUserMenu"
     >

@@ -27,7 +27,7 @@ const selectedPackagePath = ref<string | null>(null)
 const uploadProgress = ref<{ loaded: number; total: number; name: string } | null>(null)
 const rollbackInFlight = ref(false)
 const buildVersion = ref<string>('—')
-const displayVersion = ref<string>(import.meta.env.VITE_DISPLAY_VERSION || '26.10')
+const displayVersion = ref<string>(import.meta.env.VITE_DISPLAY_VERSION || '26.10.1')
 const buildChannel = computed(() => updates.status.channel || 'dev')
 
 async function onRollback() {
@@ -255,8 +255,8 @@ async function onApplyDiskUpdate() {
       <div v-if="updates.lastError" class="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500">{{ updates.lastError }}</div>
 
       <div v-if="updates.status.lastReport && !updates.isActive" class="flex flex-col gap-2 rounded-lg border p-3 text-xs" :class="updates.status.lastReport.status === 'completed' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/10'">
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2 font-medium">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-medium">
             <AppIcon :name="updates.status.lastReport.status === 'completed' ? 'CheckCircle2' : 'AlertTriangle'" :size="14" :class="updates.status.lastReport.status === 'completed' ? 'text-emerald-500' : 'text-red-500'" />
             <span class="text-[var(--cn-text)]">{{ updates.status.lastReport.from_version }} → {{ updates.status.lastReport.to_version }}</span>
             <span class="font-normal text-[var(--cn-text-muted)]">({{ updates.status.lastReport.status }})</span>

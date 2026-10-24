@@ -20,6 +20,7 @@ import {
   canAccessSettingsPath,
   effectiveRole,
 } from './settingsAccess'
+import { settingsIndexEnter } from './settingsIndex'
 
 // Cache the initialization check so we don't hit the API on every navigation.
 // The promise acts as a dedup lock: concurrent navigations await the same call.
@@ -123,7 +124,9 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         component: () => import('@/views/settings/SettingsLayout.vue'),
         children: [
-          { path: '', redirect: '/app/settings/general' },
+          // A phone keeps the bare address as the settings list; anything
+          // wider is redirected to the first page (settingsIndex.ts).
+          { path: '', component: { render: () => null }, beforeEnter: settingsIndexEnter },
           {
             path: 'general',
             component: () => import('@/views/settings/GeneralSettings.vue'),

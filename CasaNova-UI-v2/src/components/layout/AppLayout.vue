@@ -62,7 +62,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-screen flex-col">
+  <!-- 100dvh where supported: on a phone 100vh is the height with the
+       browser toolbar hidden, so the bottom of <main> (the only scroller)
+       sat under the toolbar. On desktop dvh and vh are the same. -->
+  <div class="flex h-screen flex-col supports-[height:100dvh]:h-dvh">
     <TopBar />
     <main ref="mainEl" class="flex-1 overflow-auto">
       <router-view />

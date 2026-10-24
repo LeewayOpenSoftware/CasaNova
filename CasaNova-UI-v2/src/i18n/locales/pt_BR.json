@@ -77,7 +77,8 @@
     },
     "search": "Buscar arquivos",
     "notes": "Notas",
-    "apps": "Apps"
+    "apps": "Apps",
+    "more": "Mais"
   },
   "account": {
     "title": "Conta",
@@ -570,7 +571,9 @@
       "favorites": "Favoritos",
       "storage": "Armazenamento",
       "add_storage": "Adicionar armazenamento",
-      "shared": "Compartilhado"
+      "shared": "Compartilhado",
+      "places": "Locais",
+      "back_to_files": "Voltar aos arquivos"
     },
     "storage_menu": {
       "local": "Novo armazenamento local",

@@ -11,7 +11,7 @@
 // stats across every app so operators get a single glance-able view
 // of where CPU/RAM is going before drilling into any one project.
 
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -28,6 +28,9 @@ import { useContainersStore } from '@/stores/containers'
 import { onMounted } from 'vue'
 
 const { t } = useI18n()
+
+// Apps whose icon URL failed to load; they show the generic glyph instead.
+const brokenIcons = reactive(new Set<string>())
 const router = useRouter()
 
 // Read from the live containers store (wrapped around containersApi
@@ -180,22 +183,28 @@ async function toggleAutoUpdate(app: AppEntry) {
         <div
           v-for="a in apps"
           :key="a.id"
-          class="cursor-pointer rounded-lg border border-[var(--cn-border)] p-4 transition-colors hover:bg-[var(--cn-surface-hover)]"
+          class="cursor-pointer rounded-lg border border-[var(--cn-border)] p-3 transition-colors hover:bg-[var(--cn-surface-hover)] sm:p-4"
           @click="openAppDetail(a)"
         >
-          <div class="flex items-start justify-between gap-4">
+          <!-- Below sm the controls go under the identity block: side by
+               side on a phone they left the name ~70px and it ran under
+               the auto-update toggle. -->
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div class="flex min-w-0 flex-1 items-start gap-3">
               <div
                 class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg"
                 :style="{ backgroundColor: a.tileColor ?? 'var(--cn-surface-hover)' }"
               >
+                <!-- A broken icon falls back to the generic glyph: its alt
+                     text ("Glad…") was spilling out of the 44px tile. -->
                 <img
-                  v-if="a.iconUrl"
+                  v-if="a.iconUrl && !brokenIcons.has(a.id)"
                   :src="a.iconUrl"
                   :alt="a.title"
                   class="h-8 w-8 object-contain"
+                  @error="brokenIcons.add(a.id)"
                 />
-                <AppIcon v-else name="Container" :size="20" class="text-white" />
+                <AppIcon v-else name="Container" :size="20" :class="a.tileColor ? 'text-white' : 'text-[var(--cn-text-muted)]'" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
@@ -250,7 +259,7 @@ async function toggleAutoUpdate(app: AppEntry) {
               </div>
             </div>
 
-            <div class="flex shrink-0 items-center gap-2" @click.stop>
+            <div class="flex shrink-0 items-center justify-end gap-2" @click.stop>
               <label class="flex items-center gap-2 text-xs text-[var(--cn-text-muted)]">
                 <span>{{ t('settings.containers.auto_update') }}</span>
                 <ToggleSwitch
